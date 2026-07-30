@@ -36,7 +36,7 @@ class MySqlMigrationIntegrationTest {
     @Test
     void appliesEveryMigrationAndFoundationTable() throws Exception {
         assertThat(number("SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1"))
-                .isEqualTo(10);
+                .isEqualTo(11);
         assertThat(number("""
                 SELECT COUNT(*)
                 FROM information_schema.tables
@@ -84,9 +84,17 @@ class MySqlMigrationIntegrationTest {
                     'maintenance_material_usage',
                     'maintenance_abnormal',
                     'maintenance_attachment',
-                    'maintenance_task_event'
+                    'maintenance_task_event',
+                    'equipment_shift',
+                    'equipment_calendar',
+                    'equipment_oee_target',
+                    'equipment_oee_record',
+                    'equipment_output_record',
+                    'equipment_downtime_record',
+                    'equipment_loss_reason',
+                    'equipment_oee_calculation_log'
                   )
-                """)).isEqualTo(43);
+                """)).isEqualTo(51);
     }
 
     @Test
@@ -176,6 +184,61 @@ class MySqlMigrationIntegrationTest {
                   AND index_name = 'uk_inspection_task_occurrence'
                   AND non_unique = 0
                 """)).isEqualTo(3);
+    }
+
+    @Test
+    void enforcesPreciseAndUniqueOeeModel() throws Exception {
+        assertThat(number("""
+                SELECT COUNT(*)
+                FROM information_schema.columns
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'equipment_oee_record'
+                  AND column_name IN (
+                    'standard_cycle_seconds',
+                    'planned_work_minutes',
+                    'actual_quantity',
+                    'availability_rate',
+                    'performance_rate',
+                    'quality_rate',
+                    'oee_rate'
+                  )
+                  AND data_type = 'decimal'
+                """)).isEqualTo(7);
+        assertThat(number("""
+                SELECT COUNT(*)
+                FROM information_schema.statistics
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'equipment_oee_record'
+                  AND index_name = 'uk_equipment_oee_record'
+                  AND non_unique = 0
+                """)).isEqualTo(5);
+        assertThat(number("""
+                SELECT COUNT(*)
+                FROM information_schema.columns
+                WHERE table_schema = DATABASE()
+                  AND table_name IN (
+                    'equipment_shift',
+                    'equipment_calendar',
+                    'equipment_loss_reason',
+                    'equipment_output_record',
+                    'equipment_oee_record'
+                  )
+                  AND column_name = 'active_marker'
+                  AND extra LIKE '%STORED GENERATED%'
+                """)).isEqualTo(5);
+        assertThat(number("""
+                SELECT COUNT(*)
+                FROM equipment_loss_reason
+                WHERE tenant_id = 1
+                  AND loss_category IN (
+                    'BREAKDOWN',
+                    'SETUP_ADJUSTMENT',
+                    'MINOR_STOPPAGE',
+                    'REDUCED_SPEED',
+                    'PROCESS_DEFECT',
+                    'STARTUP_REJECT'
+                  )
+                """)).isEqualTo(6);
     }
 
     private long number(String sql) throws Exception {

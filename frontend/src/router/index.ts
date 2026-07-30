@@ -222,6 +222,42 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '维保统计', permission: 'maintenance:statistics:view' },
       },
       {
+        path: 'oee/calendar',
+        name: 'OeeCalendar',
+        component: () => import('@/views/oee/calendar/OeeCalendarView.vue'),
+        meta: { title: '班次日历', permission: 'oee:calendar:view' },
+      },
+      {
+        path: 'oee/loss-reasons',
+        name: 'OeeLossReasons',
+        component: () => import('@/views/oee/loss-reasons/OeeLossReasonView.vue'),
+        meta: { title: '损失原因', permission: 'oee:loss-reason:view' },
+      },
+      {
+        path: 'oee/targets',
+        name: 'OeeTargets',
+        component: () => import('@/views/oee/targets/OeeTargetView.vue'),
+        meta: { title: 'OEE目标', permission: 'oee:target:view' },
+      },
+      {
+        path: 'oee/records',
+        name: 'OeeRecords',
+        component: () => import('@/views/oee/records/OeeRecordView.vue'),
+        meta: { title: 'OEE数据维护', permission: 'oee:record:view' },
+      },
+      {
+        path: 'oee/production',
+        name: 'OeeProduction',
+        component: () => import('@/views/oee/production/OeeProductionView.vue'),
+        meta: { title: '产量与停机', permission: 'oee:production:view' },
+      },
+      {
+        path: 'oee/analysis',
+        name: 'OeeAnalysis',
+        component: () => import('@/views/oee/analysis/OeeAnalysisView.vue'),
+        meta: { title: 'OEE分析', permission: 'oee:analysis:view' },
+      },
+      {
         path: 'coming-soon/:module',
         name: 'ComingSoon',
         component: () => import('@/views/common/ComingSoonView.vue'),

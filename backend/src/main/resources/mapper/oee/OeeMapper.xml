@@ -1,0 +1,1329 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.leantpm.oee.OeeMapper">
+    <select id="findParameterValue" resultType="string">
+        SELECT parameter_value
+        FROM system_parameter
+        WHERE tenant_id = #{tenantId}
+          AND parameter_key = #{parameterKey}
+          AND status = 1
+          AND deleted = 0
+        LIMIT 1
+    </select>
+
+    <select id="findOrganizationAndDescendantIds" resultType="long">
+        WITH RECURSIVE organization_tree AS (
+            SELECT id
+            FROM organization
+            WHERE tenant_id = #{tenantId}
+              AND id = #{organizationId}
+              AND status = 1
+              AND deleted = 0
+            UNION ALL
+            SELECT child.id
+            FROM organization child
+            JOIN organization_tree parent ON child.parent_id = parent.id
+            WHERE child.tenant_id = #{tenantId}
+              AND child.status = 1
+              AND child.deleted = 0
+        )
+        SELECT id FROM organization_tree
+    </select>
+
+    <sql id="equipmentScope">
+        <choose>
+            <when test="scope.allData">1 = 1</when>
+            <when test="scope.selfData or (scope.organizationIds != null and !scope.organizationIds.isEmpty())">
+                (
+                    <if test="scope.selfData">
+                        e.created_by = #{scope.userId}
+                        OR e.primary_responsible_user_id = #{scope.userId}
+                        OR EXISTS (
+                            SELECT 1
+                            FROM equipment_responsible_person scoped_person
+                            WHERE scoped_person.tenant_id = e.tenant_id
+                              AND scoped_person.equipment_id = e.id
+                              AND scoped_person.user_id = #{scope.userId}
+                              AND scoped_person.status = 1
+                              AND scoped_person.deleted = 0
+                        )
+                    </if>
+                    <if test="scope.selfData and scope.organizationIds != null and !scope.organizationIds.isEmpty()">OR</if>
+                    <if test="scope.organizationIds != null and !scope.organizationIds.isEmpty()">
+                        e.organization_id IN
+                        <foreach collection="scope.organizationIds" item="organizationId"
+                                 open="(" separator="," close=")">
+                            #{organizationId}
+                        </foreach>
+                    </if>
+                )
+            </when>
+            <otherwise>1 = 0</otherwise>
+        </choose>
+    </sql>
+
+    <sql id="organizationScope">
+        <choose>
+            <when test="scope.allData">1 = 1</when>
+            <when test="scope.organizationIds != null and !scope.organizationIds.isEmpty()">
+                o.id IN
+                <foreach collection="scope.organizationIds" item="organizationId"
+                         open="(" separator="," close=")">
+                    #{organizationId}
+                </foreach>
+            </when>
+            <otherwise>1 = 0</otherwise>
+        </choose>
+    </sql>
+
+    <select id="countActiveEquipment" resultType="int">
+        SELECT COUNT(*)
+        FROM equipment e
+        WHERE e.tenant_id = #{tenantId}
+          AND e.id = #{equipmentId}
+          AND e.oee_enabled = 1
+          AND e.status = 1
+          AND e.deleted = 0
+          AND <include refid="equipmentScope"/>
+    </select>
+
+    <select id="findEquipment" resultType="com.leantpm.oee.OeeDtos$EquipmentRef">
+        SELECT e.id, e.equipment_code, e.equipment_name, e.organization_id,
+               o.organization_name, e.oee_enabled, e.status
+        FROM equipment e
+        JOIN organization o
+          ON o.tenant_id = e.tenant_id
+         AND o.id = e.organization_id
+         AND o.deleted = 0
+        WHERE e.tenant_id = #{tenantId}
+          AND e.id = #{equipmentId}
+          AND e.deleted = 0
+          AND <include refid="equipmentScope"/>
+    </select>
+
+    <select id="findEquipmentByCode" resultType="com.leantpm.oee.OeeDtos$EquipmentRef">
+        SELECT e.id, e.equipment_code, e.equipment_name, e.organization_id,
+               o.organization_name, e.oee_enabled, e.status
+        FROM equipment e
+        JOIN organization o
+          ON o.tenant_id = e.tenant_id
+         AND o.id = e.organization_id
+         AND o.deleted = 0
+        WHERE e.tenant_id = #{tenantId}
+          AND e.equipment_code = #{equipmentCode}
+          AND e.deleted = 0
+          AND <include refid="equipmentScope"/>
+    </select>
+
+    <select id="countActiveOrganization" resultType="int">
+        SELECT COUNT(*)
+        FROM organization o
+        WHERE o.tenant_id = #{tenantId}
+          AND o.id = #{organizationId}
+          AND o.status = 1
+          AND o.deleted = 0
+          AND <include refid="organizationScope"/>
+    </select>
+
+    <select id="findOrganizationType" resultType="string">
+        SELECT organization_type
+        FROM organization
+        WHERE tenant_id = #{tenantId}
+          AND id = #{organizationId}
+          AND status = 1
+          AND deleted = 0
+    </select>
+
+    <sql id="shiftFilters">
+        tenant_id = #{tenantId} AND deleted = 0
+        <if test="keyword != null and keyword != ''">
+            AND (shift_code LIKE CONCAT('%', #{keyword}, '%')
+                 OR shift_name LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        <if test="status != null">AND status = #{status}</if>
+    </sql>
+
+    <sql id="shiftColumns">
+        id, shift_code, shift_name, start_time, end_time, cross_day_flag,
+        break_minutes, standard_work_minutes, sort_order, status, description, version
+    </sql>
+
+    <select id="findShifts" resultType="com.leantpm.oee.OeeDtos$ShiftRow">
+        SELECT <include refid="shiftColumns"/>
+        FROM equipment_shift
+        WHERE <include refid="shiftFilters"/>
+        ORDER BY sort_order, id
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
+    <select id="countShifts" resultType="long">
+        SELECT COUNT(*) FROM equipment_shift WHERE <include refid="shiftFilters"/>
+    </select>
+
+    <select id="findShift" resultType="com.leantpm.oee.OeeDtos$ShiftRow">
+        SELECT <include refid="shiftColumns"/>
+        FROM equipment_shift
+        WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0
+    </select>
+
+    <select id="countShiftCode" resultType="int">
+        SELECT COUNT(*)
+        FROM equipment_shift
+        WHERE tenant_id = #{tenantId}
+          AND shift_code = #{shiftCode}
+          AND deleted = 0
+          <if test="excludeId != null">AND id != #{excludeId}</if>
+    </select>
+
+    <insert id="insertShift">
+        INSERT INTO equipment_shift
+            (tenant_id, shift_code, shift_name, start_time, end_time,
+             cross_day_flag, break_minutes, standard_work_minutes,
+             sort_order, status, description, created_by, updated_by)
+        VALUES
+            (#{tenantId}, #{request.shiftCode}, #{request.shiftName},
+             #{request.startTime}, #{request.endTime}, #{request.crossDayFlag},
+             #{request.breakMinutes}, #{request.standardWorkMinutes},
+             #{request.sortOrder}, #{request.status}, #{request.description},
+             #{operatorId}, #{operatorId})
+    </insert>
+
+    <select id="findShiftIdByCode" resultType="long">
+        SELECT id FROM equipment_shift
+        WHERE tenant_id = #{tenantId} AND shift_code = #{shiftCode} AND deleted = 0
+    </select>
+
+    <update id="updateShift">
+        UPDATE equipment_shift
+        SET shift_code = #{request.shiftCode},
+            shift_name = #{request.shiftName},
+            start_time = #{request.startTime},
+            end_time = #{request.endTime},
+            cross_day_flag = #{request.crossDayFlag},
+            break_minutes = #{request.breakMinutes},
+            standard_work_minutes = #{request.standardWorkMinutes},
+            sort_order = #{request.sortOrder},
+            status = #{request.status},
+            description = #{request.description},
+            updated_by = #{operatorId},
+            version = version + 1
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND version = #{request.version}
+          AND deleted = 0
+    </update>
+
+    <select id="countShiftReferences" resultType="int">
+        SELECT
+            (SELECT COUNT(*) FROM equipment_calendar
+             WHERE tenant_id = #{tenantId} AND shift_id = #{id} AND deleted = 0)
+            +
+            (SELECT COUNT(*) FROM equipment_oee_record
+             WHERE tenant_id = #{tenantId} AND shift_id = #{id} AND deleted = 0)
+    </select>
+
+    <update id="deleteShift">
+        UPDATE equipment_shift
+        SET deleted = 1, status = 0, updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND version = #{version}
+          AND deleted = 0
+    </update>
+
+    <sql id="calendarFilters">
+        c.tenant_id = #{tenantId} AND c.deleted = 0
+        AND <include refid="organizationScope"/>
+        <if test="organizationId != null">AND c.organization_id = #{organizationId}</if>
+        <if test="startDate != null">AND c.work_date &gt;= #{startDate}</if>
+        <if test="endDate != null">AND c.work_date &lt;= #{endDate}</if>
+    </sql>
+
+    <sql id="calendarColumns">
+        c.id, c.organization_id, o.organization_name, c.work_date,
+        c.shift_id, s.shift_name, c.day_type, c.planned_work_minutes,
+        c.planned_downtime_minutes, c.calendar_status, c.remark, c.version
+    </sql>
+
+    <select id="findCalendars" resultType="com.leantpm.oee.OeeDtos$CalendarRow">
+        SELECT <include refid="calendarColumns"/>
+        FROM equipment_calendar c
+        JOIN organization o
+          ON o.tenant_id = c.tenant_id AND o.id = c.organization_id AND o.deleted = 0
+        JOIN equipment_shift s
+          ON s.tenant_id = c.tenant_id AND s.id = c.shift_id AND s.deleted = 0
+        WHERE <include refid="calendarFilters"/>
+        ORDER BY c.work_date DESC, s.sort_order, c.id
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
+    <select id="countCalendars" resultType="long">
+        SELECT COUNT(*)
+        FROM equipment_calendar c
+        JOIN organization o
+          ON o.tenant_id = c.tenant_id AND o.id = c.organization_id AND o.deleted = 0
+        WHERE <include refid="calendarFilters"/>
+    </select>
+
+    <select id="findCalendar" resultType="com.leantpm.oee.OeeDtos$CalendarRow">
+        SELECT <include refid="calendarColumns"/>
+        FROM equipment_calendar c
+        JOIN organization o
+          ON o.tenant_id = c.tenant_id AND o.id = c.organization_id AND o.deleted = 0
+        JOIN equipment_shift s
+          ON s.tenant_id = c.tenant_id AND s.id = c.shift_id AND s.deleted = 0
+        WHERE c.tenant_id = #{tenantId}
+          AND c.id = #{id}
+          AND c.deleted = 0
+          AND <include refid="organizationScope"/>
+    </select>
+
+    <select id="countCalendarKey" resultType="int">
+        SELECT COUNT(*)
+        FROM equipment_calendar
+        WHERE tenant_id = #{tenantId}
+          AND organization_id = #{request.organizationId}
+          AND work_date = #{request.workDate}
+          AND shift_id = #{request.shiftId}
+          AND deleted = 0
+          <if test="excludeId != null">AND id != #{excludeId}</if>
+    </select>
+
+    <insert id="insertCalendar">
+        INSERT INTO equipment_calendar
+            (tenant_id, organization_id, work_date, shift_id, day_type,
+             planned_work_minutes, planned_downtime_minutes, calendar_status,
+             remark, created_by, updated_by)
+        VALUES
+            (#{tenantId}, #{request.organizationId}, #{request.workDate},
+             #{request.shiftId}, #{request.dayType}, #{request.plannedWorkMinutes},
+             #{request.plannedDowntimeMinutes}, #{request.calendarStatus},
+             #{request.remark}, #{operatorId}, #{operatorId})
+    </insert>
+
+    <select id="findCalendarId" resultType="long">
+        SELECT id
+        FROM equipment_calendar
+        WHERE tenant_id = #{tenantId}
+          AND organization_id = #{request.organizationId}
+          AND work_date = #{request.workDate}
+          AND shift_id = #{request.shiftId}
+          AND deleted = 0
+    </select>
+
+    <update id="updateCalendar">
+        UPDATE equipment_calendar
+        SET organization_id = #{request.organizationId},
+            work_date = #{request.workDate},
+            shift_id = #{request.shiftId},
+            day_type = #{request.dayType},
+            planned_work_minutes = #{request.plannedWorkMinutes},
+            planned_downtime_minutes = #{request.plannedDowntimeMinutes},
+            calendar_status = #{request.calendarStatus},
+            remark = #{request.remark},
+            updated_by = #{operatorId},
+            version = version + 1
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND version = #{request.version}
+          AND deleted = 0
+    </update>
+
+    <update id="deleteCalendar">
+        UPDATE equipment_calendar
+        SET deleted = 1, calendar_status = 'DISABLED',
+            updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND version = #{version}
+          AND deleted = 0
+    </update>
+
+    <sql id="targetScope">
+        <choose>
+            <when test="scope.allData">1 = 1</when>
+            <when test="scope.organizationIds != null and !scope.organizationIds.isEmpty()">
+                (
+                    t.organization_id IN
+                    <foreach collection="scope.organizationIds" item="organizationId"
+                             open="(" separator="," close=")">
+                        #{organizationId}
+                    </foreach>
+                    OR e.organization_id IN
+                    <foreach collection="scope.organizationIds" item="organizationId"
+                             open="(" separator="," close=")">
+                        #{organizationId}
+                    </foreach>
+                )
+            </when>
+            <otherwise>1 = 0</otherwise>
+        </choose>
+    </sql>
+
+    <sql id="targetFilters">
+        t.tenant_id = #{tenantId} AND t.deleted = 0
+        AND <include refid="targetScope"/>
+        <if test="keyword != null and keyword != ''">
+            AND (t.target_name LIKE CONCAT('%', #{keyword}, '%')
+                 OR e.equipment_code LIKE CONCAT('%', #{keyword}, '%')
+                 OR e.equipment_name LIKE CONCAT('%', #{keyword}, '%')
+                 OR o.organization_name LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        <if test="targetLevel != null and targetLevel != ''">AND t.target_level = #{targetLevel}</if>
+        <if test="status != null">AND t.status = #{status}</if>
+    </sql>
+
+    <sql id="targetColumns">
+        t.id, t.target_name, t.target_level, t.organization_id,
+        o.organization_name, t.equipment_id, e.equipment_code, e.equipment_name,
+        t.availability_target, t.performance_target, t.quality_target, t.oee_target,
+        t.effective_start_date, t.effective_end_date, t.status, t.description, t.version
+    </sql>
+
+    <select id="findTargets" resultType="com.leantpm.oee.OeeDtos$TargetRow">
+        SELECT <include refid="targetColumns"/>
+        FROM equipment_oee_target t
+        LEFT JOIN organization o
+          ON o.tenant_id = t.tenant_id AND o.id = t.organization_id AND o.deleted = 0
+        LEFT JOIN equipment e
+          ON e.tenant_id = t.tenant_id AND e.id = t.equipment_id AND e.deleted = 0
+        WHERE <include refid="targetFilters"/>
+        ORDER BY t.effective_start_date DESC, t.id DESC
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
+    <select id="countTargets" resultType="long">
+        SELECT COUNT(*)
+        FROM equipment_oee_target t
+        LEFT JOIN organization o
+          ON o.tenant_id = t.tenant_id AND o.id = t.organization_id AND o.deleted = 0
+        LEFT JOIN equipment e
+          ON e.tenant_id = t.tenant_id AND e.id = t.equipment_id AND e.deleted = 0
+        WHERE <include refid="targetFilters"/>
+    </select>
+
+    <select id="findTarget" resultType="com.leantpm.oee.OeeDtos$TargetRow">
+        SELECT <include refid="targetColumns"/>
+        FROM equipment_oee_target t
+        LEFT JOIN organization o
+          ON o.tenant_id = t.tenant_id AND o.id = t.organization_id AND o.deleted = 0
+        LEFT JOIN equipment e
+          ON e.tenant_id = t.tenant_id AND e.id = t.equipment_id AND e.deleted = 0
+        WHERE t.tenant_id = #{tenantId}
+          AND t.id = #{id}
+          AND t.deleted = 0
+          AND <include refid="targetScope"/>
+    </select>
+
+    <select id="countOverlappingTarget" resultType="int">
+        SELECT COUNT(*)
+        FROM equipment_oee_target
+        WHERE tenant_id = #{tenantId}
+          AND target_level = #{request.targetLevel}
+          AND organization_id &lt;=&gt; #{request.organizationId}
+          AND equipment_id &lt;=&gt; #{request.equipmentId}
+          AND status = 1
+          AND deleted = 0
+          AND effective_start_date &lt;= COALESCE(#{request.effectiveEndDate}, '9999-12-31')
+          AND COALESCE(effective_end_date, '9999-12-31') &gt;= #{request.effectiveStartDate}
+          <if test="excludeId != null">AND id != #{excludeId}</if>
+    </select>
+
+    <insert id="insertTarget">
+        INSERT INTO equipment_oee_target
+            (tenant_id, target_name, target_level, organization_id, equipment_id,
+             availability_target, performance_target, quality_target, oee_target,
+             effective_start_date, effective_end_date, status, description,
+             created_by, updated_by)
+        VALUES
+            (#{tenantId}, #{request.targetName}, #{request.targetLevel},
+             #{request.organizationId}, #{request.equipmentId},
+             #{request.availabilityTarget}, #{request.performanceTarget},
+             #{request.qualityTarget}, #{oeeTarget}, #{request.effectiveStartDate},
+             #{request.effectiveEndDate}, #{request.status}, #{request.description},
+             #{operatorId}, #{operatorId})
+    </insert>
+
+    <select id="lastInsertId" resultType="long">
+        SELECT LAST_INSERT_ID()
+    </select>
+
+    <update id="updateTarget">
+        UPDATE equipment_oee_target
+        SET target_name = #{request.targetName},
+            target_level = #{request.targetLevel},
+            organization_id = #{request.organizationId},
+            equipment_id = #{request.equipmentId},
+            availability_target = #{request.availabilityTarget},
+            performance_target = #{request.performanceTarget},
+            quality_target = #{request.qualityTarget},
+            oee_target = #{oeeTarget},
+            effective_start_date = #{request.effectiveStartDate},
+            effective_end_date = #{request.effectiveEndDate},
+            status = #{request.status},
+            description = #{request.description},
+            updated_by = #{operatorId},
+            version = version + 1
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND version = #{request.version}
+          AND deleted = 0
+    </update>
+
+    <update id="deleteTarget">
+        UPDATE equipment_oee_target
+        SET deleted = 1, status = 0, updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND version = #{version}
+          AND deleted = 0
+    </update>
+
+    <sql id="lossReasonFilters">
+        r.tenant_id = #{tenantId} AND r.deleted = 0
+        <if test="keyword != null and keyword != ''">
+            AND (r.reason_code LIKE CONCAT('%', #{keyword}, '%')
+                 OR r.reason_name LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        <if test="lossCategory != null and lossCategory != ''">AND r.loss_category = #{lossCategory}</if>
+        <if test="status != null">AND r.status = #{status}</if>
+    </sql>
+
+    <sql id="lossReasonColumns">
+        r.id, r.parent_id, r.reason_code, r.reason_name, r.loss_category,
+        r.affects_metric, r.planned_flag, r.color, r.sort_order, r.status,
+        r.description,
+        (SELECT COUNT(*) FROM equipment_downtime_record d
+         WHERE d.tenant_id = r.tenant_id AND d.loss_reason_id = r.id AND d.deleted = 0)
+         AS reference_count,
+        r.version
+    </sql>
+
+    <select id="findLossReasons" resultType="com.leantpm.oee.OeeDtos$LossReasonRow">
+        SELECT <include refid="lossReasonColumns"/>
+        FROM equipment_loss_reason r
+        WHERE <include refid="lossReasonFilters"/>
+        ORDER BY r.parent_id, r.sort_order, r.id
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
+    <select id="countLossReasons" resultType="long">
+        SELECT COUNT(*)
+        FROM equipment_loss_reason r
+        WHERE <include refid="lossReasonFilters"/>
+    </select>
+
+    <select id="findLossReason" resultType="com.leantpm.oee.OeeDtos$LossReasonRow">
+        SELECT <include refid="lossReasonColumns"/>
+        FROM equipment_loss_reason r
+        WHERE r.tenant_id = #{tenantId} AND r.id = #{id} AND r.deleted = 0
+    </select>
+
+    <select id="countLossReasonCode" resultType="int">
+        SELECT COUNT(*)
+        FROM equipment_loss_reason
+        WHERE tenant_id = #{tenantId}
+          AND reason_code = #{reasonCode}
+          AND deleted = 0
+          <if test="excludeId != null">AND id != #{excludeId}</if>
+    </select>
+
+    <insert id="insertLossReason">
+        INSERT INTO equipment_loss_reason
+            (tenant_id, parent_id, reason_code, reason_name, loss_category,
+             affects_metric, planned_flag, color, sort_order, status, description,
+             created_by, updated_by)
+        VALUES
+            (#{tenantId}, #{request.parentId}, #{request.reasonCode},
+             #{request.reasonName}, #{request.lossCategory}, #{request.affectsMetric},
+             #{request.plannedFlag}, #{request.color}, #{request.sortOrder},
+             #{request.status}, #{request.description}, #{operatorId}, #{operatorId})
+    </insert>
+
+    <select id="findLossReasonIdByCode" resultType="long">
+        SELECT id FROM equipment_loss_reason
+        WHERE tenant_id = #{tenantId} AND reason_code = #{reasonCode} AND deleted = 0
+    </select>
+
+    <update id="updateLossReason">
+        UPDATE equipment_loss_reason
+        SET parent_id = #{request.parentId},
+            reason_code = #{request.reasonCode},
+            reason_name = #{request.reasonName},
+            loss_category = #{request.lossCategory},
+            affects_metric = #{request.affectsMetric},
+            planned_flag = #{request.plannedFlag},
+            color = #{request.color},
+            sort_order = #{request.sortOrder},
+            status = #{request.status},
+            description = #{request.description},
+            updated_by = #{operatorId},
+            version = version + 1
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND version = #{request.version}
+          AND deleted = 0
+    </update>
+
+    <select id="countLossReasonChildren" resultType="int">
+        SELECT COUNT(*) FROM equipment_loss_reason
+        WHERE tenant_id = #{tenantId} AND parent_id = #{id} AND deleted = 0
+    </select>
+
+    <select id="countLossReasonReferences" resultType="int">
+        SELECT COUNT(*) FROM equipment_downtime_record
+        WHERE tenant_id = #{tenantId} AND loss_reason_id = #{id} AND deleted = 0
+    </select>
+
+    <update id="deleteLossReason">
+        UPDATE equipment_loss_reason
+        SET deleted = 1, status = 0, updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND version = #{version}
+          AND deleted = 0
+    </update>
+
+    <sql id="outputFilters">
+        p.tenant_id = #{tenantId} AND p.deleted = 0
+        AND <include refid="equipmentScope"/>
+        <if test="equipmentId != null">AND p.equipment_id = #{equipmentId}</if>
+        <if test="startDate != null">AND p.production_date &gt;= #{startDate}</if>
+        <if test="endDate != null">AND p.production_date &lt;= #{endDate}</if>
+    </sql>
+
+    <sql id="outputColumns">
+        p.id, p.equipment_id, e.equipment_code, e.equipment_name,
+        p.organization_id, o.organization_name, p.production_date,
+        p.shift_id, s.shift_name, p.planned_quantity, p.actual_quantity,
+        p.good_quantity, p.defective_quantity, p.source_type,
+        p.source_reference, p.remark, p.version
+    </sql>
+
+    <select id="findOutputs" resultType="com.leantpm.oee.OeeDtos$OutputRow">
+        SELECT <include refid="outputColumns"/>
+        FROM equipment_output_record p
+        JOIN equipment e
+          ON e.tenant_id = p.tenant_id AND e.id = p.equipment_id AND e.deleted = 0
+        JOIN organization o
+          ON o.tenant_id = p.tenant_id AND o.id = p.organization_id AND o.deleted = 0
+        JOIN equipment_shift s
+          ON s.tenant_id = p.tenant_id AND s.id = p.shift_id AND s.deleted = 0
+        WHERE <include refid="outputFilters"/>
+        ORDER BY p.production_date DESC, s.sort_order, e.equipment_code
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
+    <select id="countOutputs" resultType="long">
+        SELECT COUNT(*)
+        FROM equipment_output_record p
+        JOIN equipment e
+          ON e.tenant_id = p.tenant_id AND e.id = p.equipment_id AND e.deleted = 0
+        WHERE <include refid="outputFilters"/>
+    </select>
+
+    <select id="findOutput" resultType="com.leantpm.oee.OeeDtos$OutputRow">
+        SELECT <include refid="outputColumns"/>
+        FROM equipment_output_record p
+        JOIN equipment e
+          ON e.tenant_id = p.tenant_id AND e.id = p.equipment_id AND e.deleted = 0
+        JOIN organization o
+          ON o.tenant_id = p.tenant_id AND o.id = p.organization_id AND o.deleted = 0
+        JOIN equipment_shift s
+          ON s.tenant_id = p.tenant_id AND s.id = p.shift_id AND s.deleted = 0
+        WHERE p.tenant_id = #{tenantId}
+          AND p.id = #{id}
+          AND p.deleted = 0
+          AND <include refid="equipmentScope"/>
+    </select>
+
+    <select id="findOutputByKey" resultType="com.leantpm.oee.OeeDtos$OutputRow">
+        SELECT <include refid="outputColumns"/>
+        FROM equipment_output_record p
+        JOIN equipment e
+          ON e.tenant_id = p.tenant_id AND e.id = p.equipment_id AND e.deleted = 0
+        JOIN organization o
+          ON o.tenant_id = p.tenant_id AND o.id = p.organization_id AND o.deleted = 0
+        JOIN equipment_shift s
+          ON s.tenant_id = p.tenant_id AND s.id = p.shift_id AND s.deleted = 0
+        WHERE p.tenant_id = #{tenantId}
+          AND p.equipment_id = #{equipmentId}
+          AND p.production_date = #{productionDate}
+          AND p.shift_id = #{shiftId}
+          AND p.deleted = 0
+    </select>
+
+    <insert id="insertOutput">
+        INSERT INTO equipment_output_record
+            (tenant_id, equipment_id, organization_id, production_date, shift_id,
+             planned_quantity, actual_quantity, good_quantity, defective_quantity,
+             source_type, source_reference, remark, created_by, updated_by)
+        VALUES
+            (#{tenantId}, #{request.equipmentId}, #{organizationId},
+             #{request.productionDate}, #{request.shiftId}, #{request.plannedQuantity},
+             #{request.actualQuantity}, #{request.goodQuantity},
+             #{request.defectiveQuantity}, #{request.sourceType},
+             #{request.sourceReference}, #{request.remark}, #{operatorId}, #{operatorId})
+    </insert>
+
+    <update id="updateOutput">
+        UPDATE equipment_output_record
+        SET equipment_id = #{request.equipmentId},
+            organization_id = #{organizationId},
+            production_date = #{request.productionDate},
+            shift_id = #{request.shiftId},
+            planned_quantity = #{request.plannedQuantity},
+            actual_quantity = #{request.actualQuantity},
+            good_quantity = #{request.goodQuantity},
+            defective_quantity = #{request.defectiveQuantity},
+            source_type = #{request.sourceType},
+            source_reference = #{request.sourceReference},
+            remark = #{request.remark},
+            updated_by = #{operatorId},
+            version = version + 1
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND version = #{request.version}
+          AND deleted = 0
+    </update>
+
+    <update id="deleteOutput">
+        UPDATE equipment_output_record
+        SET deleted = 1, updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND version = #{version}
+          AND deleted = 0
+    </update>
+
+    <update id="syncRecordOutput">
+        UPDATE equipment_oee_record
+        SET planned_quantity = #{request.plannedQuantity},
+            actual_quantity = #{request.actualQuantity},
+            good_quantity = #{request.goodQuantity},
+            defective_quantity = #{request.defectiveQuantity},
+            source_type = #{request.sourceType},
+            data_status = 'DRAFT',
+            approved_by = NULL,
+            approved_time = NULL,
+            updated_by = #{operatorId}
+        WHERE tenant_id = #{tenantId}
+          AND equipment_id = #{request.equipmentId}
+          AND production_date = #{request.productionDate}
+          AND shift_id = #{request.shiftId}
+          AND data_status != 'LOCKED'
+          AND deleted = 0
+    </update>
+
+    <update id="clearRecordOutput">
+        UPDATE equipment_oee_record
+        SET planned_quantity = 0,
+            actual_quantity = 0,
+            good_quantity = 0,
+            defective_quantity = 0,
+            data_status = 'DRAFT',
+            approved_by = NULL,
+            approved_time = NULL,
+            updated_by = #{operatorId}
+        WHERE tenant_id = #{tenantId}
+          AND equipment_id = #{equipmentId}
+          AND production_date = #{productionDate}
+          AND shift_id = #{shiftId}
+          AND data_status != 'LOCKED'
+          AND deleted = 0
+    </update>
+
+    <sql id="downtimeFilters">
+        d.tenant_id = #{tenantId} AND d.deleted = 0
+        AND <include refid="equipmentScope"/>
+        <if test="equipmentId != null">AND d.equipment_id = #{equipmentId}</if>
+        <if test="startDate != null">AND d.production_date &gt;= #{startDate}</if>
+        <if test="endDate != null">AND d.production_date &lt;= #{endDate}</if>
+        <if test="lossReasonId != null">AND d.loss_reason_id = #{lossReasonId}</if>
+    </sql>
+
+    <sql id="downtimeColumns">
+        d.id, d.equipment_id, e.equipment_code, e.equipment_name,
+        d.organization_id, o.organization_name, d.production_date,
+        d.shift_id, s.shift_name, d.loss_reason_id, r.reason_code,
+        r.reason_name, r.loss_category, r.affects_metric, d.started_time,
+        d.ended_time, d.duration_minutes, d.planned_flag, d.source_type,
+        d.source_reference, d.description, d.version
+    </sql>
+
+    <select id="findDowntimes" resultType="com.leantpm.oee.OeeDtos$DowntimeRow">
+        SELECT <include refid="downtimeColumns"/>
+        FROM equipment_downtime_record d
+        JOIN equipment e
+          ON e.tenant_id = d.tenant_id AND e.id = d.equipment_id AND e.deleted = 0
+        JOIN organization o
+          ON o.tenant_id = d.tenant_id AND o.id = d.organization_id AND o.deleted = 0
+        JOIN equipment_shift s
+          ON s.tenant_id = d.tenant_id AND s.id = d.shift_id AND s.deleted = 0
+        JOIN equipment_loss_reason r
+          ON r.tenant_id = d.tenant_id AND r.id = d.loss_reason_id AND r.deleted = 0
+        WHERE <include refid="downtimeFilters"/>
+        ORDER BY d.production_date DESC, d.started_time DESC, d.id DESC
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
+    <select id="countDowntimes" resultType="long">
+        SELECT COUNT(*)
+        FROM equipment_downtime_record d
+        JOIN equipment e
+          ON e.tenant_id = d.tenant_id AND e.id = d.equipment_id AND e.deleted = 0
+        WHERE <include refid="downtimeFilters"/>
+    </select>
+
+    <select id="findDowntime" resultType="com.leantpm.oee.OeeDtos$DowntimeRow">
+        SELECT <include refid="downtimeColumns"/>
+        FROM equipment_downtime_record d
+        JOIN equipment e
+          ON e.tenant_id = d.tenant_id AND e.id = d.equipment_id AND e.deleted = 0
+        JOIN organization o
+          ON o.tenant_id = d.tenant_id AND o.id = d.organization_id AND o.deleted = 0
+        JOIN equipment_shift s
+          ON s.tenant_id = d.tenant_id AND s.id = d.shift_id AND s.deleted = 0
+        JOIN equipment_loss_reason r
+          ON r.tenant_id = d.tenant_id AND r.id = d.loss_reason_id AND r.deleted = 0
+        WHERE d.tenant_id = #{tenantId}
+          AND d.id = #{id}
+          AND d.deleted = 0
+          AND <include refid="equipmentScope"/>
+    </select>
+
+    <insert id="insertDowntime">
+        INSERT INTO equipment_downtime_record
+            (tenant_id, equipment_id, organization_id, production_date, shift_id,
+             loss_reason_id, started_time, ended_time, duration_minutes,
+             planned_flag, source_type, source_reference, description,
+             created_by, updated_by)
+        VALUES
+            (#{tenantId}, #{request.equipmentId}, #{organizationId},
+             #{request.productionDate}, #{request.shiftId}, #{request.lossReasonId},
+             #{request.startedTime}, #{request.endedTime}, #{request.durationMinutes},
+             #{request.plannedFlag}, #{request.sourceType}, #{request.sourceReference},
+             #{request.description}, #{operatorId}, #{operatorId})
+    </insert>
+
+    <update id="updateDowntime">
+        UPDATE equipment_downtime_record
+        SET equipment_id = #{request.equipmentId},
+            organization_id = #{organizationId},
+            production_date = #{request.productionDate},
+            shift_id = #{request.shiftId},
+            loss_reason_id = #{request.lossReasonId},
+            started_time = #{request.startedTime},
+            ended_time = #{request.endedTime},
+            duration_minutes = #{request.durationMinutes},
+            planned_flag = #{request.plannedFlag},
+            source_type = #{request.sourceType},
+            source_reference = #{request.sourceReference},
+            description = #{request.description},
+            updated_by = #{operatorId},
+            version = version + 1
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND version = #{request.version}
+          AND deleted = 0
+    </update>
+
+    <update id="deleteDowntime">
+        UPDATE equipment_downtime_record
+        SET deleted = 1, updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND version = #{version}
+          AND deleted = 0
+    </update>
+
+    <select id="sumDowntime" resultType="java.math.BigDecimal">
+        SELECT COALESCE(SUM(d.duration_minutes), 0)
+        FROM equipment_downtime_record d
+        JOIN equipment_loss_reason reason
+          ON reason.tenant_id = d.tenant_id
+         AND reason.id = d.loss_reason_id
+         AND reason.deleted = 0
+        WHERE d.tenant_id = #{tenantId}
+          AND d.equipment_id = #{equipmentId}
+          AND d.production_date = #{productionDate}
+          AND d.shift_id = #{shiftId}
+          AND d.planned_flag = #{plannedFlag}
+          AND d.deleted = 0
+          AND (
+              (#{plannedFlag} = 0 AND reason.affects_metric = 'AVAILABILITY')
+              OR #{plannedFlag} = 1
+          )
+    </select>
+
+    <sql id="recordFilters">
+        r.tenant_id = #{tenantId} AND r.deleted = 0
+        AND <include refid="equipmentScope"/>
+        <if test="equipmentId != null">AND r.equipment_id = #{equipmentId}</if>
+        <if test="organizationId != null">AND r.organization_id = #{organizationId}</if>
+        <if test="dataStatus != null and dataStatus != ''">AND r.data_status = #{dataStatus}</if>
+        <if test="startDate != null">AND r.production_date &gt;= #{startDate}</if>
+        <if test="endDate != null">AND r.production_date &lt;= #{endDate}</if>
+    </sql>
+
+    <sql id="recordColumns">
+        r.id, r.equipment_id, e.equipment_code, e.equipment_name,
+        r.organization_id, o.organization_name, r.production_date,
+        r.shift_id, s.shift_name, r.standard_cycle_seconds,
+        r.planned_work_minutes, r.planned_downtime_minutes,
+        r.loading_time_minutes, r.unplanned_downtime_minutes,
+        r.run_time_minutes, r.planned_quantity, r.actual_quantity,
+        r.good_quantity, r.defective_quantity, r.availability_rate,
+        r.performance_rate, r.quality_rate, r.oee_rate, r.target_oee_rate,
+        r.data_status, r.anomaly_flag, r.anomaly_message, r.source_type,
+        r.calculated_time, approved_user.real_name AS approved_by_name,
+        r.approved_time, locked_user.real_name AS locked_by_name,
+        r.locked_time, r.version
+    </sql>
+
+    <sql id="recordJoins">
+        JOIN equipment e
+          ON e.tenant_id = r.tenant_id AND e.id = r.equipment_id AND e.deleted = 0
+        JOIN organization o
+          ON o.tenant_id = r.tenant_id AND o.id = r.organization_id AND o.deleted = 0
+        JOIN equipment_shift s
+          ON s.tenant_id = r.tenant_id AND s.id = r.shift_id AND s.deleted = 0
+        LEFT JOIN system_user approved_user
+          ON approved_user.tenant_id = r.tenant_id AND approved_user.id = r.approved_by
+        LEFT JOIN system_user locked_user
+          ON locked_user.tenant_id = r.tenant_id AND locked_user.id = r.locked_by
+    </sql>
+
+    <select id="findRecords" resultType="com.leantpm.oee.OeeDtos$OeeRecordRow">
+        SELECT <include refid="recordColumns"/>
+        FROM equipment_oee_record r
+        <include refid="recordJoins"/>
+        WHERE <include refid="recordFilters"/>
+        ORDER BY r.production_date DESC, s.sort_order, e.equipment_code
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
+    <select id="countRecords" resultType="long">
+        SELECT COUNT(*)
+        FROM equipment_oee_record r
+        JOIN equipment e
+          ON e.tenant_id = r.tenant_id AND e.id = r.equipment_id AND e.deleted = 0
+        WHERE <include refid="recordFilters"/>
+    </select>
+
+    <select id="findRecord" resultType="com.leantpm.oee.OeeDtos$OeeRecordRow">
+        SELECT <include refid="recordColumns"/>
+        FROM equipment_oee_record r
+        <include refid="recordJoins"/>
+        WHERE r.tenant_id = #{tenantId}
+          AND r.id = #{id}
+          AND r.deleted = 0
+          AND <include refid="equipmentScope"/>
+    </select>
+
+    <select id="findRecordByKey" resultType="com.leantpm.oee.OeeDtos$OeeRecordRow">
+        SELECT <include refid="recordColumns"/>
+        FROM equipment_oee_record r
+        <include refid="recordJoins"/>
+        WHERE r.tenant_id = #{tenantId}
+          AND r.equipment_id = #{equipmentId}
+          AND r.production_date = #{productionDate}
+          AND r.shift_id = #{shiftId}
+          AND r.deleted = 0
+    </select>
+
+    <insert id="insertRecord">
+        INSERT INTO equipment_oee_record
+            (tenant_id, equipment_id, organization_id, production_date, shift_id,
+             standard_cycle_seconds, planned_work_minutes, planned_downtime_minutes,
+             loading_time_minutes, unplanned_downtime_minutes, run_time_minutes,
+             planned_quantity, actual_quantity, good_quantity, defective_quantity,
+             availability_rate, performance_rate, quality_rate, oee_rate,
+             target_oee_rate, data_status, anomaly_flag, anomaly_message, source_type,
+             calculated_by, calculated_time, created_by, updated_by)
+        VALUES
+            (#{tenantId}, #{request.equipmentId}, #{organizationId},
+             #{request.productionDate}, #{request.shiftId},
+             #{request.standardCycleSeconds}, #{request.plannedWorkMinutes},
+             #{request.plannedDowntimeMinutes}, #{calculation.loadingTimeMinutes},
+             #{calculation.unplannedDowntimeMinutes}, #{calculation.runTimeMinutes},
+             #{request.plannedQuantity}, #{request.actualQuantity},
+             #{request.goodQuantity}, #{request.defectiveQuantity},
+             #{calculation.availabilityRate}, #{calculation.performanceRate},
+             #{calculation.qualityRate}, #{calculation.oeeRate},
+             #{calculation.targetOeeRate}, 'DRAFT', #{calculation.anomalyFlag},
+             #{calculation.anomalyMessage}, #{request.sourceType},
+             #{operatorId}, CURRENT_TIMESTAMP(3), #{operatorId}, #{operatorId})
+    </insert>
+
+    <update id="updateRecord">
+        UPDATE equipment_oee_record
+        SET equipment_id = #{request.equipmentId},
+            organization_id = #{organizationId},
+            production_date = #{request.productionDate},
+            shift_id = #{request.shiftId},
+            standard_cycle_seconds = #{request.standardCycleSeconds},
+            planned_work_minutes = #{request.plannedWorkMinutes},
+            planned_downtime_minutes = #{request.plannedDowntimeMinutes},
+            loading_time_minutes = #{calculation.loadingTimeMinutes},
+            unplanned_downtime_minutes = #{calculation.unplannedDowntimeMinutes},
+            run_time_minutes = #{calculation.runTimeMinutes},
+            planned_quantity = #{request.plannedQuantity},
+            actual_quantity = #{request.actualQuantity},
+            good_quantity = #{request.goodQuantity},
+            defective_quantity = #{request.defectiveQuantity},
+            availability_rate = #{calculation.availabilityRate},
+            performance_rate = #{calculation.performanceRate},
+            quality_rate = #{calculation.qualityRate},
+            oee_rate = #{calculation.oeeRate},
+            target_oee_rate = #{calculation.targetOeeRate},
+            anomaly_flag = #{calculation.anomalyFlag},
+            anomaly_message = #{calculation.anomalyMessage},
+            source_type = #{request.sourceType},
+            data_status = 'DRAFT',
+            approved_by = NULL,
+            approved_time = NULL,
+            calculated_by = #{operatorId},
+            calculated_time = CURRENT_TIMESTAMP(3),
+            updated_by = #{operatorId},
+            version = version + 1
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND version = #{request.version}
+          AND data_status != 'LOCKED'
+          AND deleted = 0
+    </update>
+
+    <update id="updateRecordCalculation">
+        UPDATE equipment_oee_record
+        SET loading_time_minutes = #{calculation.loadingTimeMinutes},
+            unplanned_downtime_minutes = #{calculation.unplannedDowntimeMinutes},
+            run_time_minutes = #{calculation.runTimeMinutes},
+            availability_rate = #{calculation.availabilityRate},
+            performance_rate = #{calculation.performanceRate},
+            quality_rate = #{calculation.qualityRate},
+            oee_rate = #{calculation.oeeRate},
+            target_oee_rate = #{calculation.targetOeeRate},
+            anomaly_flag = #{calculation.anomalyFlag},
+            anomaly_message = #{calculation.anomalyMessage},
+            data_status = 'DRAFT',
+            approved_by = NULL,
+            approved_time = NULL,
+            calculated_by = #{operatorId},
+            calculated_time = CURRENT_TIMESTAMP(3),
+            updated_by = #{operatorId},
+            version = version + 1
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND version = #{version}
+          AND data_status != 'LOCKED'
+          AND deleted = 0
+    </update>
+
+    <update id="updateRecordWorkflow">
+        UPDATE equipment_oee_record
+        SET data_status = #{toStatus},
+            approved_by = CASE
+                WHEN #{fromStatus} = 'SUBMITTED' AND #{toStatus} = 'APPROVED'
+                    THEN #{operatorId}
+                ELSE approved_by
+            END,
+            approved_time = CASE
+                WHEN #{fromStatus} = 'SUBMITTED' AND #{toStatus} = 'APPROVED'
+                    THEN CURRENT_TIMESTAMP(3)
+                ELSE approved_time
+            END,
+            locked_by = CASE WHEN #{toStatus} = 'LOCKED' THEN #{operatorId}
+                             WHEN #{fromStatus} = 'LOCKED' THEN NULL ELSE locked_by END,
+            locked_time = CASE WHEN #{toStatus} = 'LOCKED' THEN CURRENT_TIMESTAMP(3)
+                               WHEN #{fromStatus} = 'LOCKED' THEN NULL ELSE locked_time END,
+            updated_by = #{operatorId},
+            version = version + 1
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND data_status = #{fromStatus}
+          AND version = #{version}
+          AND deleted = 0
+    </update>
+
+    <select id="findTargetRate" resultType="java.math.BigDecimal">
+        WITH RECURSIVE organization_ancestors AS (
+            SELECT id, parent_id, organization_type, 0 AS depth
+            FROM organization
+            WHERE tenant_id = #{tenantId} AND id = #{organizationId} AND deleted = 0
+            UNION ALL
+            SELECT parent.id, parent.parent_id, parent.organization_type, child.depth + 1
+            FROM organization parent
+            JOIN organization_ancestors child ON child.parent_id = parent.id
+            WHERE parent.tenant_id = #{tenantId} AND parent.deleted = 0
+        )
+        SELECT target.oee_target
+        FROM equipment_oee_target target
+        LEFT JOIN organization_ancestors ancestor
+          ON ancestor.id = target.organization_id
+        WHERE target.tenant_id = #{tenantId}
+          AND target.status = 1
+          AND target.deleted = 0
+          AND target.effective_start_date &lt;= #{productionDate}
+          AND (target.effective_end_date IS NULL OR target.effective_end_date &gt;= #{productionDate})
+          AND (
+              (target.target_level = 'EQUIPMENT' AND target.equipment_id = #{equipmentId})
+              OR (target.target_level != 'EQUIPMENT' AND ancestor.id IS NOT NULL)
+          )
+        ORDER BY
+            CASE WHEN target.target_level = 'EQUIPMENT' THEN 0 ELSE 1 END,
+            COALESCE(ancestor.depth, 999),
+            target.effective_start_date DESC,
+            target.id DESC
+        LIMIT 1
+    </select>
+
+    <select id="nextCalculationVersion" resultType="int">
+        SELECT COALESCE(MAX(calculation_version), 0) + 1
+        FROM equipment_oee_calculation_log
+        WHERE tenant_id = #{tenantId} AND oee_record_id = #{recordId}
+    </select>
+
+    <insert id="insertCalculationLog">
+        INSERT INTO equipment_oee_calculation_log
+            (tenant_id, oee_record_id, calculation_version, trigger_type,
+             formula_version, input_snapshot, output_snapshot, validation_message,
+             calculated_by)
+        VALUES
+            (#{tenantId}, #{recordId}, #{calculationVersion}, #{triggerType},
+             'OEE_V1', CAST(#{inputSnapshot} AS JSON), CAST(#{outputSnapshot} AS JSON),
+             #{validationMessage}, #{operatorId})
+    </insert>
+
+    <select id="findCalculationLogs" resultType="com.leantpm.oee.OeeDtos$CalculationLogRow">
+        SELECT log.id, log.oee_record_id, log.calculation_version, log.trigger_type,
+               log.formula_version, CAST(log.input_snapshot AS CHAR) AS input_snapshot,
+               CAST(log.output_snapshot AS CHAR) AS output_snapshot,
+               log.validation_message, user.real_name AS calculated_by_name,
+               log.calculated_time
+        FROM equipment_oee_calculation_log log
+        LEFT JOIN system_user user
+          ON user.tenant_id = log.tenant_id AND user.id = log.calculated_by
+        WHERE log.tenant_id = #{tenantId}
+          AND log.oee_record_id = #{recordId}
+        ORDER BY log.calculation_version DESC
+    </select>
+
+    <sql id="analysisFilters">
+        r.tenant_id = #{tenantId}
+        AND r.deleted = 0
+        AND r.data_status IN ('APPROVED', 'LOCKED')
+        AND r.production_date BETWEEN #{startDate} AND #{endDate}
+        AND <include refid="equipmentScope"/>
+        <if test="organizationIds != null and !organizationIds.isEmpty()">
+            AND r.organization_id IN
+            <foreach collection="organizationIds" item="selectedOrganizationId"
+                     open="(" separator="," close=")">
+                #{selectedOrganizationId}
+            </foreach>
+        </if>
+        <if test="equipmentId != null">AND r.equipment_id = #{equipmentId}</if>
+    </sql>
+
+    <select id="analysisSummary" resultType="com.leantpm.oee.OeeDtos$AnalysisSummary">
+        SELECT
+            COALESCE(ROUND(SUM(r.run_time_minutes) / NULLIF(SUM(r.loading_time_minutes), 0), 6), 0)
+                AS availability_rate,
+            COALESCE(CASE WHEN #{capPerformance}
+                THEN LEAST(ROUND(
+                    SUM(r.standard_cycle_seconds * r.actual_quantity / 60)
+                    / NULLIF(SUM(r.run_time_minutes), 0), 6), 1)
+                ELSE ROUND(
+                    SUM(r.standard_cycle_seconds * r.actual_quantity / 60)
+                    / NULLIF(SUM(r.run_time_minutes), 0), 6)
+                END, 0)
+                AS performance_rate,
+            COALESCE(ROUND(SUM(r.good_quantity) / NULLIF(SUM(r.actual_quantity), 0), 6), 0)
+                AS quality_rate,
+            COALESCE(ROUND(
+                (SUM(r.run_time_minutes) / NULLIF(SUM(r.loading_time_minutes), 0))
+                * CASE WHEN #{capPerformance}
+                    THEN LEAST(
+                        SUM(r.standard_cycle_seconds * r.actual_quantity / 60)
+                        / NULLIF(SUM(r.run_time_minutes), 0), 1)
+                    ELSE SUM(r.standard_cycle_seconds * r.actual_quantity / 60)
+                        / NULLIF(SUM(r.run_time_minutes), 0)
+                  END
+                * (SUM(r.good_quantity) / NULLIF(SUM(r.actual_quantity), 0)), 6), 0)
+                AS oee_rate,
+            COALESCE(ROUND(AVG(r.target_oee_rate), 6), 0) AS target_oee_rate,
+            COUNT(*) AS record_count,
+            SUM(CASE WHEN r.target_oee_rate IS NOT NULL AND r.oee_rate &lt; r.target_oee_rate
+                     THEN 1 ELSE 0 END) AS below_target_count,
+            COALESCE(SUM(r.planned_work_minutes), 0) AS planned_work_minutes,
+            COALESCE(SUM(r.run_time_minutes), 0) AS run_time_minutes,
+            COALESCE(SUM(r.actual_quantity), 0) AS actual_quantity,
+            COALESCE(SUM(r.good_quantity), 0) AS good_quantity
+        FROM equipment_oee_record r
+        JOIN equipment e
+          ON e.tenant_id = r.tenant_id AND e.id = r.equipment_id AND e.deleted = 0
+        WHERE <include refid="analysisFilters"/>
+    </select>
+
+    <select id="analysisTrend" resultType="com.leantpm.oee.OeeDtos$TrendPoint">
+        SELECT
+            CASE #{period}
+                WHEN 'WEEK' THEN DATE_FORMAT(DATE_SUB(r.production_date,
+                    INTERVAL WEEKDAY(r.production_date) DAY), '%Y-%m-%d')
+                WHEN 'MONTH' THEN DATE_FORMAT(r.production_date, '%Y-%m')
+                ELSE DATE_FORMAT(r.production_date, '%Y-%m-%d')
+            END AS period,
+            COALESCE(ROUND(SUM(r.run_time_minutes) / NULLIF(SUM(r.loading_time_minutes), 0), 6), 0)
+                AS availability_rate,
+            COALESCE(CASE WHEN #{capPerformance}
+                THEN LEAST(ROUND(
+                    SUM(r.standard_cycle_seconds * r.actual_quantity / 60)
+                    / NULLIF(SUM(r.run_time_minutes), 0), 6), 1)
+                ELSE ROUND(
+                    SUM(r.standard_cycle_seconds * r.actual_quantity / 60)
+                    / NULLIF(SUM(r.run_time_minutes), 0), 6)
+                END, 0)
+                AS performance_rate,
+            COALESCE(ROUND(SUM(r.good_quantity) / NULLIF(SUM(r.actual_quantity), 0), 6), 0)
+                AS quality_rate,
+            COALESCE(ROUND(
+                (SUM(r.run_time_minutes) / NULLIF(SUM(r.loading_time_minutes), 0))
+                * CASE WHEN #{capPerformance}
+                    THEN LEAST(
+                        SUM(r.standard_cycle_seconds * r.actual_quantity / 60)
+                        / NULLIF(SUM(r.run_time_minutes), 0), 1)
+                    ELSE SUM(r.standard_cycle_seconds * r.actual_quantity / 60)
+                        / NULLIF(SUM(r.run_time_minutes), 0)
+                  END
+                * (SUM(r.good_quantity) / NULLIF(SUM(r.actual_quantity), 0)), 6), 0)
+                AS oee_rate,
+            COALESCE(ROUND(AVG(r.target_oee_rate), 6), 0) AS target_oee_rate,
+            COUNT(*) AS record_count
+        FROM equipment_oee_record r
+        JOIN equipment e
+          ON e.tenant_id = r.tenant_id AND e.id = r.equipment_id AND e.deleted = 0
+        WHERE <include refid="analysisFilters"/>
+        GROUP BY period
+        ORDER BY period
+    </select>
+
+    <select id="analysisRanking" resultType="com.leantpm.oee.OeeDtos$RankingRow">
+        WITH RECURSIVE organization_path AS (
+            SELECT equipment.id AS equipment_id,
+                   organization.id AS organization_id,
+                   organization.parent_id,
+                   organization.organization_code,
+                   organization.organization_name,
+                   organization.organization_type
+            FROM equipment
+            JOIN organization
+              ON organization.tenant_id = equipment.tenant_id
+             AND organization.id = equipment.organization_id
+             AND organization.deleted = 0
+            WHERE equipment.tenant_id = #{tenantId}
+              AND equipment.deleted = 0
+            UNION ALL
+            SELECT child.equipment_id,
+                   parent.id,
+                   parent.parent_id,
+                   parent.organization_code,
+                   parent.organization_name,
+                   parent.organization_type
+            FROM organization_path child
+            JOIN organization parent
+              ON parent.tenant_id = #{tenantId}
+             AND parent.id = child.parent_id
+             AND parent.deleted = 0
+        )
+        SELECT
+            CASE WHEN #{rankingType} = 'EQUIPMENT' THEN e.id
+                 ELSE path.organization_id END AS scope_id,
+            CASE WHEN #{rankingType} = 'EQUIPMENT' THEN e.equipment_code
+                 ELSE path.organization_code END AS scope_code,
+            CASE WHEN #{rankingType} = 'EQUIPMENT' THEN e.equipment_name
+                 ELSE path.organization_name END AS scope_name,
+            CASE WHEN #{rankingType} = 'EQUIPMENT' THEN 'EQUIPMENT'
+                 ELSE path.organization_type END AS scope_type,
+            COALESCE(ROUND(SUM(r.run_time_minutes) / NULLIF(SUM(r.loading_time_minutes), 0), 6), 0)
+                AS availability_rate,
+            COALESCE(CASE WHEN #{capPerformance}
+                THEN LEAST(ROUND(
+                    SUM(r.standard_cycle_seconds * r.actual_quantity / 60)
+                    / NULLIF(SUM(r.run_time_minutes), 0), 6), 1)
+                ELSE ROUND(
+                    SUM(r.standard_cycle_seconds * r.actual_quantity / 60)
+                    / NULLIF(SUM(r.run_time_minutes), 0), 6)
+                END, 0)
+                AS performance_rate,
+            COALESCE(ROUND(SUM(r.good_quantity) / NULLIF(SUM(r.actual_quantity), 0), 6), 0)
+                AS quality_rate,
+            COALESCE(ROUND(
+                (SUM(r.run_time_minutes) / NULLIF(SUM(r.loading_time_minutes), 0))
+                * CASE WHEN #{capPerformance}
+                    THEN LEAST(
+                        SUM(r.standard_cycle_seconds * r.actual_quantity / 60)
+                        / NULLIF(SUM(r.run_time_minutes), 0), 1)
+                    ELSE SUM(r.standard_cycle_seconds * r.actual_quantity / 60)
+                        / NULLIF(SUM(r.run_time_minutes), 0)
+                  END
+                * (SUM(r.good_quantity) / NULLIF(SUM(r.actual_quantity), 0)), 6), 0)
+                AS oee_rate,
+            COALESCE(ROUND(AVG(r.target_oee_rate), 6), 0) AS target_oee_rate,
+            COUNT(*) AS record_count
+        FROM equipment_oee_record r
+        JOIN equipment e
+          ON e.tenant_id = r.tenant_id AND e.id = r.equipment_id AND e.deleted = 0
+        JOIN organization_path path
+          ON path.equipment_id = r.equipment_id
+         AND (
+             (#{rankingType} = 'EQUIPMENT' AND path.organization_id = r.organization_id)
+             OR
+             (#{rankingType} != 'EQUIPMENT' AND path.organization_type = #{rankingType})
+         )
+        WHERE <include refid="analysisFilters"/>
+        GROUP BY scope_id, scope_code, scope_name, scope_type
+        ORDER BY oee_rate DESC, scope_id
+        LIMIT #{limit}
+    </select>
+
+    <select id="analysisLosses" resultType="com.leantpm.oee.OeeDtos$LossAnalysisRow">
+        SELECT d.loss_reason_id, reason.reason_code, reason.reason_name,
+               reason.loss_category, reason.affects_metric,
+               SUM(d.duration_minutes) AS duration_minutes,
+               COALESCE(ROUND(
+                   SUM(d.duration_minutes) /
+                   NULLIF(SUM(SUM(d.duration_minutes)) OVER (), 0), 6
+               ), 0) AS proportion,
+               COUNT(*) AS occurrence_count
+        FROM equipment_downtime_record d
+        JOIN equipment e
+          ON e.tenant_id = d.tenant_id AND e.id = d.equipment_id AND e.deleted = 0
+        JOIN equipment_oee_record r
+          ON r.tenant_id = d.tenant_id
+         AND r.equipment_id = d.equipment_id
+         AND r.production_date = d.production_date
+         AND r.shift_id = d.shift_id
+         AND r.data_status IN ('APPROVED', 'LOCKED')
+         AND r.deleted = 0
+        JOIN equipment_loss_reason reason
+          ON reason.tenant_id = d.tenant_id
+         AND reason.id = d.loss_reason_id
+         AND reason.deleted = 0
+        WHERE d.tenant_id = #{tenantId}
+          AND d.deleted = 0
+          AND d.production_date BETWEEN #{startDate} AND #{endDate}
+          AND <include refid="equipmentScope"/>
+          <if test="organizationIds != null and !organizationIds.isEmpty()">
+              AND d.organization_id IN
+              <foreach collection="organizationIds" item="selectedOrganizationId"
+                       open="(" separator="," close=")">
+                  #{selectedOrganizationId}
+              </foreach>
+          </if>
+          <if test="equipmentId != null">AND d.equipment_id = #{equipmentId}</if>
+        GROUP BY d.loss_reason_id, reason.reason_code, reason.reason_name,
+                 reason.loss_category, reason.affects_metric
+        ORDER BY duration_minutes DESC, d.loss_reason_id
+    </select>
+</mapper>
