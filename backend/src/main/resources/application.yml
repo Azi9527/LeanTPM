@@ -30,6 +30,7 @@ spring:
 
 server:
   port: ${LEANTPM_SERVER_PORT:8080}
+  forward-headers-strategy: framework
   servlet:
     encoding:
       charset: UTF-8
@@ -43,10 +44,12 @@ mybatis:
     default-fetch-size: 100
 
 springdoc:
-  swagger-ui:
-    path: /swagger-ui.html
   api-docs:
+    enabled: ${LEANTPM_OPENAPI_ENABLED:true}
     path: /v3/api-docs
+  swagger-ui:
+    enabled: ${LEANTPM_OPENAPI_ENABLED:true}
+    path: /swagger-ui.html
 
 management:
   endpoints:
@@ -64,6 +67,7 @@ leantpm:
     refresh-token-days: ${LEANTPM_REFRESH_TOKEN_DAYS:7}
     max-login-failures: ${LEANTPM_MAX_LOGIN_FAILURES:5}
     failure-window-minutes: ${LEANTPM_FAILURE_WINDOW_MINUTES:10}
+    cors-allowed-origins: ${LEANTPM_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}
   bootstrap:
     admin-password: ${LEANTPM_BOOTSTRAP_ADMIN_PASSWORD:}
   storage:

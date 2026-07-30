@@ -123,3 +123,5 @@ $env:VITE_BACKEND_URL = 'http://127.0.0.1:18080'
 - [M4 OEE 管理交付记录](docs/09-M4-OEE管理交付记录.md)
 - [M5 可视化中心交付记录](docs/10-M5-可视化中心交付记录.md)
 - [M6 移动端与 Android 交付记录](docs/11-M6-移动端与Android交付记录.md)
+- [V1 发布与运维手册](docs/12-V1发布与运维手册.md)
+- [M7 V1.0.0 发布验收记录](docs/13-M7-V1发布验收记录.md)

@@ -4,7 +4,7 @@
 
 M6 已完成统一响应式移动端、设备扫码入口、点检/维保现场执行、加密离线草稿和 Capacitor Android 容器。正式 MySQL 已迁移至 V13，隔离库集成测试、前端构建和 Android APK 构建均通过。
 
-本次产出的调试 APK 位于本机 `runtime/deliverables/LeanTPM-M6-debug.apk`。`runtime` 不进入 Git；任意开发机可通过 `scripts/build-android.ps1` 重新生成。
+当前 V1.0.0 调试 APK 位于本机 `runtime/deliverables/LeanTPM-V1.0.0-debug.apk`。`runtime` 不进入 Git；任意开发机可通过 `scripts/build-android.ps1` 重新生成。
 
 ## 2. 数据库与后端
 
@@ -72,7 +72,7 @@ $env:LEANTPM_ANDROID_KEY_PASSWORD = '由密钥管理系统提供'
 
 ```powershell
 adb devices -l
-adb install -r .\runtime\deliverables\LeanTPM-M6-debug.apk
+adb install -r .\runtime\deliverables\LeanTPM-V1.0.0-debug.apk
 adb shell am start -n com.leantpm.mobile/.MainActivity
 ```
 
@@ -89,10 +89,10 @@ adb shell am start -n com.leantpm.mobile/.MainActivity
 | 前端生产构建 | 通过 |
 | npm 审计 | 0 个已知漏洞 |
 | Android Debug 构建 | `BUILD SUCCESSFUL` |
-| APK 大小 | 40,001,299 字节 |
-| APK SHA-256 | `823D9F28C6FCA68E15282D78008336BF191832C54546621214D5405145F519FF` |
+| APK 大小 | 40,001,295 字节 |
+| APK SHA-256 | `01D2AFA76DA469A2ED44FD304266EF96E67ADE6B8E06453EC50B08EC90028D3B` |
 | APK 签名 | v2 调试签名校验通过 |
-| APK 清单 | `com.leantpm.mobile`，minSdk 26，targetSdk 36 |
+| APK 清单 | `com.leantpm.mobile`，versionName 1.0.0，minSdk 26，targetSdk 36 |
 
 构建机没有已连接 Android 设备，`adb devices -l` 返回空列表，因此没有伪造真机安装结论。接入 API 26+ 真机后，应按上节命令完成安装、登录、扫码、拍照、断网草稿和恢复提交复验。
 

@@ -5,6 +5,7 @@ import com.leantpm.common.api.ApiResponse;
 import com.leantpm.system.log.OperationLogFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.Customizer;
@@ -15,6 +16,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -36,6 +38,28 @@ public class SecurityConfig {
         http
                 .csrf(csrf -> csrf.disable())
                 .cors(Customizer.withDefaults())
+                .headers(headers -> headers
+                        .contentSecurityPolicy(policy -> policy.policyDirectives(
+                                "default-src 'self'; "
+                                        + "script-src 'self'; "
+                                        + "style-src 'self' 'unsafe-inline'; "
+                                        + "img-src 'self' data:; "
+                                        + "font-src 'self'; "
+                                        + "object-src 'none'; "
+                                        + "base-uri 'self'; "
+                                        + "frame-ancestors 'none'"
+                        ))
+                        .referrerPolicy(policy -> policy.policy(
+                                ReferrerPolicyHeaderWriter.ReferrerPolicy.NO_REFERRER
+                        ))
+                        .permissionsPolicyHeader(policy -> policy.policy(
+                                "camera=(), microphone=(), geolocation=()"
+                        ))
+                        .frameOptions(frame -> frame.deny())
+                        .httpStrictTransportSecurity(hsts -> hsts
+                                .includeSubDomains(true)
+                                .preload(true)
+                                .maxAgeInSeconds(31536000)))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(
@@ -75,9 +99,16 @@ public class SecurityConfig {
     }
 
     @Bean
-    public CorsConfigurationSource corsConfigurationSource() {
+    public CorsConfigurationSource corsConfigurationSource(
+            @Value("${leantpm.security.cors-allowed-origins:"
+                    + "http://localhost:5173,http://127.0.0.1:5173}")
+            List<String> allowedOrigins
+    ) {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of("http://localhost:5173", "http://127.0.0.1:5173"));
+        configuration.setAllowedOrigins(allowedOrigins.stream()
+                .map(String::trim)
+                .filter(origin -> !origin.isBlank())
+                .toList());
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);

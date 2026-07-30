@@ -22,7 +22,7 @@ try {
     $env:LEANTPM_TEST_DB_PASSWORD = $MySqlPassword
 
     & mvn.cmd '-Dleantpm.build.directory=target-codex' `
-        '-Dtest=MySqlMigrationIntegrationTest,EquipmentMySqlIntegrationTest,InspectionMySqlIntegrationTest,MaintenanceMySqlIntegrationTest,OeeMySqlIntegrationTest,VisualizationMySqlIntegrationTest,MobileMySqlIntegrationTest' test `
+        '-Dtest=MySqlMigrationIntegrationTest,EquipmentMySqlIntegrationTest,InspectionMySqlIntegrationTest,MaintenanceMySqlIntegrationTest,OeeMySqlIntegrationTest,VisualizationMySqlIntegrationTest,MobileMySqlIntegrationTest,SecurityHeadersMySqlIntegrationTest' test `
         -f (Join-Path $backendRoot 'pom.xml')
     if ($LASTEXITCODE -ne 0) {
         throw 'MySQL integration tests failed'

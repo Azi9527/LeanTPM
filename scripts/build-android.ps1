@@ -82,7 +82,11 @@ if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
     $OutputDirectory = Join-Path $repositoryRoot 'runtime\deliverables'
 }
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
-$destinationApk = Join-Path $OutputDirectory "LeanTPM-M6-$variant.apk"
+$packageMetadata = Get-Content -LiteralPath (Join-Path $frontendRoot 'package.json') -Raw |
+    ConvertFrom-Json
+$destinationApk = Join-Path $OutputDirectory (
+    "LeanTPM-V$($packageMetadata.version)-$variant.apk"
+)
 Copy-Item -LiteralPath $sourceApk -Destination $destinationApk -Force
 
 $apkSigner = Get-ChildItem -LiteralPath (Join-Path $AndroidSdk 'build-tools') `
