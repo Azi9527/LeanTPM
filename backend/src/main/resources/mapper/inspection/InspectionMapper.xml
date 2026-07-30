@@ -1,0 +1,1122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.leantpm.inspection.InspectionMapper">
+    <select id="findTenantIds" resultType="long">
+        SELECT id FROM system_tenant WHERE status = 1 AND deleted = 0 ORDER BY id
+    </select>
+
+    <sql id="equipmentScope">
+        <choose>
+            <when test="scope.allData">1 = 1</when>
+            <when test="scope.selfData or (scope.organizationIds != null and !scope.organizationIds.isEmpty())">
+                (
+                    <if test="scope.selfData">
+                        e.created_by = #{scope.userId}
+                        OR e.primary_responsible_user_id = #{scope.userId}
+                        OR EXISTS (
+                            SELECT 1 FROM equipment_responsible_person scoped_person
+                            WHERE scoped_person.tenant_id = e.tenant_id
+                              AND scoped_person.equipment_id = e.id
+                              AND scoped_person.user_id = #{scope.userId}
+                              AND scoped_person.status = 1
+                              AND scoped_person.deleted = 0
+                        )
+                    </if>
+                    <if test="scope.selfData and scope.organizationIds != null and !scope.organizationIds.isEmpty()">OR</if>
+                    <if test="scope.organizationIds != null and !scope.organizationIds.isEmpty()">
+                        e.organization_id IN
+                        <foreach collection="scope.organizationIds" item="organizationId"
+                                 open="(" separator="," close=")">
+                            #{organizationId}
+                        </foreach>
+                    </if>
+                )
+            </when>
+            <otherwise>1 = 0</otherwise>
+        </choose>
+    </sql>
+
+    <select id="countActiveUser" resultType="int">
+        SELECT COUNT(*) FROM system_user
+        WHERE tenant_id = #{tenantId} AND id = #{userId} AND status = 1 AND deleted = 0
+    </select>
+
+    <select id="countActiveCategory" resultType="int">
+        SELECT COUNT(*) FROM equipment_category
+        WHERE tenant_id = #{tenantId} AND id = #{categoryId} AND status = 1 AND deleted = 0
+    </select>
+
+    <select id="countActiveEquipment" resultType="int">
+        SELECT COUNT(*) FROM equipment e
+        WHERE e.tenant_id = #{tenantId} AND e.id = #{equipmentId}
+          AND e.status = 1 AND e.deleted = 0 AND <include refid="equipmentScope"/>
+    </select>
+
+    <sql id="itemFilters">
+        tenant_id = #{tenantId} AND deleted = 0
+        <if test="keyword != null and keyword != ''">
+            AND (item_code LIKE CONCAT('%', #{keyword}, '%')
+                 OR item_name LIKE CONCAT('%', #{keyword}, '%')
+                 OR inspection_content LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        <if test="itemCategory != null and itemCategory != ''">AND item_category = #{itemCategory}</if>
+        <if test="resultType != null and resultType != ''">AND result_type = #{resultType}</if>
+        <if test="status != null">AND status = #{status}</if>
+    </sql>
+
+    <sql id="itemColumns">
+        id, item_code, item_name, item_category, inspection_part,
+        inspection_content, inspection_method, inspection_tool, inspection_standard,
+        standard_value, minimum_value, maximum_value, unit, result_type,
+        CAST(result_options AS CHAR) AS result_options_json,
+        required_flag, photo_required_flag, numeric_required_flag, skip_allowed_flag,
+        abnormal_severity, abnormal_advice, standard_minutes, safety_notes,
+        status, description, version
+    </sql>
+
+    <select id="findItems" resultType="com.leantpm.inspection.InspectionDtos$ItemRow">
+        SELECT <include refid="itemColumns"/>
+        FROM inspection_item
+        WHERE <include refid="itemFilters"/>
+        ORDER BY item_code, id
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
+    <select id="countItems" resultType="long">
+        SELECT COUNT(*) FROM inspection_item WHERE <include refid="itemFilters"/>
+    </select>
+
+    <select id="findItem" resultType="com.leantpm.inspection.InspectionDtos$ItemRow">
+        SELECT <include refid="itemColumns"/>
+        FROM inspection_item
+        WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0
+        LIMIT 1
+    </select>
+
+    <select id="countItemCode" resultType="int">
+        SELECT COUNT(*) FROM inspection_item
+        WHERE tenant_id = #{tenantId} AND item_code = #{itemCode}
+        <if test="excludeId != null">AND id != #{excludeId}</if>
+    </select>
+
+    <insert id="insertItem">
+        INSERT INTO inspection_item
+            (tenant_id, item_code, item_name, item_category, inspection_part,
+             inspection_content, inspection_method, inspection_tool, inspection_standard,
+             standard_value, minimum_value, maximum_value, unit, result_type,
+             result_options, required_flag, photo_required_flag, numeric_required_flag,
+             skip_allowed_flag, abnormal_severity, abnormal_advice, standard_minutes,
+             safety_notes, status, description, created_by, updated_by)
+        VALUES
+            (#{tenantId}, #{request.itemCode}, #{request.itemName}, #{request.itemCategory},
+             #{request.inspectionPart}, #{request.inspectionContent}, #{request.inspectionMethod},
+             #{request.inspectionTool}, #{request.inspectionStandard}, #{request.standardValue},
+             #{request.minimumValue}, #{request.maximumValue}, #{request.unit},
+             #{request.resultType}, CAST(#{resultOptionsJson} AS JSON),
+             #{request.required}, #{request.photoRequired}, #{request.numericRequired},
+             #{request.skipAllowed}, #{request.abnormalSeverity}, #{request.abnormalAdvice},
+             #{request.standardMinutes}, #{request.safetyNotes}, #{request.enabled},
+             #{request.description}, #{operatorId}, #{operatorId})
+    </insert>
+
+    <select id="findItemIdByCode" resultType="long">
+        SELECT id FROM inspection_item
+        WHERE tenant_id = #{tenantId} AND item_code = #{itemCode} AND deleted = 0
+        LIMIT 1
+    </select>
+
+    <update id="updateItem">
+        UPDATE inspection_item
+        SET item_name = #{request.itemName}, item_category = #{request.itemCategory},
+            inspection_part = #{request.inspectionPart},
+            inspection_content = #{request.inspectionContent},
+            inspection_method = #{request.inspectionMethod},
+            inspection_tool = #{request.inspectionTool},
+            inspection_standard = #{request.inspectionStandard},
+            standard_value = #{request.standardValue},
+            minimum_value = #{request.minimumValue}, maximum_value = #{request.maximumValue},
+            unit = #{request.unit}, result_type = #{request.resultType},
+            result_options = CAST(#{resultOptionsJson} AS JSON),
+            required_flag = #{request.required}, photo_required_flag = #{request.photoRequired},
+            numeric_required_flag = #{request.numericRequired},
+            skip_allowed_flag = #{request.skipAllowed},
+            abnormal_severity = #{request.abnormalSeverity},
+            abnormal_advice = #{request.abnormalAdvice},
+            standard_minutes = #{request.standardMinutes}, safety_notes = #{request.safetyNotes},
+            status = #{request.enabled}, description = #{request.description},
+            updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0
+          AND version = #{request.version}
+    </update>
+
+    <update id="softDeleteItem">
+        UPDATE inspection_item
+        SET deleted = 1, status = 0, updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0 AND version = #{version}
+    </update>
+
+    <select id="countPublishedItemReferences" resultType="int">
+        SELECT COUNT(*)
+        FROM inspection_scheme_item relation
+        JOIN inspection_scheme_version version
+          ON version.tenant_id = relation.tenant_id
+         AND version.id = relation.scheme_version_id
+         AND version.version_status = 'PUBLISHED'
+        WHERE relation.tenant_id = #{tenantId} AND relation.inspection_item_id = #{itemId}
+    </select>
+
+    <sql id="schemeFilters">
+        scheme.tenant_id = #{tenantId} AND scheme.deleted = 0
+        <if test="keyword != null and keyword != ''">
+            AND (scheme.scheme_code LIKE CONCAT('%', #{keyword}, '%')
+                 OR scheme.scheme_name LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        <if test="inspectionType != null and inspectionType != ''">
+            AND scheme.inspection_type = #{inspectionType}
+        </if>
+        <if test="status != null">AND scheme.status = #{status}</if>
+    </sql>
+
+    <sql id="schemeColumns">
+        scheme.id, scheme.scheme_code, scheme.scheme_name, scheme.inspection_type,
+        scheme.current_version_id, current_version.version_number AS current_version_number,
+        current_version.version_status AS current_version_status,
+        current_version.cycle_type, current_version.cycle_interval,
+        current_version.scheduled_time,
+        (SELECT COUNT(*) FROM inspection_scheme_item si
+         WHERE si.tenant_id = scheme.tenant_id
+           AND si.scheme_version_id = scheme.current_version_id) AS item_count,
+        (SELECT COUNT(*) FROM inspection_plan plan_count
+         WHERE plan_count.tenant_id = scheme.tenant_id
+           AND plan_count.scheme_id = scheme.id
+           AND plan_count.plan_status = 'ACTIVE'
+           AND plan_count.deleted = 0) AS applicable_equipment_count,
+        (SELECT COUNT(*) FROM inspection_plan plan_count
+         WHERE plan_count.tenant_id = scheme.tenant_id
+           AND plan_count.scheme_id = scheme.id
+           AND plan_count.plan_status = 'ACTIVE'
+           AND plan_count.deleted = 0) AS active_plan_count,
+        scheme.status, scheme.description, scheme.version
+    </sql>
+
+    <select id="findSchemes" resultType="com.leantpm.inspection.InspectionDtos$SchemeRow">
+        SELECT <include refid="schemeColumns"/>
+        FROM inspection_scheme scheme
+        LEFT JOIN inspection_scheme_version current_version
+          ON current_version.tenant_id = scheme.tenant_id
+         AND current_version.id = scheme.current_version_id
+        WHERE <include refid="schemeFilters"/>
+        ORDER BY scheme.scheme_code, scheme.id
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
+    <select id="countSchemes" resultType="long">
+        SELECT COUNT(*)
+        FROM inspection_scheme scheme
+        WHERE <include refid="schemeFilters"/>
+    </select>
+
+    <select id="findScheme" resultType="com.leantpm.inspection.InspectionDtos$SchemeRow">
+        SELECT <include refid="schemeColumns"/>
+        FROM inspection_scheme scheme
+        LEFT JOIN inspection_scheme_version current_version
+          ON current_version.tenant_id = scheme.tenant_id
+         AND current_version.id = scheme.current_version_id
+        WHERE scheme.tenant_id = #{tenantId} AND scheme.id = #{id} AND scheme.deleted = 0
+        LIMIT 1
+    </select>
+
+    <select id="countSchemeCode" resultType="int">
+        SELECT COUNT(*) FROM inspection_scheme
+        WHERE tenant_id = #{tenantId} AND scheme_code = #{schemeCode}
+        <if test="excludeId != null">AND id != #{excludeId}</if>
+    </select>
+
+    <insert id="insertScheme">
+        INSERT INTO inspection_scheme
+            (tenant_id, scheme_code, scheme_name, inspection_type, status,
+             description, created_by, updated_by)
+        VALUES
+            (#{tenantId}, #{schemeCode}, #{request.schemeName}, #{request.inspectionType},
+             #{request.enabled}, #{request.description}, #{operatorId}, #{operatorId})
+    </insert>
+
+    <select id="findSchemeIdByCode" resultType="long">
+        SELECT id FROM inspection_scheme
+        WHERE tenant_id = #{tenantId} AND scheme_code = #{schemeCode} AND deleted = 0
+        LIMIT 1
+    </select>
+
+    <update id="updateScheme">
+        UPDATE inspection_scheme
+        SET scheme_name = #{request.schemeName}, inspection_type = #{request.inspectionType},
+            status = #{request.enabled}, description = #{request.description},
+            updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0
+          AND version = #{request.version}
+    </update>
+
+    <select id="nextSchemeVersionNumber" resultType="int">
+        SELECT COALESCE(MAX(version_number), 0) + 1
+        FROM inspection_scheme_version
+        WHERE tenant_id = #{tenantId} AND scheme_id = #{schemeId}
+    </select>
+
+    <insert id="insertSchemeVersion">
+        INSERT INTO inspection_scheme_version
+            (tenant_id, scheme_id, version_number, version_status, cycle_type,
+             cycle_interval, week_days, month_days, scheduled_time, shift_code,
+             default_assignee_user_id, default_team_code, review_required_flag,
+             backfill_allowed_flag, effective_date, expiry_date, change_summary,
+             created_by, updated_by)
+        VALUES
+            (#{tenantId}, #{schemeId}, #{versionNumber}, 'DRAFT', #{request.cycleType},
+             #{request.cycleInterval}, #{request.weekDays}, #{request.monthDays},
+             #{request.scheduledTime}, #{request.shiftCode}, #{request.defaultAssigneeUserId},
+             #{request.defaultTeamCode}, #{request.reviewRequired}, #{request.backfillAllowed},
+             #{request.effectiveDate}, #{request.expiryDate}, #{request.changeSummary},
+             #{operatorId}, #{operatorId})
+    </insert>
+
+    <select id="findSchemeVersionId" resultType="long">
+        SELECT id FROM inspection_scheme_version
+        WHERE tenant_id = #{tenantId} AND scheme_id = #{schemeId}
+          AND version_number = #{versionNumber}
+        LIMIT 1
+    </select>
+
+    <sql id="schemeVersionColumns">
+        version.id, version.scheme_id, version.version_number, version.version_status,
+        version.cycle_type, version.cycle_interval, version.week_days, version.month_days,
+        version.scheduled_time, version.shift_code, version.default_assignee_user_id,
+        assignee.real_name AS default_assignee_name, version.default_team_code,
+        version.review_required_flag, version.backfill_allowed_flag,
+        version.effective_date, version.expiry_date, version.published_by,
+        publisher.real_name AS published_by_name, version.published_time,
+        version.change_summary, version.version
+    </sql>
+
+    <select id="findSchemeVersion" resultType="com.leantpm.inspection.InspectionDtos$SchemeVersionRow">
+        SELECT <include refid="schemeVersionColumns"/>
+        FROM inspection_scheme_version version
+        LEFT JOIN system_user assignee
+          ON assignee.tenant_id = version.tenant_id
+         AND assignee.id = version.default_assignee_user_id
+         AND assignee.deleted = 0
+        LEFT JOIN system_user publisher
+          ON publisher.tenant_id = version.tenant_id
+         AND publisher.id = version.published_by
+         AND publisher.deleted = 0
+        WHERE version.tenant_id = #{tenantId} AND version.id = #{versionId}
+        LIMIT 1
+    </select>
+
+    <select id="findSchemeVersions" resultType="com.leantpm.inspection.InspectionDtos$SchemeVersionRow">
+        SELECT <include refid="schemeVersionColumns"/>
+        FROM inspection_scheme_version version
+        LEFT JOIN system_user assignee
+          ON assignee.tenant_id = version.tenant_id
+         AND assignee.id = version.default_assignee_user_id
+         AND assignee.deleted = 0
+        LEFT JOIN system_user publisher
+          ON publisher.tenant_id = version.tenant_id
+         AND publisher.id = version.published_by
+         AND publisher.deleted = 0
+        WHERE version.tenant_id = #{tenantId} AND version.scheme_id = #{schemeId}
+        ORDER BY version.version_number DESC
+    </select>
+
+    <select id="findSchemeItems" resultType="com.leantpm.inspection.InspectionDtos$SchemeItemRow">
+        SELECT relation.id AS relation_id, item.id AS inspection_item_id,
+               item.item_code, item.item_name, item.item_category, item.result_type, item.unit,
+               COALESCE(relation.required_override, item.required_flag) AS required_flag,
+               COALESCE(relation.photo_required_override, item.photo_required_flag)
+                   AS photo_required_flag,
+               COALESCE(relation.skip_allowed_override, item.skip_allowed_flag)
+                   AS skip_allowed_flag,
+               relation.sort_order
+        FROM inspection_scheme_item relation
+        JOIN inspection_item item
+          ON item.tenant_id = relation.tenant_id
+         AND item.id = relation.inspection_item_id
+         AND item.deleted = 0
+        WHERE relation.tenant_id = #{tenantId} AND relation.scheme_version_id = #{versionId}
+        ORDER BY relation.sort_order, relation.id
+    </select>
+
+    <select id="findSchemeCategoryIds" resultType="long">
+        SELECT equipment_category_id FROM inspection_scheme_category
+        WHERE tenant_id = #{tenantId} AND scheme_version_id = #{versionId}
+        ORDER BY equipment_category_id
+    </select>
+
+    <select id="findSchemeEquipmentIds" resultType="long">
+        SELECT equipment_id FROM inspection_scheme_equipment
+        WHERE tenant_id = #{tenantId} AND scheme_version_id = #{versionId}
+        ORDER BY equipment_id
+    </select>
+
+    <insert id="insertSchemeItem">
+        INSERT INTO inspection_scheme_item
+            (tenant_id, scheme_version_id, inspection_item_id, sort_order,
+             required_override, photo_required_override, skip_allowed_override, created_by)
+        VALUES
+            (#{tenantId}, #{versionId}, #{item.inspectionItemId}, #{item.sortOrder},
+             #{item.required}, #{item.photoRequired}, #{item.skipAllowed}, #{operatorId})
+    </insert>
+
+    <insert id="insertSchemeCategory">
+        INSERT INTO inspection_scheme_category
+            (tenant_id, scheme_version_id, equipment_category_id, created_by)
+        VALUES (#{tenantId}, #{versionId}, #{categoryId}, #{operatorId})
+    </insert>
+
+    <insert id="insertSchemeEquipment">
+        INSERT INTO inspection_scheme_equipment
+            (tenant_id, scheme_version_id, equipment_id, created_by)
+        VALUES (#{tenantId}, #{versionId}, #{equipmentId}, #{operatorId})
+    </insert>
+
+    <update id="publishSchemeVersion">
+        UPDATE inspection_scheme_version
+        SET version_status = 'PUBLISHED', published_by = #{operatorId},
+            published_time = CURRENT_TIMESTAMP(3), updated_by = #{operatorId},
+            version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{versionId} AND version_status = 'DRAFT'
+    </update>
+
+    <update id="retireOtherSchemeVersions">
+        UPDATE inspection_scheme_version
+        SET version_status = 'RETIRED', updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId} AND scheme_id = #{schemeId}
+          AND id != #{versionId} AND version_status = 'PUBLISHED'
+    </update>
+
+    <update id="setSchemeCurrentVersion">
+        UPDATE inspection_scheme
+        SET current_version_id = #{versionId}, updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{schemeId} AND deleted = 0
+    </update>
+
+    <select id="findApplicableEquipment" resultType="com.leantpm.inspection.InspectionMapper$ApplicableEquipment">
+        WITH RECURSIVE applicable_categories AS (
+            SELECT category.id, category_scope.include_descendants_flag
+            FROM inspection_scheme_category category_scope
+            JOIN equipment_category category
+              ON category.tenant_id = category_scope.tenant_id
+             AND category.id = category_scope.equipment_category_id
+             AND category.deleted = 0
+             AND category.status = 1
+            WHERE category_scope.tenant_id = #{tenantId}
+              AND category_scope.scheme_version_id = #{versionId}
+            UNION ALL
+            SELECT child.id, parent.include_descendants_flag
+            FROM equipment_category child
+            JOIN applicable_categories parent
+              ON child.parent_id = parent.id
+             AND parent.include_descendants_flag = 1
+            WHERE child.tenant_id = #{tenantId}
+              AND child.deleted = 0
+              AND child.status = 1
+        )
+        SELECT DISTINCT e.id, e.organization_id, e.location_id
+        FROM equipment e
+        WHERE e.tenant_id = #{tenantId} AND e.deleted = 0 AND e.status = 1
+          AND <include refid="equipmentScope"/>
+          AND (
+            EXISTS (
+                SELECT 1 FROM inspection_scheme_equipment explicit_equipment
+                WHERE explicit_equipment.tenant_id = e.tenant_id
+                  AND explicit_equipment.scheme_version_id = #{versionId}
+                  AND explicit_equipment.equipment_id = e.id
+            )
+            OR EXISTS (
+                SELECT 1 FROM applicable_categories
+                WHERE applicable_categories.id = e.category_id
+            )
+          )
+        ORDER BY e.id
+    </select>
+
+    <insert id="insertPlan">
+        INSERT INTO inspection_plan
+            (tenant_id, scheme_id, scheme_version_id, equipment_id, cycle_type,
+             cycle_interval, week_days, month_days, scheduled_time, shift_code,
+             assignee_user_id, team_code, next_generation_date, created_by, updated_by)
+        SELECT #{tenantId}, #{schemeId}, version.id, #{equipmentId}, version.cycle_type,
+               version.cycle_interval, version.week_days, version.month_days,
+               version.scheduled_time, version.shift_code, version.default_assignee_user_id,
+               version.default_team_code, #{nextGenerationDate}, #{operatorId}, #{operatorId}
+        FROM inspection_scheme_version version
+        WHERE version.tenant_id = #{tenantId} AND version.id = #{versionId}
+        ON DUPLICATE KEY UPDATE
+            plan_status = 'ACTIVE', paused_reason = NULL, updated_by = VALUES(updated_by),
+            version = inspection_plan.version + 1
+    </insert>
+
+    <update id="cancelSupersededPlans">
+        UPDATE inspection_plan
+        SET plan_status = 'CANCELLED', paused_reason = '方案新版本已发布',
+            updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId} AND scheme_id = #{schemeId}
+          AND scheme_version_id != #{versionId} AND plan_status != 'CANCELLED'
+          AND deleted = 0
+    </update>
+
+    <sql id="planFilters">
+        plan.tenant_id = #{tenantId} AND plan.deleted = 0
+        AND (
+          <include refid="equipmentScope"/>
+          OR (#{scope.selfData} = 1 AND plan.assignee_user_id = #{scope.userId})
+        )
+        <if test="keyword != null and keyword != ''">
+            AND (scheme.scheme_code LIKE CONCAT('%', #{keyword}, '%')
+                 OR scheme.scheme_name LIKE CONCAT('%', #{keyword}, '%')
+                 OR e.equipment_code LIKE CONCAT('%', #{keyword}, '%')
+                 OR e.equipment_name LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        <if test="planStatus != null and planStatus != ''">AND plan.plan_status = #{planStatus}</if>
+    </sql>
+
+    <sql id="planColumns">
+        plan.id, plan.scheme_id, scheme.scheme_code, scheme.scheme_name,
+        version.version_number AS scheme_version_number, plan.equipment_id,
+        e.equipment_code, e.equipment_name, e.organization_id,
+        organization.organization_name, location.location_name,
+        plan.cycle_type, plan.cycle_interval, plan.scheduled_time,
+        plan.assignee_user_id, assignee.real_name AS assignee_name,
+        plan.next_generation_date, plan.last_generation_date,
+        plan.plan_status, plan.paused_reason, plan.version
+    </sql>
+
+    <sql id="planJoins">
+        JOIN inspection_scheme scheme
+          ON scheme.tenant_id = plan.tenant_id AND scheme.id = plan.scheme_id
+        JOIN inspection_scheme_version version
+          ON version.tenant_id = plan.tenant_id AND version.id = plan.scheme_version_id
+        JOIN equipment e
+          ON e.tenant_id = plan.tenant_id AND e.id = plan.equipment_id AND e.deleted = 0
+        JOIN organization
+          ON organization.tenant_id = e.tenant_id AND organization.id = e.organization_id
+        JOIN location
+          ON location.tenant_id = e.tenant_id AND location.id = e.location_id
+        LEFT JOIN system_user assignee
+          ON assignee.tenant_id = plan.tenant_id AND assignee.id = plan.assignee_user_id
+    </sql>
+
+    <select id="findPlans" resultType="com.leantpm.inspection.InspectionDtos$PlanRow">
+        SELECT <include refid="planColumns"/>
+        FROM inspection_plan plan
+        <include refid="planJoins"/>
+        WHERE <include refid="planFilters"/>
+        ORDER BY plan.next_generation_date, plan.id
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
+    <select id="countPlans" resultType="long">
+        SELECT COUNT(*) FROM inspection_plan plan
+        <include refid="planJoins"/>
+        WHERE <include refid="planFilters"/>
+    </select>
+
+    <select id="findPlan" resultType="com.leantpm.inspection.InspectionDtos$PlanRow">
+        SELECT <include refid="planColumns"/>
+        FROM inspection_plan plan
+        <include refid="planJoins"/>
+        WHERE plan.tenant_id = #{tenantId} AND plan.id = #{id}
+          AND plan.deleted = 0
+          AND (
+            <include refid="equipmentScope"/>
+            OR (#{scope.selfData} = 1 AND plan.assignee_user_id = #{scope.userId})
+          )
+        LIMIT 1
+    </select>
+
+    <update id="updatePlanStatus">
+        UPDATE inspection_plan
+        SET plan_status = #{request.planStatus},
+            paused_reason = CASE WHEN #{request.planStatus} = 'ACTIVE' THEN NULL
+                                 ELSE #{request.reason} END,
+            updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0
+          AND version = #{request.version}
+    </update>
+
+    <select id="findGenerationPlans" resultType="com.leantpm.inspection.InspectionMapper$GenerationPlan">
+        SELECT plan.id, plan.scheme_id, plan.scheme_version_id,
+               scheme.scheme_code, scheme.scheme_name, version.version_number AS scheme_version_number,
+               scheme.inspection_type, plan.equipment_id, plan.cycle_type, plan.cycle_interval,
+               plan.week_days, plan.month_days, plan.scheduled_time, plan.assignee_user_id,
+               plan.team_code, version.review_required_flag AS review_required,
+               version.backfill_allowed_flag AS backfill_allowed, version.effective_date,
+               version.expiry_date, plan.next_generation_date
+        FROM inspection_plan plan
+        JOIN inspection_scheme scheme
+          ON scheme.tenant_id = plan.tenant_id AND scheme.id = plan.scheme_id
+         AND scheme.deleted = 0 AND scheme.status = 1
+        JOIN inspection_scheme_version version
+          ON version.tenant_id = plan.tenant_id AND version.id = plan.scheme_version_id
+         AND version.version_status = 'PUBLISHED'
+        JOIN equipment e
+          ON e.tenant_id = plan.tenant_id AND e.id = plan.equipment_id
+         AND e.deleted = 0 AND e.status = 1
+        WHERE plan.tenant_id = #{tenantId} AND plan.plan_status = 'ACTIVE'
+          AND plan.deleted = 0 AND plan.next_generation_date &lt;= #{throughDate}
+        ORDER BY plan.next_generation_date, plan.id
+        FOR UPDATE
+    </select>
+
+    <update id="updatePlanGeneration">
+        UPDATE inspection_plan
+        SET last_generation_date = #{lastGenerationDate},
+            next_generation_date = #{nextGenerationDate},
+            updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0
+    </update>
+
+    <select id="findEquipmentSnapshot" resultType="com.leantpm.inspection.InspectionMapper$EquipmentSnapshot">
+        SELECT e.id, e.equipment_code, e.equipment_name, e.organization_id, e.location_id
+        FROM equipment e
+        WHERE e.tenant_id = #{tenantId} AND e.id = #{equipmentId}
+          AND e.deleted = 0 AND e.status = 1 AND <include refid="equipmentScope"/>
+        LIMIT 1
+    </select>
+
+    <insert id="insertTask">
+        INSERT IGNORE INTO inspection_task
+            (tenant_id, task_code, plan_id, scheme_id, scheme_version_id,
+             scheme_code_snapshot, scheme_name_snapshot, scheme_version_number,
+             inspection_type, equipment_id, organization_id, location_id,
+             occurrence_key, planned_date, planned_start_time, due_time,
+             assignee_user_id, team_code, source_type, backfill_flag,
+             review_required_flag, execution_remark, created_by, updated_by)
+        VALUES
+            (#{tenantId}, #{taskCode}, #{plan.id}, #{plan.schemeId}, #{plan.schemeVersionId},
+             #{plan.schemeCode}, #{plan.schemeName}, #{plan.schemeVersionNumber},
+             #{plan.inspectionType}, #{equipment.id}, #{equipment.organizationId},
+             #{equipment.locationId}, #{occurrenceKey}, #{plannedDate},
+             #{plannedStartTime}, #{dueTime}, #{plan.assigneeUserId}, #{plan.teamCode},
+             #{sourceType}, #{backfill}, #{plan.reviewRequired}, #{remark},
+             #{operatorId}, #{operatorId})
+    </insert>
+
+    <select id="findTaskIdByCode" resultType="long">
+        SELECT id FROM inspection_task
+        WHERE tenant_id = #{tenantId} AND task_code = #{taskCode} AND deleted = 0
+        LIMIT 1
+    </select>
+
+    <select id="findTaskIdByOccurrence" resultType="long">
+        SELECT id FROM inspection_task
+        WHERE tenant_id = #{tenantId} AND plan_id = #{planId}
+          AND occurrence_key = #{occurrenceKey} AND deleted = 0
+        LIMIT 1
+    </select>
+
+    <insert id="insertManualTask">
+        INSERT INTO inspection_task
+            (tenant_id, task_code, scheme_id, scheme_version_id,
+             scheme_code_snapshot, scheme_name_snapshot, scheme_version_number,
+             inspection_type, equipment_id, organization_id, location_id,
+             planned_date, planned_start_time, due_time, assignee_user_id,
+             team_code, source_type, backfill_flag, review_required_flag,
+             execution_remark, created_by, updated_by)
+        VALUES
+            (#{tenantId}, #{taskCode}, #{scheme.id}, #{version.id},
+             #{scheme.schemeCode}, #{scheme.schemeName}, #{version.versionNumber},
+             #{scheme.inspectionType}, #{equipment.id}, #{equipment.organizationId},
+             #{equipment.locationId}, #{request.plannedDate}, #{request.plannedStartTime},
+             #{request.dueTime}, #{request.assigneeUserId}, #{request.teamCode},
+             CASE WHEN #{request.backfill} THEN 'BACKFILL' ELSE 'MANUAL' END,
+             #{request.backfill}, #{version.reviewRequiredFlag}, #{request.remark},
+             #{operatorId}, #{operatorId})
+    </insert>
+
+    <insert id="copyTaskItems">
+        INSERT INTO inspection_task_item
+            (tenant_id, task_id, source_item_id, item_code, item_name, item_category,
+             inspection_part, inspection_content, inspection_method, inspection_tool,
+             inspection_standard, standard_value, minimum_value, maximum_value, unit,
+             result_type, result_options, required_flag, photo_required_flag,
+             numeric_required_flag, skip_allowed_flag, abnormal_severity,
+             abnormal_advice, standard_minutes, safety_notes, sort_order)
+        SELECT item.tenant_id, #{taskId}, item.id, item.item_code, item.item_name,
+               item.item_category, item.inspection_part, item.inspection_content,
+               item.inspection_method, item.inspection_tool, item.inspection_standard,
+               item.standard_value, item.minimum_value, item.maximum_value, item.unit,
+               item.result_type, item.result_options,
+               COALESCE(relation.required_override, item.required_flag),
+               COALESCE(relation.photo_required_override, item.photo_required_flag),
+               item.numeric_required_flag,
+               COALESCE(relation.skip_allowed_override, item.skip_allowed_flag),
+               item.abnormal_severity, item.abnormal_advice, item.standard_minutes,
+               item.safety_notes, relation.sort_order
+        FROM inspection_scheme_item relation
+        JOIN inspection_item item
+          ON item.tenant_id = relation.tenant_id AND item.id = relation.inspection_item_id
+        WHERE relation.tenant_id = #{tenantId} AND relation.scheme_version_id = #{versionId}
+        ORDER BY relation.sort_order, relation.id
+    </insert>
+
+    <sql id="taskFilters">
+        task.tenant_id = #{tenantId} AND task.deleted = 0
+        AND (
+          <include refid="equipmentScope"/>
+          OR (#{scope.selfData} = 1 AND task.assignee_user_id = #{scope.userId})
+        )
+        <if test="keyword != null and keyword != ''">
+            AND (task.task_code LIKE CONCAT('%', #{keyword}, '%')
+                 OR task.scheme_name_snapshot LIKE CONCAT('%', #{keyword}, '%')
+                 OR e.equipment_code LIKE CONCAT('%', #{keyword}, '%')
+                 OR e.equipment_name LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        <if test="taskStatus != null and taskStatus != ''">AND task.task_status = #{taskStatus}</if>
+        <if test="plannedDate != null">AND task.planned_date = #{plannedDate}</if>
+        <if test="mineOnly">AND task.assignee_user_id = #{scope.userId}</if>
+    </sql>
+
+    <sql id="taskColumns">
+        task.id, task.task_code, task.plan_id, task.scheme_id, task.scheme_version_id,
+        task.scheme_code_snapshot, task.scheme_name_snapshot, task.scheme_version_number,
+        task.inspection_type, task.equipment_id, e.equipment_code, e.equipment_name,
+        task.organization_id, organization.organization_name,
+        task.location_id, location.location_name, task.planned_date,
+        task.planned_start_time, task.due_time, task.assignee_user_id,
+        assignee.real_name AS assignee_name, task.team_code, task.task_status,
+        task.source_type, task.backfill_flag, task.review_required_flag,
+        task.started_time, task.submitted_time, task.completed_time,
+        reviewer.real_name AS reviewer_name, task.review_comment, task.execution_remark,
+        (SELECT COUNT(*) FROM inspection_task_item ti
+         WHERE ti.tenant_id = task.tenant_id AND ti.task_id = task.id) AS item_count,
+        (SELECT COUNT(*) FROM inspection_task_result tr
+         WHERE tr.tenant_id = task.tenant_id AND tr.task_id = task.id
+           AND tr.result_status = 'SUBMITTED') AS completed_item_count,
+        (SELECT COUNT(*) FROM inspection_task_result tr
+         WHERE tr.tenant_id = task.tenant_id AND tr.task_id = task.id
+           AND tr.abnormal_flag = 1) AS abnormal_item_count,
+        task.version
+    </sql>
+
+    <sql id="taskJoins">
+        JOIN equipment e
+          ON e.tenant_id = task.tenant_id AND e.id = task.equipment_id AND e.deleted = 0
+        JOIN organization
+          ON organization.tenant_id = task.tenant_id AND organization.id = task.organization_id
+        JOIN location
+          ON location.tenant_id = task.tenant_id AND location.id = task.location_id
+        LEFT JOIN system_user assignee
+          ON assignee.tenant_id = task.tenant_id AND assignee.id = task.assignee_user_id
+        LEFT JOIN system_user reviewer
+          ON reviewer.tenant_id = task.tenant_id AND reviewer.id = task.reviewer_user_id
+    </sql>
+
+    <select id="findTasks" resultType="com.leantpm.inspection.InspectionDtos$TaskRow">
+        SELECT <include refid="taskColumns"/>
+        FROM inspection_task task
+        <include refid="taskJoins"/>
+        WHERE <include refid="taskFilters"/>
+        ORDER BY task.planned_date DESC, task.due_time, task.id DESC
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
+    <select id="countTasks" resultType="long">
+        SELECT COUNT(*) FROM inspection_task task
+        <include refid="taskJoins"/>
+        WHERE <include refid="taskFilters"/>
+    </select>
+
+    <select id="findTask" resultType="com.leantpm.inspection.InspectionDtos$TaskRow">
+        SELECT <include refid="taskColumns"/>
+        FROM inspection_task task
+        <include refid="taskJoins"/>
+        WHERE task.tenant_id = #{tenantId} AND task.id = #{id}
+          AND task.deleted = 0
+          AND (
+            <include refid="equipmentScope"/>
+            OR (#{scope.selfData} = 1 AND task.assignee_user_id = #{scope.userId})
+          )
+        LIMIT 1
+    </select>
+
+    <select id="findTaskItem" resultType="com.leantpm.inspection.InspectionMapper$TaskItemData">
+        SELECT id, task_id, source_item_id, item_code, item_name, item_category,
+               inspection_part, inspection_content, inspection_method, inspection_tool,
+               inspection_standard, standard_value, minimum_value, maximum_value,
+               unit, result_type, CAST(result_options AS CHAR) AS result_options_json,
+               required_flag, photo_required_flag, numeric_required_flag,
+               skip_allowed_flag, abnormal_severity, abnormal_advice,
+               standard_minutes, safety_notes, sort_order
+        FROM inspection_task_item
+        WHERE tenant_id = #{tenantId} AND task_id = #{taskId} AND id = #{taskItemId}
+        LIMIT 1
+    </select>
+
+    <select id="findTaskItems" resultType="com.leantpm.inspection.InspectionMapper$TaskItemData">
+        SELECT id, task_id, source_item_id, item_code, item_name, item_category,
+               inspection_part, inspection_content, inspection_method, inspection_tool,
+               inspection_standard, standard_value, minimum_value, maximum_value,
+               unit, result_type, CAST(result_options AS CHAR) AS result_options_json,
+               required_flag, photo_required_flag, numeric_required_flag,
+               skip_allowed_flag, abnormal_severity, abnormal_advice,
+               standard_minutes, safety_notes, sort_order
+        FROM inspection_task_item
+        WHERE tenant_id = #{tenantId} AND task_id = #{taskId}
+        ORDER BY sort_order, id
+    </select>
+
+    <select id="findResult" resultType="com.leantpm.inspection.InspectionDtos$ResultRow">
+        SELECT result.id, result.result_status, result.result_code, result.numeric_value,
+               result.text_value, result.selected_value,
+               CAST(result.selected_values AS CHAR) AS selected_values_json,
+               result.abnormal_flag, result.abnormal_description, result.skipped_flag,
+               result.skip_reason, result.executed_by, user.real_name AS executed_by_name,
+               result.executed_time, result.submitted_time, result.version,
+               NULL AS attachment_ids
+        FROM inspection_task_result result
+        LEFT JOIN system_user user
+          ON user.tenant_id = result.tenant_id AND user.id = result.executed_by
+        WHERE result.tenant_id = #{tenantId} AND result.task_item_id = #{taskItemId}
+        LIMIT 1
+    </select>
+
+    <insert id="insertResult">
+        INSERT INTO inspection_task_result
+            (tenant_id, task_id, task_item_id, result_code, numeric_value, text_value,
+             selected_value, selected_values, abnormal_flag, abnormal_description,
+             skipped_flag, skip_reason, executed_by, created_by, updated_by)
+        VALUES
+            (#{tenantId}, #{taskId}, #{request.taskItemId}, #{request.resultCode},
+             #{request.numericValue}, #{request.textValue}, #{request.selectedValue},
+             CAST(#{selectedValuesJson} AS JSON), #{request.abnormal},
+             #{request.abnormalDescription}, #{request.skipped}, #{request.skipReason},
+             #{operatorId}, #{operatorId}, #{operatorId})
+    </insert>
+
+    <update id="updateResult">
+        UPDATE inspection_task_result
+        SET result_code = #{request.resultCode}, numeric_value = #{request.numericValue},
+            text_value = #{request.textValue}, selected_value = #{request.selectedValue},
+            selected_values = CAST(#{selectedValuesJson} AS JSON),
+            abnormal_flag = #{request.abnormal},
+            abnormal_description = #{request.abnormalDescription},
+            skipped_flag = #{request.skipped}, skip_reason = #{request.skipReason},
+            executed_by = #{operatorId}, executed_time = CURRENT_TIMESTAMP(3),
+            updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId} AND task_id = #{taskId}
+          AND task_item_id = #{request.taskItemId} AND result_status = 'DRAFT'
+          <if test="request.version != null">AND version = #{request.version}</if>
+    </update>
+
+    <delete id="deleteResultAttachments">
+        DELETE FROM inspection_attachment
+        WHERE tenant_id = #{tenantId} AND task_result_id = #{taskResultId}
+    </delete>
+
+    <insert id="replaceResultAttachments">
+        INSERT INTO inspection_attachment
+            (tenant_id, task_id, task_result_id, attachment_id, attachment_type, created_by)
+        VALUES
+            (#{tenantId}, #{taskId}, #{taskResultId}, #{attachmentId},
+             #{attachmentType}, #{operatorId})
+    </insert>
+
+    <select id="findResultAttachmentIds" resultType="long">
+        SELECT attachment_id FROM inspection_attachment
+        WHERE tenant_id = #{tenantId} AND task_result_id = #{taskResultId}
+        ORDER BY id
+    </select>
+
+    <select id="countAvailableAttachment" resultType="int">
+        SELECT COUNT(*) FROM system_attachment
+        WHERE tenant_id = #{tenantId} AND id = #{attachmentId} AND deleted = 0
+    </select>
+
+    <update id="updateTaskAfterDraft">
+        UPDATE inspection_task
+        SET task_status = CASE WHEN task_status IN ('PENDING','OVERDUE')
+                               THEN 'IN_PROGRESS' ELSE task_status END,
+            started_time = COALESCE(started_time, CURRENT_TIMESTAMP(3)),
+            execution_remark = #{remark}, updated_by = #{operatorId},
+            version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0
+          AND version = #{fromVersion}
+          AND task_status IN ('PENDING','OVERDUE','IN_PROGRESS')
+    </update>
+
+    <update id="submitResults">
+        UPDATE inspection_task_result
+        SET result_status = 'SUBMITTED', submitted_time = CURRENT_TIMESTAMP(3),
+            version = version + 1
+        WHERE tenant_id = #{tenantId} AND task_id = #{taskId}
+          AND result_status = 'DRAFT'
+    </update>
+
+    <update id="updateTaskStatus">
+        UPDATE inspection_task
+        SET task_status = #{targetStatus},
+            started_time = COALESCE(started_time, CURRENT_TIMESTAMP(3)),
+            submitted_time = CASE WHEN #{targetStatus} IN ('PENDING_REVIEW','COMPLETED')
+                                  THEN CURRENT_TIMESTAMP(3) ELSE submitted_time END,
+            completed_time = CASE WHEN #{targetStatus} = 'COMPLETED'
+                                  THEN CURRENT_TIMESTAMP(3) ELSE completed_time END,
+            execution_remark = COALESCE(#{remark}, execution_remark),
+            updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0
+          AND version = #{fromVersion} AND task_status = #{expectedStatus}
+    </update>
+
+    <update id="assignTask">
+        UPDATE inspection_task
+        SET assignee_user_id = #{request.assigneeUserId}, team_code = #{request.teamCode},
+            updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0
+          AND version = #{request.version}
+          AND task_status IN ('PENDING','IN_PROGRESS','OVERDUE')
+    </update>
+
+    <update id="reviewTask">
+        UPDATE inspection_task
+        SET task_status = #{targetStatus}, reviewer_user_id = #{operatorId},
+            reviewed_time = CURRENT_TIMESTAMP(3), review_comment = #{request.comment},
+            completed_time = CASE WHEN #{targetStatus} = 'COMPLETED'
+                                  THEN CURRENT_TIMESTAMP(3) ELSE NULL END,
+            updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0
+          AND version = #{request.version} AND task_status = 'PENDING_REVIEW'
+    </update>
+
+    <update id="closeTask">
+        UPDATE inspection_task
+        SET task_status = #{targetStatus},
+            cancel_reason = CASE WHEN #{targetStatus} = 'CANCELLED' THEN #{request.reason}
+                                 ELSE cancel_reason END,
+            void_reason = CASE WHEN #{targetStatus} = 'VOIDED' THEN #{request.reason}
+                               ELSE void_reason END,
+            updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0
+          AND version = #{request.version}
+          AND task_status NOT IN ('COMPLETED','CANCELLED','VOIDED')
+    </update>
+
+    <update id="markOverdueTasks">
+        UPDATE inspection_task
+        SET task_status = 'OVERDUE', version = version + 1
+        WHERE tenant_id = #{tenantId} AND deleted = 0
+          AND task_status = 'PENDING' AND due_time &lt; CURRENT_TIMESTAMP(3)
+    </update>
+
+    <insert id="insertTaskEvent">
+        INSERT INTO inspection_task_event
+            (tenant_id, task_id, event_type, from_status, to_status,
+             event_remark, operator_id)
+        VALUES
+            (#{tenantId}, #{taskId}, #{eventType}, #{fromStatus}, #{toStatus},
+             #{remark}, #{operatorId})
+    </insert>
+
+    <select id="findTaskEvents" resultType="com.leantpm.inspection.InspectionDtos$TaskEventRow">
+        SELECT event.id, event.event_type, event.from_status, event.to_status,
+               event.event_remark, user.real_name AS operator_name, event.event_time
+        FROM inspection_task_event event
+        LEFT JOIN system_user user
+          ON user.tenant_id = event.tenant_id AND user.id = event.operator_id
+        WHERE event.tenant_id = #{tenantId} AND event.task_id = #{taskId}
+        ORDER BY event.event_time, event.id
+    </select>
+
+    <select id="countMissingRequiredResults" resultType="int">
+        SELECT COUNT(*)
+        FROM inspection_task_item item
+        LEFT JOIN inspection_task_result result
+          ON result.tenant_id = item.tenant_id AND result.task_item_id = item.id
+        WHERE item.tenant_id = #{tenantId} AND item.task_id = #{taskId}
+          AND item.required_flag = 1
+          AND (
+            result.id IS NULL
+            OR (result.skipped_flag = 1 AND item.skip_allowed_flag = 0)
+            OR (result.skipped_flag = 0 AND
+                CASE item.result_type
+                    WHEN 'NUMBER' THEN result.numeric_value IS NULL
+                    WHEN 'TEXT' THEN result.text_value IS NULL OR result.text_value = ''
+                    WHEN 'SINGLE_CHOICE' THEN result.selected_value IS NULL OR result.selected_value = ''
+                    WHEN 'MULTIPLE_CHOICE' THEN result.selected_values IS NULL
+                    WHEN 'IMAGE' THEN NOT EXISTS (
+                        SELECT 1 FROM inspection_attachment attachment
+                        WHERE attachment.tenant_id = result.tenant_id
+                          AND attachment.task_result_id = result.id
+                          AND attachment.attachment_type = 'RESULT_PHOTO')
+                    WHEN 'ATTACHMENT' THEN NOT EXISTS (
+                        SELECT 1 FROM inspection_attachment attachment
+                        WHERE attachment.tenant_id = result.tenant_id
+                          AND attachment.task_result_id = result.id)
+                    ELSE result.result_code IS NULL OR result.result_code = ''
+                END)
+          )
+    </select>
+
+    <select id="countInvalidResultAttachments" resultType="int">
+        SELECT COUNT(*)
+        FROM inspection_task_item item
+        JOIN inspection_task_result result
+          ON result.tenant_id = item.tenant_id AND result.task_item_id = item.id
+        WHERE item.tenant_id = #{tenantId} AND item.task_id = #{taskId}
+          AND item.photo_required_flag = 1
+          AND NOT EXISTS (
+              SELECT 1 FROM inspection_attachment attachment
+              WHERE attachment.tenant_id = result.tenant_id
+                AND attachment.task_result_id = result.id
+                AND attachment.attachment_type = 'RESULT_PHOTO'
+          )
+    </select>
+
+    <insert id="insertAbnormal">
+        INSERT IGNORE INTO inspection_abnormal
+            (tenant_id, abnormal_code, task_id, task_result_id, equipment_id,
+             task_item_id, abnormal_title, abnormal_description, severity, created_by, updated_by)
+        VALUES
+            (#{tenantId}, #{abnormalCode}, #{task.id}, #{resultId}, #{task.equipmentId},
+             #{item.id}, CONCAT(#{item.itemName}, '异常'), #{description},
+             #{item.abnormalSeverity}, #{operatorId}, #{operatorId})
+    </insert>
+
+    <sql id="abnormalColumns">
+        abnormal.id, abnormal.abnormal_code, abnormal.task_id, task.task_code,
+        abnormal.task_result_id, abnormal.equipment_id, e.equipment_code,
+        e.equipment_name, abnormal.task_item_id, item.item_name,
+        abnormal.abnormal_title, abnormal.abnormal_description, abnormal.severity,
+        abnormal.abnormal_status, abnormal.responsible_user_id,
+        responsible.real_name AS responsible_user_name, abnormal.due_time,
+        abnormal.temporary_action, abnormal.final_result,
+        abnormal.requested_equipment_status, closer.real_name AS closed_by_name,
+        abnormal.closed_time, verifier.real_name AS verified_by_name,
+        abnormal.verified_time, abnormal.verification_comment,
+        abnormal.created_time, abnormal.version
+    </sql>
+
+    <sql id="abnormalJoins">
+        JOIN inspection_task task
+          ON task.tenant_id = abnormal.tenant_id AND task.id = abnormal.task_id
+        JOIN equipment e
+          ON e.tenant_id = abnormal.tenant_id AND e.id = abnormal.equipment_id AND e.deleted = 0
+        LEFT JOIN inspection_task_item item
+          ON item.tenant_id = abnormal.tenant_id AND item.id = abnormal.task_item_id
+        LEFT JOIN system_user responsible
+          ON responsible.tenant_id = abnormal.tenant_id
+         AND responsible.id = abnormal.responsible_user_id
+        LEFT JOIN system_user closer
+          ON closer.tenant_id = abnormal.tenant_id AND closer.id = abnormal.closed_by
+        LEFT JOIN system_user verifier
+          ON verifier.tenant_id = abnormal.tenant_id AND verifier.id = abnormal.verified_by
+    </sql>
+
+    <sql id="abnormalFilters">
+        abnormal.tenant_id = #{tenantId} AND abnormal.deleted = 0
+        AND (
+          <include refid="equipmentScope"/>
+          OR (#{scope.selfData} = 1 AND abnormal.responsible_user_id = #{scope.userId})
+        )
+        <if test="keyword != null and keyword != ''">
+            AND (abnormal.abnormal_code LIKE CONCAT('%', #{keyword}, '%')
+                 OR abnormal.abnormal_title LIKE CONCAT('%', #{keyword}, '%')
+                 OR task.task_code LIKE CONCAT('%', #{keyword}, '%')
+                 OR e.equipment_code LIKE CONCAT('%', #{keyword}, '%')
+                 OR e.equipment_name LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        <if test="abnormalStatus != null and abnormalStatus != ''">
+            AND abnormal.abnormal_status = #{abnormalStatus}
+        </if>
+    </sql>
+
+    <select id="findAbnormalities" resultType="com.leantpm.inspection.InspectionDtos$AbnormalRow">
+        SELECT <include refid="abnormalColumns"/>
+        FROM inspection_abnormal abnormal
+        <include refid="abnormalJoins"/>
+        WHERE <include refid="abnormalFilters"/>
+        ORDER BY abnormal.created_time DESC, abnormal.id DESC
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
+    <select id="countAbnormalities" resultType="long">
+        SELECT COUNT(*) FROM inspection_abnormal abnormal
+        <include refid="abnormalJoins"/>
+        WHERE <include refid="abnormalFilters"/>
+    </select>
+
+    <select id="findTaskAbnormalities" resultType="com.leantpm.inspection.InspectionDtos$AbnormalRow">
+        SELECT <include refid="abnormalColumns"/>
+        FROM inspection_abnormal abnormal
+        <include refid="abnormalJoins"/>
+        WHERE abnormal.tenant_id = #{tenantId} AND abnormal.task_id = #{taskId}
+          AND abnormal.deleted = 0
+        ORDER BY abnormal.created_time DESC, abnormal.id DESC
+    </select>
+
+    <select id="findAbnormal" resultType="com.leantpm.inspection.InspectionDtos$AbnormalRow">
+        SELECT <include refid="abnormalColumns"/>
+        FROM inspection_abnormal abnormal
+        <include refid="abnormalJoins"/>
+        WHERE abnormal.tenant_id = #{tenantId} AND abnormal.id = #{id}
+          AND abnormal.deleted = 0
+          AND (
+            <include refid="equipmentScope"/>
+            OR (#{scope.selfData} = 1 AND abnormal.responsible_user_id = #{scope.userId})
+          )
+        LIMIT 1
+    </select>
+
+    <update id="handleAbnormal">
+        UPDATE inspection_abnormal
+        SET responsible_user_id = #{request.responsibleUserId},
+            due_time = #{request.dueTime}, temporary_action = #{request.temporaryAction},
+            final_result = #{request.finalResult},
+            requested_equipment_status = #{request.requestedEquipmentStatus},
+            abnormal_status = #{request.targetStatus},
+            closed_by = CASE WHEN #{request.targetStatus} = 'PENDING_VERIFY'
+                             THEN #{operatorId} ELSE closed_by END,
+            closed_time = CASE WHEN #{request.targetStatus} = 'PENDING_VERIFY'
+                               THEN CURRENT_TIMESTAMP(3) ELSE closed_time END,
+            updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0
+          AND version = #{request.version}
+          AND abnormal_status IN ('OPEN','PROCESSING')
+    </update>
+
+    <update id="verifyAbnormal">
+        UPDATE inspection_abnormal
+        SET abnormal_status = #{targetStatus}, verified_by = #{operatorId},
+            verified_time = CURRENT_TIMESTAMP(3),
+            verification_comment = #{request.comment},
+            updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0
+          AND version = #{request.version} AND abnormal_status = 'PENDING_VERIFY'
+    </update>
+
+    <select id="statistics" resultType="com.leantpm.inspection.InspectionDtos$Statistics">
+        SELECT
+          COALESCE(SUM(task.planned_date = #{today}), 0) AS due_today,
+          COALESCE(SUM(task.planned_date = #{today} AND task.task_status = 'COMPLETED'), 0) AS completed_today,
+          COALESCE(SUM(task.planned_date = #{today}
+              AND task.task_status IN ('PENDING','IN_PROGRESS','PENDING_REVIEW')), 0) AS pending_today,
+          COALESCE(SUM(task.task_status = 'OVERDUE'), 0) AS overdue,
+          COALESCE(SUM(EXISTS (
+              SELECT 1 FROM inspection_abnormal abnormal
+              WHERE abnormal.tenant_id = task.tenant_id AND abnormal.task_id = task.id
+                AND abnormal.deleted = 0 AND abnormal.abnormal_status != 'CLOSED'
+          )), 0) AS abnormal,
+          COALESCE(ROUND(
+              100 * SUM(task.planned_date = #{today} AND task.task_status = 'COMPLETED')
+              / NULLIF(SUM(task.planned_date = #{today}), 0), 2
+          ), 0) AS completion_rate,
+          COALESCE(ROUND(
+              100 * SUM(task.planned_date = #{today} AND task.task_status = 'COMPLETED'
+                        AND task.completed_time &lt;= task.due_time)
+              / NULLIF(SUM(task.planned_date = #{today} AND task.task_status = 'COMPLETED'), 0), 2
+          ), 0) AS on_time_rate
+        FROM inspection_task task
+        JOIN equipment e
+          ON e.tenant_id = task.tenant_id AND e.id = task.equipment_id AND e.deleted = 0
+        WHERE task.tenant_id = #{tenantId} AND task.deleted = 0
+          AND <include refid="equipmentScope"/>
+    </select>
+</mapper>

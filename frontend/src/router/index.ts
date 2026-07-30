@@ -138,6 +138,48 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '设备状态', permission: 'equipment:status:view' },
       },
       {
+        path: 'inspection/items',
+        name: 'InspectionItems',
+        component: () => import('@/views/inspection/items/InspectionItemView.vue'),
+        meta: { title: '点检项目', permission: 'inspection:item:view' },
+      },
+      {
+        path: 'inspection/schemes',
+        name: 'InspectionSchemes',
+        component: () => import('@/views/inspection/schemes/InspectionSchemeView.vue'),
+        meta: { title: '点检方案', permission: 'inspection:scheme:view' },
+      },
+      {
+        path: 'inspection/plans',
+        name: 'InspectionPlans',
+        component: () => import('@/views/inspection/plans/InspectionPlanView.vue'),
+        meta: { title: '点检计划', permission: 'inspection:plan:view' },
+      },
+      {
+        path: 'inspection/tasks',
+        name: 'InspectionTasks',
+        component: () => import('@/views/inspection/tasks/InspectionTaskView.vue'),
+        meta: { title: '点检任务', permission: 'inspection:task:view' },
+      },
+      {
+        path: 'inspection/my-tasks',
+        name: 'MyInspectionTasks',
+        component: () => import('@/views/inspection/mobile/MyInspectionTaskView.vue'),
+        meta: { title: '我的点检', permission: 'inspection:my-task:view' },
+      },
+      {
+        path: 'inspection/abnormal',
+        name: 'InspectionAbnormal',
+        component: () => import('@/views/inspection/abnormal/InspectionAbnormalView.vue'),
+        meta: { title: '点检异常', permission: 'inspection:abnormal:view' },
+      },
+      {
+        path: 'inspection/statistics',
+        name: 'InspectionStatistics',
+        component: () => import('@/views/inspection/statistics/InspectionStatisticsView.vue'),
+        meta: { title: '点检统计', permission: 'inspection:statistics:view' },
+      },
+      {
         path: 'coming-soon/:module',
         name: 'ComingSoon',
         component: () => import('@/views/common/ComingSoonView.vue'),

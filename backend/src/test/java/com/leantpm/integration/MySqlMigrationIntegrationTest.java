@@ -36,7 +36,7 @@ class MySqlMigrationIntegrationTest {
     @Test
     void appliesEveryMigrationAndFoundationTable() throws Exception {
         assertThat(number("SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1"))
-                .isEqualTo(8);
+                .isEqualTo(9);
         assertThat(number("""
                 SELECT COUNT(*)
                 FROM information_schema.tables
@@ -55,9 +55,22 @@ class MySqlMigrationIntegrationTest {
                     'equipment_transfer_record',
                     'equipment_barcode',
                     'equipment_current_status',
-                    'equipment_status_history'
+                    'equipment_status_history',
+                    'inspection_item',
+                    'inspection_scheme',
+                    'inspection_scheme_version',
+                    'inspection_scheme_item',
+                    'inspection_scheme_category',
+                    'inspection_scheme_equipment',
+                    'inspection_plan',
+                    'inspection_task',
+                    'inspection_task_item',
+                    'inspection_task_result',
+                    'inspection_abnormal',
+                    'inspection_attachment',
+                    'inspection_task_event'
                   )
-                """)).isEqualTo(14);
+                """)).isEqualTo(27);
     }
 
     @Test
@@ -120,6 +133,31 @@ class MySqlMigrationIntegrationTest {
                 WHERE table_schema = DATABASE()
                   AND table_name = 'equipment_barcode'
                   AND index_name = 'uk_equipment_active_barcode'
+                  AND non_unique = 0
+                """)).isEqualTo(3);
+    }
+
+    @Test
+    void preservesInspectionSchemeVersionsAndTaskItemSnapshots() throws Exception {
+        assertThat(number("""
+                SELECT COUNT(*)
+                FROM inspection_scheme scheme
+                JOIN inspection_scheme_version version
+                  ON version.tenant_id = scheme.tenant_id
+                 AND version.scheme_id = scheme.id
+                JOIN inspection_scheme_item relation
+                  ON relation.tenant_id = version.tenant_id
+                 AND relation.scheme_version_id = version.id
+                WHERE scheme.tenant_id = 1
+                  AND scheme.current_version_id = version.id
+                  AND version.version_status = 'PUBLISHED'
+                """)).isEqualTo(3);
+        assertThat(number("""
+                SELECT COUNT(*)
+                FROM information_schema.statistics
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'inspection_task'
+                  AND index_name = 'uk_inspection_task_occurrence'
                   AND non_unique = 0
                 """)).isEqualTo(3);
     }
