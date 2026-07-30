@@ -98,6 +98,7 @@ class InspectionMySqlIntegrationTest {
                         "inspection:scheme:manage",
                         "inspection:scheme:publish",
                         "inspection:plan:view",
+                        "inspection:plan:manage",
                         "inspection:plan:generate",
                         "inspection:task:view",
                         "inspection:task:execute",
@@ -141,17 +142,16 @@ class InspectionMySqlIntegrationTest {
         SecurityContextHolder.clearContext();
     }
 
-    @Test
-    void completesPublishedPlanTaskReviewAndAbnormalLifecycle() {
-        long equipmentId = equipmentService.create(new EquipmentDtos.SaveEquipmentRequest(
-                "EQ-INSPECTION-IT-001",
-                "点检集成测试设备",
+    private long createEquipment(String code, String name, String serialNumber) {
+        return equipmentService.create(new EquipmentDtos.SaveEquipmentRequest(
+                code,
+                name,
                 3L,
                 "CNC-IT",
                 null,
                 "LeanTPM",
                 "Integration",
-                "INSPECTION-SN-001",
+                serialNumber,
                 null,
                 null,
                 4L,
@@ -168,6 +168,15 @@ class InspectionMySqlIntegrationTest {
                 List.of(),
                 null
         ));
+    }
+
+    @Test
+    void completesPublishedPlanTaskReviewAndAbnormalLifecycle() {
+        long equipmentId = createEquipment(
+                "EQ-INSPECTION-IT-001",
+                "点检集成测试设备",
+                "INSPECTION-SN-001"
+        );
 
         long schemeId = catalogService.createScheme(new InspectionDtos.SaveSchemeRequest(
                 "ISP-IT-CNC",
@@ -294,6 +303,29 @@ class InspectionMySqlIntegrationTest {
                 Integer.class,
                 task.id()
         )).isEqualTo(3);
+
+        long manualEquipmentOne = createEquipment(
+                "EQ-INSPECTION-MANUAL-001",
+                "手工计划设备一",
+                "INSPECTION-MANUAL-SN-001"
+        );
+        long manualEquipmentTwo = createEquipment(
+                "EQ-INSPECTION-MANUAL-002",
+                "手工计划设备二",
+                "INSPECTION-MANUAL-SN-002"
+        );
+        InspectionDtos.CreatePlansResult manualResult = catalogService.createPlans(
+                new InspectionDtos.CreatePlansRequest(
+                        schemeId, List.of(manualEquipmentOne, manualEquipmentTwo)
+                )
+        );
+        assertThat(manualResult.processedPlans()).isEqualTo(2);
+        assertThat(manualResult.nextGenerationDate()).isEqualTo(LocalDate.now());
+        assertThat(catalogService.plans(
+                "EQ-INSPECTION-MANUAL", "ACTIVE", 1, 20
+        ).records())
+                .extracting(InspectionDtos.PlanRow::equipmentId)
+                .containsExactlyInAnyOrder(manualEquipmentOne, manualEquipmentTwo);
     }
 
     private InspectionDtos.SaveResultRequest result(

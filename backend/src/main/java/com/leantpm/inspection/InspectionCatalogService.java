@@ -338,6 +338,59 @@ public class InspectionCatalogService {
     }
 
     @Transactional
+    public InspectionDtos.CreatePlansResult createPlans(
+            InspectionDtos.CreatePlansRequest request
+    ) {
+        var current = SecurityUtils.currentUser();
+        DataPermission scope = dataPermissionService.current();
+        InspectionDtos.SchemeRow scheme = requireScheme(
+                current.tenantId(), request.schemeId()
+        );
+        if (scheme.status() == null || scheme.status() != 1
+                || scheme.currentVersionId() == null) {
+            throw new BusinessException(
+                    "INSPECTION_SCHEME_NOT_PUBLISHED", "只能使用已启用并发布的点检方案"
+            );
+        }
+        InspectionDtos.SchemeVersionRow version = requireVersion(
+                current.tenantId(), scheme.currentVersionId()
+        );
+        if (!"PUBLISHED".equals(version.versionStatus())) {
+            throw new BusinessException(
+                    "INSPECTION_SCHEME_NOT_PUBLISHED", "只能使用已发布的点检方案"
+            );
+        }
+
+        Set<Long> equipmentIds = distinct(request.equipmentIds());
+        for (Long equipmentId : equipmentIds) {
+            if (mapper.countActiveEquipment(
+                    current.tenantId(), equipmentId, scope
+            ) == 0) {
+                throw new BusinessException(
+                        "INSPECTION_PLAN_EQUIPMENT_INVALID",
+                        "所选设备不存在、未启用或超出当前数据权限"
+                );
+            }
+        }
+
+        LocalDate nextGenerationDate = firstOccurrence(version);
+        int processed = 0;
+        for (Long equipmentId : equipmentIds) {
+            if (mapper.insertPlan(
+                    current.tenantId(), scheme.id(), version.id(), equipmentId,
+                    nextGenerationDate, current.userId()
+            ) > 0) {
+                processed++;
+            }
+        }
+        changeLogService.record(
+                "INSPECTION_SCHEME", scheme.id(), "MANUAL_PLAN_CREATE",
+                null, request
+        );
+        return new InspectionDtos.CreatePlansResult(processed, nextGenerationDate);
+    }
+
+    @Transactional
     public void updatePlanStatus(long id, InspectionDtos.UpdatePlanStatusRequest request) {
         var current = SecurityUtils.currentUser();
         InspectionDtos.PlanRow before = requirePlan(

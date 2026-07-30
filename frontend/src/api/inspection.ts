@@ -138,6 +138,11 @@ export interface PlanRow {
   version: number
 }
 
+export interface CreatePlansResult {
+  processedPlans: number
+  nextGenerationDate: string
+}
+
 export interface TaskRow {
   id: number
   taskCode: string
@@ -314,6 +319,10 @@ export const inspectionApi = {
 
   plans: (params: object) =>
     getData<PageResult<PlanRow>>('/inspection/plans', params),
+  createPlans: async (data: { schemeId: number; equipmentIds: number[] }) => {
+    const response = await http.post<ApiResponse<CreatePlansResult>>('/inspection/plans', data)
+    return response.data.data
+  },
   updatePlanStatus: (id: number, data: object) =>
     http.put(`/inspection/plans/${id}/status`, data),
   generateTasks: async () => {

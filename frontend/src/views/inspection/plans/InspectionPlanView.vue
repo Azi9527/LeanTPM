@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { inspectionApi, type PlanRow } from '@/api/inspection'
+import { useRouter } from 'vue-router'
+import { equipmentApi, type EquipmentRow } from '@/api/equipment'
+import { inspectionApi, type PlanRow, type SchemeRow } from '@/api/inspection'
 import { useAuthStore } from '@/stores/auth'
 import { errorMessage } from '@/utils/http'
 
 const auth = useAuthStore()
+const router = useRouter()
 const loading = ref(false)
 const generating = ref(false)
 const rows = ref<PlanRow[]>([])
@@ -13,6 +16,15 @@ const total = ref(0)
 const page = ref(1)
 const keyword = ref('')
 const status = ref<string>()
+const manualVisible = ref(false)
+const manualLoading = ref(false)
+const manualSaving = ref(false)
+const schemes = ref<SchemeRow[]>([])
+const equipment = ref<EquipmentRow[]>([])
+const manualForm = reactive<{ schemeId?: number; equipmentIds: number[] }>({
+  schemeId: undefined,
+  equipmentIds: [],
+})
 
 const statusMeta: Record<string, { label: string; type: 'success' | 'warning' | 'info' }> = {
   ACTIVE: { label: '执行中', type: 'success' },
@@ -25,6 +37,9 @@ const cycleLabels: Record<string, string> = {
   MONTHLY: '每月',
   INTERVAL_DAYS: '间隔天数',
 }
+const selectedScheme = computed(() =>
+  schemes.value.find((item) => item.id === manualForm.schemeId),
+)
 
 onMounted(load)
 
@@ -59,6 +74,51 @@ async function generate() {
   }
 }
 
+async function openManual() {
+  manualVisible.value = true
+  manualForm.schemeId = undefined
+  manualForm.equipmentIds = []
+  manualLoading.value = true
+  try {
+    const [schemePage, equipmentPage] = await Promise.all([
+      inspectionApi.schemes({ status: 1, page: 1, pageSize: 200 }),
+      equipmentApi.page({ status: 1, page: 1, pageSize: 200 }),
+    ])
+    schemes.value = schemePage.records.filter(
+      (item) => item.currentVersionId && item.currentVersionStatus === 'PUBLISHED',
+    )
+    equipment.value = equipmentPage.records
+  } catch (error) {
+    ElMessage.error(errorMessage(error, '手工计划选项加载失败'))
+  } finally {
+    manualLoading.value = false
+  }
+}
+
+async function createManualPlans() {
+  if (!manualForm.schemeId || !manualForm.equipmentIds.length) {
+    ElMessage.warning('请选择已发布点检方案和至少一台设备')
+    return
+  }
+  manualSaving.value = true
+  try {
+    const result = await inspectionApi.createPlans({
+      schemeId: manualForm.schemeId,
+      equipmentIds: manualForm.equipmentIds,
+    })
+    ElMessage.success(
+      `已处理 ${result.processedPlans} 条设备计划，下次生成日 ${result.nextGenerationDate}`,
+    )
+    manualVisible.value = false
+    page.value = 1
+    await load()
+  } catch (error) {
+    ElMessage.error(errorMessage(error, '手工创建计划失败'))
+  } finally {
+    manualSaving.value = false
+  }
+}
+
 async function changeStatus(row: PlanRow, target: 'ACTIVE' | 'PAUSED' | 'CANCELLED') {
   let reason: string | undefined
   if (target !== 'ACTIVE') {
@@ -81,8 +141,11 @@ async function changeStatus(row: PlanRow, target: 'ACTIVE' | 'PAUSED' | 'CANCELL
 <template>
   <div class="page-shell">
     <header class="page-header">
-      <div><h1>点检计划</h1><p>方案发布后按适用设备自动形成计划，生成器保证同一计划时点只产生一个任务。</p></div>
-      <el-button v-if="auth.can('inspection:plan:generate')" type="primary" :loading="generating" @click="generate">立即生成任务</el-button>
+      <div><h1>点检计划</h1><p>支持方案发布自动建计划，也可手工选择一个或多个设备批量创建。</p></div>
+      <div class="header-actions">
+        <el-button v-if="auth.can('inspection:plan:manage')" @click="openManual">手工创建计划</el-button>
+        <el-button v-if="auth.can('inspection:plan:generate')" type="primary" :loading="generating" @click="generate">立即生成任务</el-button>
+      </div>
     </header>
     <section class="surface-card query-bar">
       <el-input v-model="keyword" clearable placeholder="方案或设备编码、名称" @keyup.enter="page = 1; load()" />
@@ -109,9 +172,89 @@ async function changeStatus(row: PlanRow, target: 'ACTIVE' | 'PAUSED' | 'CANCELL
       </el-table>
       <el-pagination v-model:current-page="page" :page-size="20" :total="total" layout="total, prev, pager, next" @change="load" />
     </section>
+
+    <el-dialog v-model="manualVisible" title="手工创建点检计划" width="min(720px, 94vw)">
+      <div v-loading="manualLoading">
+        <el-alert
+          title="选择已发布方案并勾选多台设备，系统将为每台设备创建或恢复一条计划。"
+          type="info"
+          :closable="false"
+          show-icon
+        />
+        <el-form class="manual-form" label-width="96px">
+          <el-form-item label="点检方案" required>
+            <el-select
+              v-model="manualForm.schemeId"
+              filterable
+              placeholder="请选择已发布点检方案"
+              style="width: 100%"
+            >
+              <el-option
+                v-for="scheme in schemes"
+                :key="scheme.id"
+                :label="`${scheme.schemeCode} · ${scheme.schemeName} · V${scheme.currentVersionNumber}`"
+                :value="scheme.id"
+              />
+            </el-select>
+            <div class="field-help">
+              没有可用方案？
+              <el-button link type="primary" @click="manualVisible = false; router.push('/inspection/schemes')">
+                前往点检方案录入并发布
+              </el-button>
+            </div>
+          </el-form-item>
+          <el-form-item label="选择设备" required>
+            <el-select
+              v-model="manualForm.equipmentIds"
+              multiple
+              filterable
+              collapse-tags
+              collapse-tags-tooltip
+              :max-collapse-tags="4"
+              placeholder="可同时选择多台启用设备"
+              style="width: 100%"
+            >
+              <el-option
+                v-for="item in equipment"
+                :key="item.id"
+                :label="`${item.equipmentCode} · ${item.equipmentName} · ${item.locationName}`"
+                :value="item.id"
+              />
+            </el-select>
+            <p class="field-help">已选择 {{ manualForm.equipmentIds.length }} 台设备，最多一次处理 200 台。</p>
+          </el-form-item>
+          <el-form-item v-if="selectedScheme" label="计划周期">
+            <el-tag type="info">
+              {{ cycleLabels[selectedScheme.cycleType || ''] || selectedScheme.cycleType }}
+              × {{ selectedScheme.cycleInterval }}
+            </el-tag>
+          </el-form-item>
+        </el-form>
+      </div>
+      <template #footer>
+        <el-button @click="manualVisible = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="manualSaving"
+          :disabled="!manualForm.schemeId || !manualForm.equipmentIds.length"
+          @click="createManualPlans"
+        >
+          批量创建（{{ manualForm.equipmentIds.length }} 台设备）
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <style scoped>
 .muted { color: var(--el-text-color-secondary); font-size: 12px; margin-top: 4px; }
+.header-actions { display: flex; gap: 10px; }
+.manual-form { margin-top: 22px; }
+.field-help {
+  width: 100%;
+  margin: 6px 0 0;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
 </style>

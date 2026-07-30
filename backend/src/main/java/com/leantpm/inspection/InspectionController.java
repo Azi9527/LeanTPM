@@ -157,6 +157,15 @@ public class InspectionController {
         ));
     }
 
+    @PostMapping("/plans")
+    @Idempotent
+    @PreAuthorize("hasAuthority('inspection:plan:manage')")
+    public ApiResponse<InspectionDtos.CreatePlansResult> createPlans(
+            @Valid @RequestBody InspectionDtos.CreatePlansRequest request
+    ) {
+        return ApiResponse.success(catalogService.createPlans(request));
+    }
+
     @PutMapping("/plans/{id}/status")
     @Idempotent
     @PreAuthorize("hasAuthority('inspection:plan:manage')")

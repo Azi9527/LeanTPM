@@ -232,6 +232,18 @@ public final class InspectionDtos {
     ) {
     }
 
+    public record CreatePlansRequest(
+            @NotNull @Min(1) Long schemeId,
+            @NotEmpty @Size(max = 200) List<@NotNull @Min(1) Long> equipmentIds
+    ) {
+    }
+
+    public record CreatePlansResult(
+            int processedPlans,
+            LocalDate nextGenerationDate
+    ) {
+    }
+
     public record UpdatePlanStatusRequest(
             @NotBlank
             @Pattern(regexp = "^(ACTIVE|PAUSED|CANCELLED)$", message = "计划状态不正确")
