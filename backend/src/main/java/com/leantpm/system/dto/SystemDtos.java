@@ -1,0 +1,189 @@
+package com.leantpm.system.dto;
+
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
+
+import java.time.LocalDateTime;
+import java.util.List;
+
+public final class SystemDtos {
+    private SystemDtos() {
+    }
+
+    public record UserRow(
+            long id,
+            String username,
+            String realName,
+            String employeeNo,
+            String mobile,
+            String email,
+            Integer status,
+            Boolean mobileEnabled,
+            Boolean mustChangePassword,
+            LocalDateTime lastLoginTime,
+            LocalDateTime createdTime,
+            Integer version,
+            List<Long> roleIds
+    ) {
+    }
+
+    public record CreateUserRequest(
+            @NotBlank @Size(max = 64) String username,
+            @NotBlank @Size(max = 100) String realName,
+            @Size(max = 50) String employeeNo,
+            @Pattern(regexp = "^$|^[0-9+\\-]{6,32}$", message = "格式不正确") String mobile,
+            @Email @Size(max = 128) String email,
+            Boolean mobileEnabled,
+            @NotEmpty List<Long> roleIds,
+            @NotBlank
+            @Size(min = 10, max = 128)
+            @Pattern(
+                    regexp = "^(?=.*[A-Za-z])(?=.*\\d)(?=.*[^A-Za-z\\d]).+$",
+                    message = "必须同时包含字母、数字和特殊字符"
+            )
+            String initialPassword
+    ) {
+    }
+
+    public record UpdateUserRequest(
+            @NotBlank @Size(max = 100) String realName,
+            @Size(max = 50) String employeeNo,
+            @Pattern(regexp = "^$|^[0-9+\\-]{6,32}$", message = "格式不正确") String mobile,
+            @Email @Size(max = 128) String email,
+            Boolean mobileEnabled,
+            @NotEmpty List<Long> roleIds,
+            @NotNull Integer version
+    ) {
+    }
+
+    public record StatusRequest(@NotNull Boolean enabled, @NotNull Integer version) {
+    }
+
+    public record ResetPasswordRequest(
+            @NotBlank
+            @Size(min = 10, max = 128)
+            @Pattern(
+                    regexp = "^(?=.*[A-Za-z])(?=.*\\d)(?=.*[^A-Za-z\\d]).+$",
+                    message = "必须同时包含字母、数字和特殊字符"
+            )
+            String newPassword
+    ) {
+    }
+
+    public record RoleRow(
+            long id,
+            String roleCode,
+            String roleName,
+            String dataScope,
+            Integer status,
+            Integer sortOrder,
+            String remark,
+            Integer version,
+            List<Long> menuIds
+    ) {
+    }
+
+    public record SaveRoleRequest(
+            @NotBlank @Size(max = 64) String roleCode,
+            @NotBlank @Size(max = 100) String roleName,
+            @NotBlank String dataScope,
+            @NotNull Boolean enabled,
+            Integer sortOrder,
+            @Size(max = 500) String remark,
+            List<Long> menuIds,
+            Integer version
+    ) {
+    }
+
+    public record MenuRow(
+            long id,
+            long parentId,
+            String menuType,
+            String menuName,
+            String routeName,
+            String routePath,
+            String componentPath,
+            String permissionCode,
+            String icon,
+            Integer visible,
+            Integer status,
+            Integer sortOrder
+    ) {
+    }
+
+    public record DictionaryTypeRow(
+            long id,
+            String dictCode,
+            String dictName,
+            Integer status,
+            String remark,
+            Integer version,
+            List<DictionaryItemRow> items
+    ) {
+    }
+
+    public record DictionaryItemRow(
+            long id,
+            long dictTypeId,
+            String itemValue,
+            String itemLabel,
+            String color,
+            String icon,
+            Integer status,
+            Integer sortOrder,
+            Boolean isDefault,
+            Integer version
+    ) {
+    }
+
+    public record SaveDictionaryTypeRequest(
+            @NotBlank @Size(max = 64) String dictCode,
+            @NotBlank @Size(max = 100) String dictName,
+            @NotNull Boolean enabled,
+            @Size(max = 500) String remark,
+            Integer version
+    ) {
+    }
+
+    public record SaveDictionaryItemRequest(
+            @NotBlank @Size(max = 64) String itemValue,
+            @NotBlank @Size(max = 100) String itemLabel,
+            @Size(max = 32) String color,
+            @Size(max = 64) String icon,
+            @NotNull Boolean enabled,
+            Integer sortOrder,
+            Boolean isDefault,
+            Integer version
+    ) {
+    }
+
+    public record LoginLogRow(
+            long id,
+            String username,
+            Long userId,
+            String loginIp,
+            String userAgent,
+            Boolean success,
+            String failureReason,
+            LocalDateTime loginTime
+    ) {
+    }
+
+    public record OperationLogRow(
+            long id,
+            Long userId,
+            String username,
+            String requestMethod,
+            String requestPath,
+            String requestIp,
+            Boolean success,
+            String errorMessage,
+            Long durationMs,
+            LocalDateTime operationTime
+    ) {
+    }
+}

@@ -1,0 +1,83 @@
+spring:
+  application:
+    name: leantpm-backend
+  datasource:
+    url: ${LEANTPM_DB_URL:jdbc:mysql://127.0.0.1:3306/leantpm?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false}
+    username: ${LEANTPM_DB_USERNAME:root}
+    password: ${LEANTPM_DB_PASSWORD:}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 2
+      connection-timeout: 10000
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+  data:
+    redis:
+      host: ${LEANTPM_REDIS_HOST:127.0.0.1}
+      port: ${LEANTPM_REDIS_PORT:6379}
+      password: ${LEANTPM_REDIS_PASSWORD:}
+      timeout: 2s
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 22MB
+  jackson:
+    default-property-inclusion: non_null
+    time-zone: Asia/Shanghai
+
+server:
+  port: ${LEANTPM_SERVER_PORT:8080}
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+
+mybatis:
+  mapper-locations: classpath*:mapper/**/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+    default-fetch-size: 100
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  api-docs:
+    path: /v3/api-docs
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  health:
+    redis:
+      enabled: ${LEANTPM_REDIS_HEALTH_ENABLED:false}
+
+leantpm:
+  security:
+    jwt-secret: ${LEANTPM_JWT_SECRET:}
+    access-token-minutes: ${LEANTPM_ACCESS_TOKEN_MINUTES:30}
+    refresh-token-days: ${LEANTPM_REFRESH_TOKEN_DAYS:7}
+    max-login-failures: ${LEANTPM_MAX_LOGIN_FAILURES:5}
+    failure-window-minutes: ${LEANTPM_FAILURE_WINDOW_MINUTES:10}
+  bootstrap:
+    admin-password: ${LEANTPM_BOOTSTRAP_ADMIN_PASSWORD:}
+  storage:
+    upload-dir: ${LEANTPM_UPLOAD_DIR:./var/uploads}
+    max-file-bytes: 20971520
+    allowed-extensions:
+      - jpg
+      - jpeg
+      - png
+      - gif
+      - pdf
+      - doc
+      - docx
+      - xls
+      - xlsx
+      - zip
+      - glb
+      - gltf

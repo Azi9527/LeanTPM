@@ -1,0 +1,23 @@
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Java
+backend/target/
+*.log
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# Local configuration and runtime data
+.env
+.env.local
+backend/src/main/resources/application-local.yml
+var/
+runtime/
+
+# OS
+.DS_Store
+Thumbs.db

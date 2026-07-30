@@ -1,0 +1,30 @@
+{
+  "name": "leantpm-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc -b && vite build",
+    "typecheck": "vue-tsc -b",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "^2.3.1",
+    "axios": "^1.10.0",
+    "echarts": "^6.1.0",
+    "element-plus": "^2.10.4",
+    "pinia": "^3.0.3",
+    "three": "^0.178.0",
+    "vue": "^3.5.17",
+    "vue-router": "^4.5.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.15",
+    "@vitejs/plugin-vue": "^6.0.0",
+    "sass": "^1.89.2",
+    "typescript": "~5.8.3",
+    "vite": "^7.0.4",
+    "vue-tsc": "^3.0.3"
+  }
+}

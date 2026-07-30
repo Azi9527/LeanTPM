@@ -1,0 +1,329 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.leantpm.system.mapper.SystemMapper">
+    <sql id="userFilter">
+        tenant_id = #{tenantId} AND deleted = 0
+        <if test="keyword != null and keyword != ''">
+            AND (username LIKE CONCAT('%', #{keyword}, '%')
+                 OR real_name LIKE CONCAT('%', #{keyword}, '%')
+                 OR employee_no LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        <if test="status != null">
+            AND status = #{status}
+        </if>
+    </sql>
+
+    <select id="findUsers" resultType="com.leantpm.system.dto.SystemDtos$UserRow">
+        SELECT id, username, real_name, employee_no, mobile, email, status, mobile_enabled,
+               must_change_password, last_login_time, created_time, version, NULL AS role_ids
+        FROM system_user
+        WHERE <include refid="userFilter"/>
+        ORDER BY id DESC
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
+    <select id="countUsers" resultType="long">
+        SELECT COUNT(*) FROM system_user WHERE <include refid="userFilter"/>
+    </select>
+
+    <select id="findUserRoleIds" resultType="long">
+        SELECT role_id FROM system_user_role
+        WHERE tenant_id = #{tenantId} AND user_id = #{userId} AND deleted = 0
+        ORDER BY role_id
+    </select>
+
+    <select id="countUsername" resultType="int">
+        SELECT COUNT(*) FROM system_user
+        WHERE tenant_id = #{tenantId} AND username = #{username} AND deleted = 0
+    </select>
+
+    <insert id="insertUser">
+        INSERT INTO system_user
+            (tenant_id, username, password_hash, real_name, employee_no, mobile, email,
+             mobile_enabled, must_change_password, created_by, updated_by)
+        VALUES
+            (#{tenantId}, #{username}, #{passwordHash}, #{realName}, #{employeeNo}, #{mobile}, #{email},
+             #{mobileEnabled}, 1, #{operatorId}, #{operatorId})
+    </insert>
+
+    <select id="findUserIdByUsername" resultType="long">
+        SELECT id FROM system_user
+        WHERE tenant_id = #{tenantId} AND username = #{username} AND deleted = 0
+        LIMIT 1
+    </select>
+
+    <update id="updateUser">
+        UPDATE system_user
+        SET real_name = #{request.realName},
+            employee_no = #{request.employeeNo},
+            mobile = #{request.mobile},
+            email = #{request.email},
+            mobile_enabled = #{request.mobileEnabled},
+            updated_by = #{operatorId},
+            version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{userId}
+          AND version = #{request.version} AND deleted = 0
+    </update>
+
+    <update id="updateUserStatus">
+        UPDATE system_user
+        SET status = IF(#{enabled}, 1, 0), updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{userId}
+          AND version = #{version} AND deleted = 0
+    </update>
+
+    <update id="resetUserPassword">
+        UPDATE system_user
+        SET password_hash = #{passwordHash}, must_change_password = 1,
+            updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{userId} AND deleted = 0
+    </update>
+
+    <delete id="deleteUserRoles">
+        DELETE FROM system_user_role WHERE tenant_id = #{tenantId} AND user_id = #{userId}
+    </delete>
+
+    <insert id="insertUserRole">
+        INSERT INTO system_user_role (tenant_id, user_id, role_id, created_by, updated_by)
+        VALUES (#{tenantId}, #{userId}, #{roleId}, #{operatorId}, #{operatorId})
+    </insert>
+
+    <select id="findRoles" resultType="com.leantpm.system.dto.SystemDtos$RoleRow">
+        SELECT id, role_code, role_name, data_scope, status, sort_order, remark, version,
+               NULL AS menu_ids
+        FROM system_role
+        WHERE tenant_id = #{tenantId} AND deleted = 0
+        ORDER BY sort_order, id
+    </select>
+
+    <select id="findRoleMenuIds" resultType="long">
+        SELECT menu_id FROM system_role_menu
+        WHERE tenant_id = #{tenantId} AND role_id = #{roleId} AND deleted = 0
+        ORDER BY menu_id
+    </select>
+
+    <select id="countRoleCode" resultType="int">
+        SELECT COUNT(*) FROM system_role
+        WHERE tenant_id = #{tenantId} AND role_code = #{roleCode} AND deleted = 0
+    </select>
+
+    <insert id="insertRole">
+        INSERT INTO system_role
+            (tenant_id, role_code, role_name, data_scope, status, sort_order, remark, created_by, updated_by)
+        VALUES
+            (#{tenantId}, #{request.roleCode}, #{request.roleName}, #{request.dataScope},
+             IF(#{request.enabled}, 1, 0), COALESCE(#{request.sortOrder}, 0), #{request.remark},
+             #{operatorId}, #{operatorId})
+    </insert>
+
+    <select id="findRoleIdByCode" resultType="long">
+        SELECT id FROM system_role
+        WHERE tenant_id = #{tenantId} AND role_code = #{roleCode} AND deleted = 0
+        LIMIT 1
+    </select>
+
+    <update id="updateRole">
+        UPDATE system_role
+        SET role_name = #{request.roleName},
+            data_scope = #{request.dataScope},
+            status = IF(#{request.enabled}, 1, 0),
+            sort_order = COALESCE(#{request.sortOrder}, 0),
+            remark = #{request.remark},
+            updated_by = #{operatorId},
+            version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{roleId}
+          AND version = #{request.version} AND deleted = 0
+    </update>
+
+    <delete id="deleteRoleMenus">
+        DELETE FROM system_role_menu WHERE tenant_id = #{tenantId} AND role_id = #{roleId}
+    </delete>
+
+    <insert id="insertRoleMenu">
+        INSERT INTO system_role_menu (tenant_id, role_id, menu_id, created_by, updated_by)
+        VALUES (#{tenantId}, #{roleId}, #{menuId}, #{operatorId}, #{operatorId})
+    </insert>
+
+    <select id="findMenus" resultType="com.leantpm.system.dto.SystemDtos$MenuRow">
+        SELECT id, parent_id, menu_type, menu_name, route_name, route_path, component_path,
+               permission_code, icon, visible, status, sort_order
+        FROM system_menu
+        WHERE tenant_id = #{tenantId} AND deleted = 0
+        ORDER BY parent_id, sort_order, id
+    </select>
+
+    <select id="findDictionaryTypes" resultType="com.leantpm.system.dto.SystemDtos$DictionaryTypeRow">
+        SELECT id, dict_code, dict_name, status, remark, version, NULL AS items
+        FROM system_dictionary_type
+        WHERE tenant_id = #{tenantId} AND deleted = 0
+        ORDER BY id
+    </select>
+
+    <select id="findDictionaryItems" resultType="com.leantpm.system.dto.SystemDtos$DictionaryItemRow">
+        SELECT id, dict_type_id, item_value, item_label, color, icon, status, sort_order,
+               is_default, version
+        FROM system_dictionary_item
+        WHERE tenant_id = #{tenantId} AND dict_type_id = #{typeId} AND deleted = 0
+        ORDER BY sort_order, id
+    </select>
+
+    <select id="countDictionaryCode" resultType="int">
+        SELECT COUNT(*) FROM system_dictionary_type
+        WHERE tenant_id = #{tenantId} AND dict_code = #{dictCode} AND deleted = 0
+    </select>
+
+    <insert id="insertDictionaryType">
+        INSERT INTO system_dictionary_type
+            (tenant_id, dict_code, dict_name, status, remark, created_by, updated_by)
+        VALUES
+            (#{tenantId}, #{request.dictCode}, #{request.dictName}, IF(#{request.enabled}, 1, 0),
+             #{request.remark}, #{operatorId}, #{operatorId})
+    </insert>
+
+    <select id="findDictionaryTypeIdByCode" resultType="long">
+        SELECT id FROM system_dictionary_type
+        WHERE tenant_id = #{tenantId} AND dict_code = #{dictCode} AND deleted = 0
+        LIMIT 1
+    </select>
+
+    <update id="updateDictionaryType">
+        UPDATE system_dictionary_type
+        SET dict_name = #{request.dictName}, status = IF(#{request.enabled}, 1, 0),
+            remark = #{request.remark}, updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{typeId}
+          AND version = #{request.version} AND deleted = 0
+    </update>
+
+    <update id="deleteDictionaryType">
+        UPDATE system_dictionary_type
+        SET deleted = 1, updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{typeId} AND deleted = 0
+          AND NOT EXISTS (
+            SELECT 1 FROM system_dictionary_item i
+            WHERE i.tenant_id = #{tenantId} AND i.dict_type_id = #{typeId} AND i.deleted = 0
+          )
+    </update>
+
+    <select id="countDictionaryItemValue" resultType="int">
+        SELECT COUNT(*) FROM system_dictionary_item
+        WHERE tenant_id = #{tenantId} AND dict_type_id = #{typeId}
+          AND item_value = #{itemValue} AND deleted = 0
+    </select>
+
+    <insert id="insertDictionaryItem">
+        INSERT INTO system_dictionary_item
+            (tenant_id, dict_type_id, item_value, item_label, color, icon, status, sort_order,
+             is_default, created_by, updated_by)
+        VALUES
+            (#{tenantId}, #{typeId}, #{request.itemValue}, #{request.itemLabel}, #{request.color},
+             #{request.icon}, IF(#{request.enabled}, 1, 0), COALESCE(#{request.sortOrder}, 0),
+             COALESCE(#{request.isDefault}, 0), #{operatorId}, #{operatorId})
+    </insert>
+
+    <update id="updateDictionaryItem">
+        UPDATE system_dictionary_item
+        SET item_label = #{request.itemLabel}, color = #{request.color}, icon = #{request.icon},
+            status = IF(#{request.enabled}, 1, 0), sort_order = COALESCE(#{request.sortOrder}, 0),
+            is_default = COALESCE(#{request.isDefault}, 0), updated_by = #{operatorId},
+            version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{itemId}
+          AND version = #{request.version} AND deleted = 0
+    </update>
+
+    <update id="deleteDictionaryItem">
+        UPDATE system_dictionary_item
+        SET deleted = 1, updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{itemId} AND deleted = 0
+    </update>
+
+    <select id="findLoginLogs" resultType="com.leantpm.system.dto.SystemDtos$LoginLogRow">
+        SELECT id, username, user_id, login_ip, user_agent, success, failure_reason, login_time
+        FROM system_login_log
+        WHERE tenant_id = #{tenantId} AND deleted = 0
+        <if test="keyword != null and keyword != ''">
+            AND (username LIKE CONCAT('%', #{keyword}, '%') OR login_ip LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        ORDER BY login_time DESC
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
+    <select id="countLoginLogs" resultType="long">
+        SELECT COUNT(*) FROM system_login_log
+        WHERE tenant_id = #{tenantId} AND deleted = 0
+        <if test="keyword != null and keyword != ''">
+            AND (username LIKE CONCAT('%', #{keyword}, '%') OR login_ip LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+    </select>
+
+    <select id="findOperationLogs" resultType="com.leantpm.system.dto.SystemDtos$OperationLogRow">
+        SELECT id, user_id, username, request_method, request_path, request_ip, success,
+               error_message, duration_ms, operation_time
+        FROM system_operation_log
+        WHERE tenant_id = #{tenantId} AND deleted = 0
+        <if test="keyword != null and keyword != ''">
+            AND (username LIKE CONCAT('%', #{keyword}, '%') OR request_path LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        ORDER BY operation_time DESC
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
+    <select id="countOperationLogs" resultType="long">
+        SELECT COUNT(*) FROM system_operation_log
+        WHERE tenant_id = #{tenantId} AND deleted = 0
+        <if test="keyword != null and keyword != ''">
+            AND (username LIKE CONCAT('%', #{keyword}, '%') OR request_path LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+    </select>
+
+    <insert id="insertOperationLog">
+        INSERT INTO system_operation_log
+            (tenant_id, user_id, username, request_method, request_path, request_ip,
+             success, error_message, duration_ms, created_by)
+        VALUES
+            (#{tenantId}, #{userId}, #{username}, #{method}, #{path}, #{ip},
+             #{success}, #{errorMessage}, #{durationMs}, COALESCE(#{userId}, 0))
+    </insert>
+
+    <insert id="insertAttachment">
+        INSERT INTO system_attachment
+            (tenant_id, business_type, business_id, original_name, stored_name, storage_path,
+             content_type, extension, file_size, sha256, created_by, updated_by)
+        VALUES
+            (#{tenantId}, #{businessType}, #{businessId}, #{originalName}, #{storedName}, #{storagePath},
+             #{contentType}, #{extension}, #{fileSize}, #{sha256}, #{operatorId}, #{operatorId})
+    </insert>
+
+    <select id="findAttachmentIdByStoredName" resultType="long">
+        SELECT id FROM system_attachment
+        WHERE tenant_id = #{tenantId} AND stored_name = #{storedName} AND deleted = 0
+        LIMIT 1
+    </select>
+
+    <select id="findAttachments" resultType="com.leantpm.system.mapper.SystemMapper$AttachmentRecord">
+        SELECT id, business_type, business_id, original_name, stored_name, storage_path,
+               content_type, extension, file_size, sha256, created_time
+        FROM system_attachment
+        WHERE tenant_id = #{tenantId} AND deleted = 0
+        <if test="keyword != null and keyword != ''">
+            AND original_name LIKE CONCAT('%', #{keyword}, '%')
+        </if>
+        ORDER BY created_time DESC
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
+    <select id="countAttachments" resultType="long">
+        SELECT COUNT(*) FROM system_attachment
+        WHERE tenant_id = #{tenantId} AND deleted = 0
+        <if test="keyword != null and keyword != ''">
+            AND original_name LIKE CONCAT('%', #{keyword}, '%')
+        </if>
+    </select>
+
+    <select id="findAttachment" resultType="com.leantpm.system.mapper.SystemMapper$AttachmentRecord">
+        SELECT id, business_type, business_id, original_name, stored_name, storage_path,
+               content_type, extension, file_size, sha256, created_time
+        FROM system_attachment
+        WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0
+        LIMIT 1
+    </select>
+</mapper>
