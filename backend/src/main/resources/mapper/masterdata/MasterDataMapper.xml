@@ -1,0 +1,456 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.leantpm.masterdata.MasterDataMapper">
+    <sql id="organizationColumns">
+        o.id, o.parent_id, o.organization_code, o.organization_name,
+        o.organization_type, o.manager_user_id, manager.real_name AS manager_name,
+        o.sort_order, o.status, o.description, o.version
+    </sql>
+
+    <select id="findOrganizations"
+            resultType="com.leantpm.masterdata.MasterDataDtos$OrganizationRow">
+        SELECT <include refid="organizationColumns"/>
+        FROM organization o
+        LEFT JOIN system_user manager
+          ON manager.tenant_id = o.tenant_id
+         AND manager.id = o.manager_user_id
+         AND manager.deleted = 0
+        WHERE o.tenant_id = #{tenantId} AND o.deleted = 0
+        ORDER BY o.parent_id, o.sort_order, o.id
+    </select>
+
+    <select id="findOrganization"
+            resultType="com.leantpm.masterdata.MasterDataDtos$OrganizationRow">
+        SELECT <include refid="organizationColumns"/>
+        FROM organization o
+        LEFT JOIN system_user manager
+          ON manager.tenant_id = o.tenant_id
+         AND manager.id = o.manager_user_id
+         AND manager.deleted = 0
+        WHERE o.tenant_id = #{tenantId} AND o.id = #{id} AND o.deleted = 0
+        LIMIT 1
+    </select>
+
+    <select id="countOrganizationCode" resultType="int">
+        SELECT COUNT(*) FROM organization
+        WHERE tenant_id = #{tenantId}
+          AND organization_code = #{code}
+          AND deleted = 0
+          <if test="excludeId != null">AND id != #{excludeId}</if>
+    </select>
+
+    <insert id="insertOrganization">
+        INSERT INTO organization
+            (tenant_id, parent_id, organization_code, organization_name,
+             organization_type, description, manager_user_id, sort_order, status,
+             created_by, updated_by)
+        VALUES
+            (#{tenantId}, #{request.parentId}, #{request.organizationCode},
+             #{request.organizationName}, #{request.organizationType},
+             #{request.description}, #{request.managerUserId},
+             COALESCE(#{request.sortOrder}, 0),
+             CASE WHEN #{request.enabled} THEN 1 ELSE 0 END,
+             #{operatorId}, #{operatorId})
+    </insert>
+
+    <select id="findOrganizationIdByCode" resultType="long">
+        SELECT id FROM organization
+        WHERE tenant_id = #{tenantId} AND organization_code = #{code} AND deleted = 0
+        LIMIT 1
+    </select>
+
+    <update id="updateOrganization">
+        UPDATE organization
+        SET parent_id = #{request.parentId},
+            organization_name = #{request.organizationName},
+            organization_type = #{request.organizationType},
+            description = #{request.description},
+            manager_user_id = #{request.managerUserId},
+            sort_order = COALESCE(#{request.sortOrder}, 0),
+            status = CASE WHEN #{request.enabled} THEN 1 ELSE 0 END,
+            updated_by = #{operatorId},
+            version = version + 1
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND version = #{request.version}
+          AND deleted = 0
+    </update>
+
+    <update id="softDeleteOrganization">
+        UPDATE organization
+        SET deleted = 1, status = 0, updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND version = #{version}
+          AND deleted = 0
+    </update>
+
+    <select id="countOrganizationChildren" resultType="int">
+        SELECT COUNT(*) FROM organization
+        WHERE tenant_id = #{tenantId} AND parent_id = #{id} AND deleted = 0
+        <if test="enabledOnly">AND status = 1</if>
+    </select>
+
+    <select id="countOrganizationReferences" resultType="int">
+        SELECT
+            (SELECT COUNT(*) FROM system_user
+             WHERE tenant_id = #{tenantId} AND organization_id = #{id} AND deleted = 0
+             <if test="enabledOnly">AND status = 1</if>)
+          + (SELECT COUNT(*) FROM location
+             WHERE tenant_id = #{tenantId} AND organization_id = #{id} AND deleted = 0
+             <if test="enabledOnly">AND status = 1</if>)
+          + (SELECT COUNT(*) FROM equipment
+             WHERE tenant_id = #{tenantId} AND organization_id = #{id} AND deleted = 0
+             <if test="enabledOnly">AND status = 1</if>)
+    </select>
+
+    <sql id="locationColumns">
+        l.id, l.parent_id, l.location_code, l.location_name, l.location_type,
+        l.organization_id, o.organization_name, l.manager_user_id,
+        manager.real_name AS manager_name, l.sort_order, l.status,
+        l.description, l.version
+    </sql>
+
+    <select id="findLocations"
+            resultType="com.leantpm.masterdata.MasterDataDtos$LocationRow">
+        SELECT <include refid="locationColumns"/>
+        FROM location l
+        JOIN organization o
+          ON o.tenant_id = l.tenant_id AND o.id = l.organization_id AND o.deleted = 0
+        LEFT JOIN system_user manager
+          ON manager.tenant_id = l.tenant_id
+         AND manager.id = l.manager_user_id
+         AND manager.deleted = 0
+        WHERE l.tenant_id = #{tenantId} AND l.deleted = 0
+        ORDER BY l.parent_id, l.sort_order, l.id
+    </select>
+
+    <select id="findLocation"
+            resultType="com.leantpm.masterdata.MasterDataDtos$LocationRow">
+        SELECT <include refid="locationColumns"/>
+        FROM location l
+        JOIN organization o
+          ON o.tenant_id = l.tenant_id AND o.id = l.organization_id AND o.deleted = 0
+        LEFT JOIN system_user manager
+          ON manager.tenant_id = l.tenant_id
+         AND manager.id = l.manager_user_id
+         AND manager.deleted = 0
+        WHERE l.tenant_id = #{tenantId} AND l.id = #{id} AND l.deleted = 0
+        LIMIT 1
+    </select>
+
+    <select id="countLocationCode" resultType="int">
+        SELECT COUNT(*) FROM location
+        WHERE tenant_id = #{tenantId} AND location_code = #{code} AND deleted = 0
+        <if test="excludeId != null">AND id != #{excludeId}</if>
+    </select>
+
+    <insert id="insertLocation">
+        INSERT INTO location
+            (tenant_id, parent_id, location_code, location_name, location_type,
+             organization_id, manager_user_id, sort_order, status, description,
+             created_by, updated_by)
+        VALUES
+            (#{tenantId}, #{request.parentId}, #{request.locationCode},
+             #{request.locationName}, #{request.locationType}, #{request.organizationId},
+             #{request.managerUserId}, COALESCE(#{request.sortOrder}, 0),
+             CASE WHEN #{request.enabled} THEN 1 ELSE 0 END,
+             #{request.description}, #{operatorId}, #{operatorId})
+    </insert>
+
+    <select id="findLocationIdByCode" resultType="long">
+        SELECT id FROM location
+        WHERE tenant_id = #{tenantId} AND location_code = #{code} AND deleted = 0
+        LIMIT 1
+    </select>
+
+    <update id="updateLocation">
+        UPDATE location
+        SET parent_id = #{request.parentId},
+            location_name = #{request.locationName},
+            location_type = #{request.locationType},
+            organization_id = #{request.organizationId},
+            manager_user_id = #{request.managerUserId},
+            sort_order = COALESCE(#{request.sortOrder}, 0),
+            status = CASE WHEN #{request.enabled} THEN 1 ELSE 0 END,
+            description = #{request.description},
+            updated_by = #{operatorId},
+            version = version + 1
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND version = #{request.version}
+          AND deleted = 0
+    </update>
+
+    <update id="softDeleteLocation">
+        UPDATE location
+        SET deleted = 1, status = 0, updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND version = #{version}
+          AND deleted = 0
+    </update>
+
+    <select id="countLocationChildren" resultType="int">
+        SELECT COUNT(*) FROM location
+        WHERE tenant_id = #{tenantId} AND parent_id = #{id} AND deleted = 0
+        <if test="enabledOnly">AND status = 1</if>
+    </select>
+
+    <select id="countLocationEquipmentReferences" resultType="int">
+        SELECT COUNT(*) FROM equipment
+        WHERE tenant_id = #{tenantId} AND location_id = #{id} AND deleted = 0
+        <if test="enabledOnly">AND status = 1</if>
+    </select>
+
+    <select id="findCategories"
+            resultType="com.leantpm.masterdata.MasterDataDtos$EquipmentCategoryRow">
+        SELECT id, parent_id, category_code, category_name, tree_level,
+               default_inspection_template_id, default_maintenance_template_id,
+               default_fault_type_id, default_oee_mode, sort_order, status,
+               description, version
+        FROM equipment_category
+        WHERE tenant_id = #{tenantId} AND deleted = 0
+        ORDER BY parent_id, sort_order, id
+    </select>
+
+    <select id="findCategory"
+            resultType="com.leantpm.masterdata.MasterDataDtos$EquipmentCategoryRow">
+        SELECT id, parent_id, category_code, category_name, tree_level,
+               default_inspection_template_id, default_maintenance_template_id,
+               default_fault_type_id, default_oee_mode, sort_order, status,
+               description, version
+        FROM equipment_category
+        WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0
+        LIMIT 1
+    </select>
+
+    <select id="countCategoryCode" resultType="int">
+        SELECT COUNT(*) FROM equipment_category
+        WHERE tenant_id = #{tenantId} AND category_code = #{code} AND deleted = 0
+        <if test="excludeId != null">AND id != #{excludeId}</if>
+    </select>
+
+    <insert id="insertCategory">
+        INSERT INTO equipment_category
+            (tenant_id, parent_id, category_code, category_name, tree_level,
+             default_inspection_template_id, default_maintenance_template_id,
+             default_fault_type_id, default_oee_mode, sort_order, status, description,
+             created_by, updated_by)
+        VALUES
+            (#{tenantId}, #{request.parentId}, #{request.categoryCode},
+             #{request.categoryName}, #{treeLevel},
+             #{request.defaultInspectionTemplateId}, #{request.defaultMaintenanceTemplateId},
+             #{request.defaultFaultTypeId}, #{request.defaultOeeMode},
+             COALESCE(#{request.sortOrder}, 0),
+             CASE WHEN #{request.enabled} THEN 1 ELSE 0 END,
+             #{request.description}, #{operatorId}, #{operatorId})
+    </insert>
+
+    <select id="findCategoryIdByCode" resultType="long">
+        SELECT id FROM equipment_category
+        WHERE tenant_id = #{tenantId} AND category_code = #{code} AND deleted = 0
+        LIMIT 1
+    </select>
+
+    <update id="updateCategory">
+        UPDATE equipment_category
+        SET parent_id = #{request.parentId},
+            category_name = #{request.categoryName},
+            tree_level = #{treeLevel},
+            default_inspection_template_id = #{request.defaultInspectionTemplateId},
+            default_maintenance_template_id = #{request.defaultMaintenanceTemplateId},
+            default_fault_type_id = #{request.defaultFaultTypeId},
+            default_oee_mode = #{request.defaultOeeMode},
+            sort_order = COALESCE(#{request.sortOrder}, 0),
+            status = CASE WHEN #{request.enabled} THEN 1 ELSE 0 END,
+            description = #{request.description},
+            updated_by = #{operatorId},
+            version = version + 1
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND version = #{request.version}
+          AND deleted = 0
+    </update>
+
+    <update id="softDeleteCategory">
+        UPDATE equipment_category
+        SET deleted = 1, status = 0, updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND version = #{version}
+          AND deleted = 0
+    </update>
+
+    <select id="countCategoryChildren" resultType="int">
+        SELECT COUNT(*) FROM equipment_category
+        WHERE tenant_id = #{tenantId} AND parent_id = #{id} AND deleted = 0
+    </select>
+
+    <select id="countCategoryEquipmentReferences" resultType="int">
+        SELECT COUNT(*) FROM equipment
+        WHERE tenant_id = #{tenantId} AND category_id = #{id} AND deleted = 0
+    </select>
+
+    <select id="countCategoryAttributeDefinitions" resultType="int">
+        SELECT COUNT(*) FROM equipment_attribute_definition
+        WHERE tenant_id = #{tenantId} AND category_id = #{id} AND deleted = 0
+    </select>
+
+    <update id="updateCategoryTreeLevel">
+        UPDATE equipment_category
+        SET tree_level = #{treeLevel}, updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0
+    </update>
+
+    <select id="findCategoryAttributes"
+            resultType="com.leantpm.masterdata.MasterDataDtos$AttributeDefinitionRow">
+        <choose>
+            <when test="includeInherited">
+                WITH RECURSIVE category_path AS (
+                    SELECT id, parent_id, category_name, 0 AS distance
+                    FROM equipment_category
+                    WHERE tenant_id = #{tenantId} AND id = #{categoryId} AND deleted = 0
+                    UNION ALL
+                    SELECT parent.id, parent.parent_id, parent.category_name,
+                           child.distance + 1
+                    FROM equipment_category parent
+                    JOIN category_path child ON child.parent_id = parent.id
+                    WHERE parent.tenant_id = #{tenantId} AND parent.deleted = 0
+                )
+                SELECT a.id, a.category_id, path.category_name,
+                       a.attribute_code, a.attribute_name, a.data_type, a.unit,
+                       a.required_flag, a.default_value, a.validation_pattern,
+                       a.minimum_value, a.maximum_value,
+                       CAST(a.enum_options AS CHAR) AS enum_options_json,
+                       a.sort_order, a.status, a.description, a.version,
+                       CASE WHEN a.category_id = #{categoryId} THEN FALSE ELSE TRUE END AS inherited
+                FROM category_path path
+                JOIN equipment_attribute_definition a
+                  ON a.tenant_id = #{tenantId}
+                 AND a.category_id = path.id
+                 AND a.deleted = 0
+                ORDER BY path.distance ASC, a.sort_order, a.id
+            </when>
+            <otherwise>
+                SELECT a.id, a.category_id, c.category_name,
+                       a.attribute_code, a.attribute_name, a.data_type, a.unit,
+                       a.required_flag, a.default_value, a.validation_pattern,
+                       a.minimum_value, a.maximum_value,
+                       CAST(a.enum_options AS CHAR) AS enum_options_json,
+                       a.sort_order, a.status, a.description, a.version,
+                       FALSE AS inherited
+                FROM equipment_attribute_definition a
+                JOIN equipment_category c
+                  ON c.tenant_id = a.tenant_id AND c.id = a.category_id AND c.deleted = 0
+                WHERE a.tenant_id = #{tenantId}
+                  AND a.category_id = #{categoryId}
+                  AND a.deleted = 0
+                ORDER BY a.sort_order, a.id
+            </otherwise>
+        </choose>
+    </select>
+
+    <select id="findAttribute"
+            resultType="com.leantpm.masterdata.MasterDataDtos$AttributeDefinitionRow">
+        SELECT a.id, a.category_id, c.category_name,
+               a.attribute_code, a.attribute_name, a.data_type, a.unit,
+               a.required_flag, a.default_value, a.validation_pattern,
+               a.minimum_value, a.maximum_value,
+               CAST(a.enum_options AS CHAR) AS enum_options_json,
+               a.sort_order, a.status, a.description, a.version,
+               FALSE AS inherited
+        FROM equipment_attribute_definition a
+        JOIN equipment_category c
+          ON c.tenant_id = a.tenant_id AND c.id = a.category_id AND c.deleted = 0
+        WHERE a.tenant_id = #{tenantId} AND a.id = #{id} AND a.deleted = 0
+        LIMIT 1
+    </select>
+
+    <select id="countAttributeCode" resultType="int">
+        SELECT COUNT(*) FROM equipment_attribute_definition
+        WHERE tenant_id = #{tenantId}
+          AND category_id = #{categoryId}
+          AND attribute_code = #{code}
+          AND deleted = 0
+          <if test="excludeId != null">AND id != #{excludeId}</if>
+    </select>
+
+    <insert id="insertAttribute">
+        INSERT INTO equipment_attribute_definition
+            (tenant_id, category_id, attribute_code, attribute_name, data_type,
+             unit, required_flag, default_value, validation_pattern,
+             minimum_value, maximum_value, enum_options, sort_order, status,
+             description, created_by, updated_by)
+        VALUES
+            (#{tenantId}, #{categoryId}, #{request.attributeCode},
+             #{request.attributeName}, #{request.dataType}, #{request.unit},
+             CASE WHEN #{request.required} THEN 1 ELSE 0 END,
+             #{request.defaultValue}, #{request.validationPattern},
+             #{request.minimumValue}, #{request.maximumValue},
+             #{enumOptionsJson}, COALESCE(#{request.sortOrder}, 0),
+             CASE WHEN #{request.enabled} THEN 1 ELSE 0 END,
+             #{request.description}, #{operatorId}, #{operatorId})
+    </insert>
+
+    <select id="findAttributeIdByCode" resultType="long">
+        SELECT id FROM equipment_attribute_definition
+        WHERE tenant_id = #{tenantId}
+          AND category_id = #{categoryId}
+          AND attribute_code = #{code}
+          AND deleted = 0
+        LIMIT 1
+    </select>
+
+    <update id="updateAttribute">
+        UPDATE equipment_attribute_definition
+        SET attribute_name = #{request.attributeName},
+            data_type = #{request.dataType},
+            unit = #{request.unit},
+            required_flag = CASE WHEN #{request.required} THEN 1 ELSE 0 END,
+            default_value = #{request.defaultValue},
+            validation_pattern = #{request.validationPattern},
+            minimum_value = #{request.minimumValue},
+            maximum_value = #{request.maximumValue},
+            enum_options = #{enumOptionsJson},
+            sort_order = COALESCE(#{request.sortOrder}, 0),
+            status = CASE WHEN #{request.enabled} THEN 1 ELSE 0 END,
+            description = #{request.description},
+            updated_by = #{operatorId},
+            version = version + 1
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND version = #{request.version}
+          AND deleted = 0
+    </update>
+
+    <update id="softDeleteAttribute">
+        UPDATE equipment_attribute_definition
+        SET deleted = 1, status = 0, updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND version = #{version}
+          AND deleted = 0
+    </update>
+
+    <select id="countAttributeValueReferences" resultType="int">
+        SELECT COUNT(*) FROM equipment_attribute_value
+        WHERE tenant_id = #{tenantId} AND attribute_definition_id = #{id} AND deleted = 0
+    </select>
+
+    <select id="countActiveUser" resultType="int">
+        SELECT COUNT(*) FROM system_user
+        WHERE tenant_id = #{tenantId} AND id = #{id} AND status = 1 AND deleted = 0
+    </select>
+
+    <select id="findReferenceUsers"
+            resultType="com.leantpm.masterdata.MasterDataDtos$ReferenceUser">
+        SELECT u.id, u.username, u.real_name, u.organization_id, o.organization_name
+        FROM system_user u
+        LEFT JOIN organization o
+          ON o.tenant_id = u.tenant_id AND o.id = u.organization_id AND o.deleted = 0
+        WHERE u.tenant_id = #{tenantId} AND u.status = 1 AND u.deleted = 0
+        ORDER BY u.real_name, u.id
+    </select>
+</mapper>

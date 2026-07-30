@@ -36,7 +36,7 @@ class MySqlMigrationIntegrationTest {
     @Test
     void appliesEveryMigrationAndFoundationTable() throws Exception {
         assertThat(number("SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1"))
-                .isEqualTo(5);
+                .isEqualTo(8);
         assertThat(number("""
                 SELECT COUNT(*)
                 FROM information_schema.tables
@@ -45,9 +45,19 @@ class MySqlMigrationIntegrationTest {
                     'organization',
                     'system_data_scope',
                     'system_change_log',
-                    'system_attachment_relation'
+                    'system_attachment_relation',
+                    'location',
+                    'equipment_category',
+                    'equipment_attribute_definition',
+                    'equipment',
+                    'equipment_attribute_value',
+                    'equipment_responsible_person',
+                    'equipment_transfer_record',
+                    'equipment_barcode',
+                    'equipment_current_status',
+                    'equipment_status_history'
                   )
-                """)).isEqualTo(4);
+                """)).isEqualTo(14);
     }
 
     @Test
@@ -85,6 +95,33 @@ class MySqlMigrationIntegrationTest {
                 WHERE resource_type = 'INTEGRATION_TEST'
                   AND JSON_UNQUOTE(JSON_EXTRACT(after_data, '$.status')) = 'NEW'
                 """)).isEqualTo(1);
+    }
+
+    @Test
+    void separatesOrganizationLocationAndEquipmentStatusModels() throws Exception {
+        assertThat(number("""
+                SELECT COUNT(*)
+                FROM location l
+                JOIN organization o
+                  ON o.tenant_id = l.tenant_id
+                 AND o.id = l.organization_id
+                WHERE l.tenant_id = 1
+                  AND l.deleted = 0
+                  AND o.deleted = 0
+                """)).isEqualTo(5);
+        assertThat(number("""
+                SELECT COUNT(*)
+                FROM equipment_category
+                WHERE tenant_id = 1 AND deleted = 0
+                """)).isEqualTo(3);
+        assertThat(number("""
+                SELECT COUNT(*)
+                FROM information_schema.statistics
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'equipment_barcode'
+                  AND index_name = 'uk_equipment_active_barcode'
+                  AND non_unique = 0
+                """)).isEqualTo(3);
     }
 
     private long number(String sql) throws Exception {

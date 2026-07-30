@@ -16,6 +16,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
         "com.leantpm.auth.mapper",
         "com.leantpm.system.mapper",
         "com.leantpm.foundation.mapper",
+        "com.leantpm.masterdata",
+        "com.leantpm.equipment",
         "com.leantpm.security.datascope"
 })
 @EnableConfigurationProperties({

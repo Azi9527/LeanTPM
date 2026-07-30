@@ -49,4 +49,19 @@
         FROM system_change_log
         WHERE <include refid="changeLogFilter"/>
     </select>
+
+    <select id="findResourceChangeLogs"
+            resultType="com.leantpm.system.audit.ChangeLogDtos$ChangeLogRow">
+        SELECT id, resource_type, resource_id, operation_type,
+               CAST(before_data AS CHAR) AS before_data,
+               CAST(after_data AS CHAR) AS after_data,
+               CAST(changed_fields AS CHAR) AS changed_fields,
+               operator_id, operator_name, request_id, change_time
+        FROM system_change_log
+        WHERE tenant_id = #{tenantId}
+          AND resource_type = #{resourceType}
+          AND resource_id = #{resourceId}
+        ORDER BY change_time DESC, id DESC
+        LIMIT #{limit}
+    </select>
 </mapper>

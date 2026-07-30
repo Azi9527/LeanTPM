@@ -37,4 +37,11 @@ public interface ChangeLogMapper {
             @Param("startTime") LocalDateTime startTime,
             @Param("endTime") LocalDateTime endTime
     );
+
+    List<ChangeLogDtos.ChangeLogRow> findResourceChangeLogs(
+            @Param("tenantId") long tenantId,
+            @Param("resourceType") String resourceType,
+            @Param("resourceId") String resourceId,
+            @Param("limit") int limit
+    );
 }

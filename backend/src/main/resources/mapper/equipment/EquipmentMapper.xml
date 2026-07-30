@@ -1,0 +1,597 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.leantpm.equipment.EquipmentMapper">
+    <sql id="dataScope">
+        <choose>
+            <when test="scope.allData">1 = 1</when>
+            <when test="scope.selfData or (scope.organizationIds != null and !scope.organizationIds.isEmpty())">
+                (
+                    <if test="scope.selfData">
+                        e.created_by = #{scope.userId}
+                        OR e.primary_responsible_user_id = #{scope.userId}
+                        OR EXISTS (
+                            SELECT 1 FROM equipment_responsible_person scoped_person
+                            WHERE scoped_person.tenant_id = e.tenant_id
+                              AND scoped_person.equipment_id = e.id
+                              AND scoped_person.user_id = #{scope.userId}
+                              AND scoped_person.status = 1
+                              AND scoped_person.deleted = 0
+                        )
+                    </if>
+                    <if test="scope.selfData and scope.organizationIds != null and !scope.organizationIds.isEmpty()">
+                        OR
+                    </if>
+                    <if test="scope.organizationIds != null and !scope.organizationIds.isEmpty()">
+                        e.organization_id IN
+                        <foreach collection="scope.organizationIds" item="organizationId"
+                                 open="(" separator="," close=")">
+                            #{organizationId}
+                        </foreach>
+                    </if>
+                )
+            </when>
+            <otherwise>1 = 0</otherwise>
+        </choose>
+    </sql>
+
+    <sql id="filters">
+        e.tenant_id = #{tenantId}
+        AND e.deleted = 0
+        AND <include refid="dataScope"/>
+        <if test="keyword != null and keyword != ''">
+            AND (
+                e.equipment_code LIKE CONCAT('%', #{keyword}, '%')
+                OR e.equipment_name LIKE CONCAT('%', #{keyword}, '%')
+                OR e.model LIKE CONCAT('%', #{keyword}, '%')
+                OR e.asset_number LIKE CONCAT('%', #{keyword}, '%')
+                OR e.factory_serial_number LIKE CONCAT('%', #{keyword}, '%')
+            )
+        </if>
+        <if test="categoryId != null">AND e.category_id = #{categoryId}</if>
+        <if test="organizationId != null">AND e.organization_id = #{organizationId}</if>
+        <if test="locationId != null">AND e.location_id = #{locationId}</if>
+        <if test="currentStatusCode != null and currentStatusCode != ''">
+            AND current_status.status_code = #{currentStatusCode}
+        </if>
+        <if test="lifecycleStage != null and lifecycleStage != ''">
+            AND e.lifecycle_stage = #{lifecycleStage}
+        </if>
+        <if test="status != null">AND e.status = #{status}</if>
+    </sql>
+
+    <sql id="equipmentColumns">
+        e.id, e.equipment_code, e.equipment_name, e.category_id,
+        category.category_code, category.category_name,
+        e.model, e.specification, e.brand, e.manufacturer, e.factory_serial_number,
+        e.production_date, e.commissioning_date, e.organization_id,
+        organization.organization_code, organization.organization_name,
+        e.location_id, location.location_code, location.location_name,
+        e.primary_responsible_user_id,
+        responsible.username AS primary_responsible_username,
+        responsible.real_name AS primary_responsible_name,
+        e.asset_number, e.lifecycle_stage, e.critical_flag, e.special_flag,
+        e.oee_enabled, e.status, e.description,
+        current_status.status_code AS current_status_code,
+        current_status.status_since,
+        TIMESTAMPDIFF(SECOND, current_status.status_since, CURRENT_TIMESTAMP(3))
+            AS status_duration_seconds,
+        current_status.version AS current_status_version,
+        barcode.id AS active_barcode_id,
+        barcode.access_token AS active_barcode_token,
+        e.created_time, e.updated_time, e.version
+    </sql>
+
+    <sql id="equipmentJoins">
+        JOIN equipment_category category
+          ON category.tenant_id = e.tenant_id
+         AND category.id = e.category_id
+         AND category.deleted = 0
+        JOIN organization
+          ON organization.tenant_id = e.tenant_id
+         AND organization.id = e.organization_id
+         AND organization.deleted = 0
+        JOIN location
+          ON location.tenant_id = e.tenant_id
+         AND location.id = e.location_id
+         AND location.deleted = 0
+        LEFT JOIN system_user responsible
+          ON responsible.tenant_id = e.tenant_id
+         AND responsible.id = e.primary_responsible_user_id
+         AND responsible.deleted = 0
+        LEFT JOIN equipment_current_status current_status
+          ON current_status.tenant_id = e.tenant_id
+         AND current_status.equipment_id = e.id
+        LEFT JOIN equipment_barcode barcode
+          ON barcode.tenant_id = e.tenant_id
+         AND barcode.equipment_id = e.id
+         AND barcode.active_slot = 1
+    </sql>
+
+    <select id="findEquipmentPage"
+            resultType="com.leantpm.equipment.EquipmentDtos$EquipmentRow">
+        SELECT <include refid="equipmentColumns"/>
+        FROM equipment e
+        <include refid="equipmentJoins"/>
+        WHERE <include refid="filters"/>
+        ORDER BY e.updated_time DESC, e.id DESC
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
+    <select id="countEquipment" resultType="long">
+        SELECT COUNT(*)
+        FROM equipment e
+        <include refid="equipmentJoins"/>
+        WHERE <include refid="filters"/>
+    </select>
+
+    <select id="findEquipment"
+            resultType="com.leantpm.equipment.EquipmentDtos$EquipmentRow">
+        SELECT <include refid="equipmentColumns"/>
+        FROM equipment e
+        <include refid="equipmentJoins"/>
+        WHERE e.tenant_id = #{tenantId}
+          AND e.id = #{id}
+          AND e.deleted = 0
+          AND <include refid="dataScope"/>
+        LIMIT 1
+    </select>
+
+    <select id="countEquipmentCode" resultType="int">
+        SELECT COUNT(*) FROM equipment
+        WHERE tenant_id = #{tenantId} AND equipment_code = #{code} AND deleted = 0
+        <if test="excludeId != null">AND id != #{excludeId}</if>
+    </select>
+
+    <insert id="insertEquipment">
+        INSERT INTO equipment
+            (tenant_id, equipment_code, equipment_name, category_id, model,
+             specification, brand, manufacturer, factory_serial_number,
+             production_date, commissioning_date, organization_id, location_id,
+             primary_responsible_user_id, asset_number, lifecycle_stage,
+             critical_flag, special_flag, oee_enabled, status, description,
+             created_by, updated_by)
+        VALUES
+            (#{tenantId}, #{code}, #{request.equipmentName}, #{request.categoryId},
+             #{request.model}, #{request.specification}, #{request.brand},
+             #{request.manufacturer}, #{request.factorySerialNumber},
+             #{request.productionDate}, #{request.commissioningDate},
+             #{request.organizationId}, #{request.locationId},
+             #{request.primaryResponsibleUserId}, #{request.assetNumber},
+             #{request.lifecycleStage},
+             CASE WHEN #{request.critical} THEN 1 ELSE 0 END,
+             CASE WHEN #{request.special} THEN 1 ELSE 0 END,
+             CASE WHEN #{request.oeeEnabled} THEN 1 ELSE 0 END,
+             CASE WHEN #{request.enabled} THEN 1 ELSE 0 END,
+             #{request.description}, #{operatorId}, #{operatorId})
+    </insert>
+
+    <select id="findEquipmentIdByCode" resultType="long">
+        SELECT id FROM equipment
+        WHERE tenant_id = #{tenantId} AND equipment_code = #{code} AND deleted = 0
+        LIMIT 1
+    </select>
+
+    <update id="updateEquipment">
+        UPDATE equipment
+        SET equipment_name = #{request.equipmentName},
+            category_id = #{request.categoryId},
+            model = #{request.model},
+            specification = #{request.specification},
+            brand = #{request.brand},
+            manufacturer = #{request.manufacturer},
+            factory_serial_number = #{request.factorySerialNumber},
+            production_date = #{request.productionDate},
+            commissioning_date = #{request.commissioningDate},
+            organization_id = #{request.organizationId},
+            location_id = #{request.locationId},
+            primary_responsible_user_id = #{request.primaryResponsibleUserId},
+            asset_number = #{request.assetNumber},
+            lifecycle_stage = #{request.lifecycleStage},
+            critical_flag = CASE WHEN #{request.critical} THEN 1 ELSE 0 END,
+            special_flag = CASE WHEN #{request.special} THEN 1 ELSE 0 END,
+            oee_enabled = CASE WHEN #{request.oeeEnabled} THEN 1 ELSE 0 END,
+            status = CASE WHEN #{request.enabled} THEN 1 ELSE 0 END,
+            description = #{request.description},
+            updated_by = #{operatorId},
+            version = version + 1
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND version = #{request.version}
+          AND deleted = 0
+    </update>
+
+    <update id="softDeleteEquipment">
+        UPDATE equipment
+        SET deleted = 1, status = 0, updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND version = #{version}
+          AND deleted = 0
+    </update>
+
+    <select id="countOperationalHistory" resultType="int">
+        SELECT
+            (SELECT COUNT(*) FROM equipment_status_history
+             WHERE tenant_id = #{tenantId} AND equipment_id = #{id})
+          + (SELECT COUNT(*) FROM equipment_transfer_record
+             WHERE tenant_id = #{tenantId} AND equipment_id = #{id})
+    </select>
+
+    <select id="findAttributeValues"
+            resultType="com.leantpm.equipment.EquipmentDtos$AttributeValueRow">
+        WITH RECURSIVE category_path AS (
+            SELECT id, parent_id, 0 AS distance
+            FROM equipment_category
+            WHERE tenant_id = #{tenantId} AND id = #{categoryId} AND deleted = 0
+            UNION ALL
+            SELECT parent.id, parent.parent_id, child.distance + 1
+            FROM equipment_category parent
+            JOIN category_path child ON child.parent_id = parent.id
+            WHERE parent.tenant_id = #{tenantId} AND parent.deleted = 0
+        ),
+        ranked AS (
+            SELECT definition.*,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY definition.attribute_code
+                       ORDER BY path.distance
+                   ) AS row_number_value
+            FROM category_path path
+            JOIN equipment_attribute_definition definition
+              ON definition.tenant_id = #{tenantId}
+             AND definition.category_id = path.id
+             AND definition.status = 1
+             AND definition.deleted = 0
+        )
+        SELECT definition.id AS definition_id, definition.attribute_code,
+               definition.attribute_name, definition.data_type, definition.unit,
+               definition.required_flag,
+               COALESCE(
+                   value.string_value,
+                   CAST(value.integer_value AS CHAR),
+                   CAST(value.decimal_value AS CHAR),
+                   CASE
+                       WHEN value.boolean_value = 1 THEN 'true'
+                       WHEN value.boolean_value = 0 THEN 'false'
+                   END,
+                   DATE_FORMAT(value.date_value, '%Y-%m-%d'),
+                   definition.default_value
+               ) AS value
+        FROM ranked definition
+        LEFT JOIN equipment_attribute_value value
+          ON value.tenant_id = #{tenantId}
+         AND value.equipment_id = #{equipmentId}
+         AND value.attribute_definition_id = definition.id
+         AND value.deleted = 0
+        WHERE definition.row_number_value = 1
+        ORDER BY definition.sort_order, definition.id
+    </select>
+
+    <delete id="deleteAttributeValues">
+        DELETE FROM equipment_attribute_value
+        WHERE tenant_id = #{tenantId} AND equipment_id = #{equipmentId}
+    </delete>
+
+    <insert id="insertAttributeValue">
+        INSERT INTO equipment_attribute_value
+            (tenant_id, equipment_id, attribute_definition_id,
+             string_value, integer_value, decimal_value, boolean_value, date_value,
+             created_by, updated_by)
+        VALUES
+            (#{tenantId}, #{equipmentId}, #{definitionId},
+             CASE WHEN #{dataType} IN ('STRING', 'ENUM') THEN #{value} END,
+             CASE WHEN #{dataType} = 'INTEGER' THEN CAST(#{value} AS SIGNED) END,
+             CASE WHEN #{dataType} = 'DECIMAL' THEN CAST(#{value} AS DECIMAL(20, 6)) END,
+             CASE WHEN #{dataType} = 'BOOLEAN'
+                  THEN CASE WHEN LOWER(#{value}) = 'true' THEN 1 ELSE 0 END END,
+             CASE WHEN #{dataType} = 'DATE' THEN STR_TO_DATE(#{value}, '%Y-%m-%d') END,
+             #{operatorId}, #{operatorId})
+    </insert>
+
+    <select id="findResponsiblePersons"
+            resultType="com.leantpm.equipment.EquipmentDtos$ResponsiblePersonRow">
+        SELECT relation.id, relation.user_id, user.username, user.real_name,
+               relation.responsibility_type, relation.start_date, relation.end_date,
+               relation.status
+        FROM equipment_responsible_person relation
+        JOIN system_user user
+          ON user.tenant_id = relation.tenant_id
+         AND user.id = relation.user_id
+         AND user.deleted = 0
+        WHERE relation.tenant_id = #{tenantId}
+          AND relation.equipment_id = #{equipmentId}
+          AND relation.deleted = 0
+        ORDER BY relation.responsibility_type, relation.id
+    </select>
+
+    <delete id="deleteResponsiblePersons">
+        DELETE FROM equipment_responsible_person
+        WHERE tenant_id = #{tenantId} AND equipment_id = #{equipmentId}
+    </delete>
+
+    <insert id="insertResponsiblePerson">
+        INSERT INTO equipment_responsible_person
+            (tenant_id, equipment_id, user_id, responsibility_type,
+             start_date, end_date, created_by, updated_by)
+        VALUES
+            (#{tenantId}, #{equipmentId}, #{request.userId},
+             #{request.responsibilityType}, #{request.startDate}, #{request.endDate},
+             #{operatorId}, #{operatorId})
+    </insert>
+
+    <insert id="insertInitialStatus">
+        INSERT INTO equipment_current_status
+            (tenant_id, equipment_id, status_code, status_since, source_type, updated_by)
+        VALUES
+            (#{tenantId}, #{equipmentId}, #{statusCode}, #{now}, 'SYSTEM', #{operatorId})
+    </insert>
+
+    <select id="findCurrentStatus" resultType="com.leantpm.equipment.EquipmentMapper$CurrentStatus">
+        SELECT id, status_code, status_since, reason, source_type, version
+        FROM equipment_current_status
+        WHERE tenant_id = #{tenantId} AND equipment_id = #{equipmentId}
+        LIMIT 1
+    </select>
+
+    <update id="updateCurrentStatus">
+        UPDATE equipment_current_status
+        SET status_code = #{statusCode}, status_since = #{statusSince},
+            reason = #{reason}, source_type = #{sourceType},
+            updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId}
+          AND equipment_id = #{equipmentId}
+          AND version = #{version}
+    </update>
+
+    <update id="closeOpenStatusHistory">
+        UPDATE equipment_status_history
+        SET ended_time = #{endedTime},
+            duration_seconds = TIMESTAMPDIFF(SECOND, started_time, #{endedTime})
+        WHERE tenant_id = #{tenantId}
+          AND equipment_id = #{equipmentId}
+          AND ended_time IS NULL
+    </update>
+
+    <insert id="insertStatusHistory">
+        INSERT INTO equipment_status_history
+            (tenant_id, equipment_id, from_status_code, to_status_code,
+             started_time, reason, source_type, changed_by)
+        VALUES
+            (#{tenantId}, #{equipmentId}, #{fromStatusCode}, #{toStatusCode},
+             #{startedTime}, #{reason}, #{sourceType}, #{operatorId})
+    </insert>
+
+    <select id="findStatusHistory"
+            resultType="com.leantpm.equipment.EquipmentDtos$StatusHistoryRow">
+        SELECT history.id, history.from_status_code, history.to_status_code,
+               history.started_time, history.ended_time, history.duration_seconds,
+               history.reason, history.source_type, user.real_name AS changed_by_name
+        FROM equipment_status_history history
+        LEFT JOIN system_user user
+          ON user.tenant_id = history.tenant_id
+         AND user.id = history.changed_by
+         AND user.deleted = 0
+        WHERE history.tenant_id = #{tenantId} AND history.equipment_id = #{equipmentId}
+        ORDER BY history.started_time DESC, history.id DESC
+    </select>
+
+    <select id="countStatusCode" resultType="int">
+        SELECT COUNT(*)
+        FROM system_dictionary_item item
+        JOIN system_dictionary_type type
+          ON type.tenant_id = item.tenant_id
+         AND type.id = item.dict_type_id
+         AND type.dict_code = 'equipment_status'
+         AND type.status = 1
+         AND type.deleted = 0
+        WHERE item.tenant_id = #{tenantId}
+          AND item.item_value = #{statusCode}
+          AND item.status = 1
+          AND item.deleted = 0
+    </select>
+
+    <insert id="insertTransfer">
+        INSERT INTO equipment_transfer_record
+            (tenant_id, equipment_id, from_organization_id, to_organization_id,
+             from_location_id, to_location_id, from_responsible_user_id,
+             to_responsible_user_id, transfer_reason, transferred_by)
+        VALUES
+            (#{tenantId}, #{equipment.id}, #{equipment.organizationId},
+             #{request.organizationId}, #{equipment.locationId}, #{request.locationId},
+             #{equipment.primaryResponsibleUserId}, #{request.primaryResponsibleUserId},
+             #{request.reason}, #{operatorId})
+    </insert>
+
+    <select id="findTransfers"
+            resultType="com.leantpm.equipment.EquipmentDtos$TransferRow">
+        SELECT transfer.id, transfer.from_organization_id,
+               from_organization.organization_name AS from_organization_name,
+               transfer.to_organization_id,
+               to_organization.organization_name AS to_organization_name,
+               transfer.from_location_id, from_location.location_name AS from_location_name,
+               transfer.to_location_id, to_location.location_name AS to_location_name,
+               transfer.from_responsible_user_id,
+               from_user.real_name AS from_responsible_name,
+               transfer.to_responsible_user_id,
+               to_user.real_name AS to_responsible_name,
+               transfer.transfer_reason, operator.real_name AS transferred_by_name,
+               transfer.transferred_time
+        FROM equipment_transfer_record transfer
+        LEFT JOIN organization from_organization
+          ON from_organization.tenant_id = transfer.tenant_id
+         AND from_organization.id = transfer.from_organization_id
+        JOIN organization to_organization
+          ON to_organization.tenant_id = transfer.tenant_id
+         AND to_organization.id = transfer.to_organization_id
+        LEFT JOIN location from_location
+          ON from_location.tenant_id = transfer.tenant_id
+         AND from_location.id = transfer.from_location_id
+        JOIN location to_location
+          ON to_location.tenant_id = transfer.tenant_id
+         AND to_location.id = transfer.to_location_id
+        LEFT JOIN system_user from_user
+          ON from_user.tenant_id = transfer.tenant_id
+         AND from_user.id = transfer.from_responsible_user_id
+        LEFT JOIN system_user to_user
+          ON to_user.tenant_id = transfer.tenant_id
+         AND to_user.id = transfer.to_responsible_user_id
+        LEFT JOIN system_user operator
+          ON operator.tenant_id = transfer.tenant_id
+         AND operator.id = transfer.transferred_by
+        WHERE transfer.tenant_id = #{tenantId}
+          AND transfer.equipment_id = #{equipmentId}
+        ORDER BY transfer.transferred_time DESC, transfer.id DESC
+    </select>
+
+    <update id="updateEquipmentTransfer">
+        UPDATE equipment
+        SET organization_id = #{request.organizationId},
+            location_id = #{request.locationId},
+            primary_responsible_user_id = #{request.primaryResponsibleUserId},
+            updated_by = #{operatorId},
+            version = version + 1
+        WHERE tenant_id = #{tenantId}
+          AND id = #{equipmentId}
+          AND version = #{request.version}
+          AND deleted = 0
+    </update>
+
+    <select id="findBarcodes"
+            resultType="com.leantpm.equipment.EquipmentDtos$BarcodeRow">
+        SELECT barcode.id, barcode.equipment_id, e.equipment_code,
+               e.equipment_name, barcode.access_token, barcode.barcode_type,
+               CASE WHEN barcode.active_slot = 1 THEN TRUE ELSE FALSE END AS active,
+               barcode.generated_time, barcode.invalidated_time,
+               barcode.invalidation_reason
+        FROM equipment_barcode barcode
+        JOIN equipment e
+          ON e.tenant_id = barcode.tenant_id
+         AND e.id = barcode.equipment_id
+         AND e.deleted = 0
+        WHERE barcode.tenant_id = #{tenantId}
+          AND <include refid="dataScope"/>
+        <if test="equipmentId != null">AND barcode.equipment_id = #{equipmentId}</if>
+        <if test="activeOnly">AND barcode.active_slot = 1</if>
+        ORDER BY barcode.generated_time DESC, barcode.id DESC
+    </select>
+
+    <select id="findBarcode"
+            resultType="com.leantpm.equipment.EquipmentDtos$BarcodeRow">
+        SELECT barcode.id, barcode.equipment_id, equipment.equipment_code,
+               equipment.equipment_name, barcode.access_token, barcode.barcode_type,
+               CASE WHEN barcode.active_slot = 1 THEN TRUE ELSE FALSE END AS active,
+               barcode.generated_time, barcode.invalidated_time,
+               barcode.invalidation_reason
+        FROM equipment_barcode barcode
+        JOIN equipment
+          ON equipment.tenant_id = barcode.tenant_id
+         AND equipment.id = barcode.equipment_id
+         AND equipment.deleted = 0
+        WHERE barcode.tenant_id = #{tenantId} AND barcode.id = #{barcodeId}
+        LIMIT 1
+    </select>
+
+    <select id="findActiveBarcode"
+            resultType="com.leantpm.equipment.EquipmentDtos$BarcodeRow">
+        SELECT barcode.id, barcode.equipment_id, equipment.equipment_code,
+               equipment.equipment_name, barcode.access_token, barcode.barcode_type,
+               TRUE AS active, barcode.generated_time, barcode.invalidated_time,
+               barcode.invalidation_reason
+        FROM equipment_barcode barcode
+        JOIN equipment
+          ON equipment.tenant_id = barcode.tenant_id
+         AND equipment.id = barcode.equipment_id
+         AND equipment.deleted = 0
+        WHERE barcode.tenant_id = #{tenantId}
+          AND barcode.equipment_id = #{equipmentId}
+          AND barcode.active_slot = 1
+        LIMIT 1
+    </select>
+
+    <update id="invalidateActiveBarcode">
+        UPDATE equipment_barcode
+        SET active_slot = NULL, invalidated_by = #{operatorId},
+            invalidated_time = CURRENT_TIMESTAMP(3), invalidation_reason = #{reason}
+        WHERE tenant_id = #{tenantId}
+          AND equipment_id = #{equipmentId}
+          AND active_slot = 1
+    </update>
+
+    <insert id="insertBarcode">
+        INSERT INTO equipment_barcode
+            (tenant_id, equipment_id, access_token, barcode_type, active_slot, generated_by)
+        VALUES
+            (#{tenantId}, #{equipmentId}, #{accessToken}, #{barcodeType}, 1, #{operatorId})
+    </insert>
+
+    <select id="findPublicEquipment"
+            resultType="com.leantpm.equipment.EquipmentDtos$PublicEquipmentView">
+        SELECT barcode.access_token, equipment.equipment_code, equipment.equipment_name,
+               category.category_name, location.location_name,
+               current_status.status_code AS current_status_code,
+               current_status.status_since
+        FROM equipment_barcode barcode
+        JOIN equipment
+          ON equipment.tenant_id = barcode.tenant_id
+         AND equipment.id = barcode.equipment_id
+         AND equipment.deleted = 0
+         AND equipment.status = 1
+        JOIN equipment_category category
+          ON category.tenant_id = equipment.tenant_id
+         AND category.id = equipment.category_id
+         AND category.deleted = 0
+        JOIN location
+          ON location.tenant_id = equipment.tenant_id
+         AND location.id = equipment.location_id
+         AND location.deleted = 0
+        LEFT JOIN equipment_current_status current_status
+          ON current_status.tenant_id = equipment.tenant_id
+         AND current_status.equipment_id = equipment.id
+        WHERE barcode.access_token = #{accessToken} AND barcode.active_slot = 1
+        LIMIT 1
+    </select>
+
+    <select id="findDocuments"
+            resultType="com.leantpm.equipment.EquipmentDtos$DocumentRow">
+        SELECT attachment.id AS attachment_id, attachment.original_name,
+               attachment.content_type, relation.relation_type, relation.remark,
+               relation.created_time
+        FROM system_attachment_relation relation
+        JOIN system_attachment attachment
+          ON attachment.tenant_id = relation.tenant_id
+         AND attachment.id = relation.attachment_id
+         AND attachment.deleted = 0
+        WHERE relation.tenant_id = #{tenantId}
+          AND relation.business_type = 'EQUIPMENT'
+          AND relation.business_id = #{equipmentId}
+        ORDER BY relation.sort_order, relation.id
+    </select>
+
+    <select id="findCategoryByCode" resultType="com.leantpm.equipment.EquipmentMapper$LookupRow">
+        SELECT id, category_name AS name, status
+        FROM equipment_category
+        WHERE tenant_id = #{tenantId} AND category_code = #{code} AND deleted = 0
+        LIMIT 1
+    </select>
+
+    <select id="findOrganizationByCode" resultType="com.leantpm.equipment.EquipmentMapper$LookupRow">
+        SELECT id, organization_name AS name, status
+        FROM organization
+        WHERE tenant_id = #{tenantId} AND organization_code = #{code} AND deleted = 0
+        LIMIT 1
+    </select>
+
+    <select id="findLocationByCode" resultType="com.leantpm.equipment.EquipmentMapper$LocationLookup">
+        SELECT id, location_name AS name, organization_id, status
+        FROM location
+        WHERE tenant_id = #{tenantId} AND location_code = #{code} AND deleted = 0
+        LIMIT 1
+    </select>
+
+    <select id="findUserByUsername" resultType="com.leantpm.equipment.EquipmentMapper$UserLookup">
+        SELECT id, real_name AS name, organization_id, status
+        FROM system_user
+        WHERE tenant_id = #{tenantId} AND username = #{username} AND deleted = 0
+        LIMIT 1
+    </select>
+</mapper>

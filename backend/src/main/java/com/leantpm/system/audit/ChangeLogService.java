@@ -91,6 +91,21 @@ public class ChangeLogService {
         );
     }
 
+    @Transactional(readOnly = true)
+    public List<ChangeLogDtos.ChangeLogRow> listResource(
+            String resourceType,
+            Object resourceId,
+            int limit
+    ) {
+        var current = SecurityUtils.currentUser();
+        return mapper.findResourceChangeLogs(
+                current.tenantId(),
+                resourceType,
+                String.valueOf(resourceId),
+                Math.max(1, Math.min(limit, 500))
+        );
+    }
+
     private JsonNode jsonNode(Object value) {
         return value == null ? null : objectMapper.valueToTree(value);
     }

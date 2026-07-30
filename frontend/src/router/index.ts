@@ -10,6 +10,12 @@ const routes: RouteRecordRaw[] = [
     meta: { public: true },
   },
   {
+    path: '/m/e/:token',
+    name: 'PublicEquipment',
+    component: () => import('@/views/mobile/PublicEquipmentView.vue'),
+    meta: { public: true, title: '设备扫码信息' },
+  },
+  {
     path: '/',
     component: () => import('@/layouts/AppLayout.vue'),
     children: [
@@ -91,6 +97,45 @@ const routes: RouteRecordRaw[] = [
         name: 'SystemChangeLogs',
         component: () => import('@/views/system/logs/ChangeLogView.vue'),
         meta: { title: '数据变更日志', permission: 'system:change-log:view' },
+      },
+      {
+        path: 'master-data/organizations',
+        name: 'MasterDataOrganizations',
+        component: () => import('@/views/master-data/organizations/OrganizationView.vue'),
+        meta: { title: '组织管理', permission: 'master-data:organization:view' },
+      },
+      {
+        path: 'master-data/locations',
+        name: 'MasterDataLocations',
+        component: () => import('@/views/master-data/locations/LocationView.vue'),
+        meta: { title: '位置管理', permission: 'master-data:location:view' },
+      },
+      {
+        path: 'master-data/equipment-categories',
+        name: 'MasterDataEquipmentCategories',
+        component: () => import('@/views/master-data/equipment-categories/EquipmentCategoryView.vue'),
+        meta: {
+          title: '设备分类',
+          permission: 'master-data:equipment-category:view',
+        },
+      },
+      {
+        path: 'equipment/ledger',
+        name: 'EquipmentLedger',
+        component: () => import('@/views/equipment/ledger/EquipmentLedgerView.vue'),
+        meta: { title: '设备台账', permission: 'equipment:ledger:view' },
+      },
+      {
+        path: 'equipment/barcodes',
+        name: 'EquipmentBarcodes',
+        component: () => import('@/views/equipment/barcodes/EquipmentBarcodeView.vue'),
+        meta: { title: '设备条码', permission: 'equipment:barcode:view' },
+      },
+      {
+        path: 'equipment/statuses',
+        name: 'EquipmentStatuses',
+        component: () => import('@/views/equipment/statuses/EquipmentStatusView.vue'),
+        meta: { title: '设备状态', permission: 'equipment:status:view' },
       },
       {
         path: 'coming-soon/:module',
