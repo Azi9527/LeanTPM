@@ -14,6 +14,10 @@ function token(): string | null {
   return localStorage.getItem(ACCESS_TOKEN_KEY)
 }
 
+export function accessToken(): string | null {
+  return token()
+}
+
 export function storeTokens(tokens: TokenPair): void {
   localStorage.setItem(ACCESS_TOKEN_KEY, tokens.accessToken)
   localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refreshToken)

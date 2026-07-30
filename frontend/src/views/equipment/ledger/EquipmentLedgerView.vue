@@ -19,6 +19,7 @@ import {
 } from '@/api/masterData'
 import { useAuthStore } from '@/stores/auth'
 import { errorMessage } from '@/utils/http'
+import { useRoute } from 'vue-router'
 
 interface ResponsibleDraft {
   userId?: number
@@ -28,6 +29,7 @@ interface ResponsibleDraft {
 }
 
 const auth = useAuthStore()
+const route = useRoute()
 const loading = ref(false)
 const saving = ref(false)
 const loadError = ref('')
@@ -140,6 +142,10 @@ watch(() => transferForm.organizationId, () => {
 
 onMounted(async () => {
   await Promise.all([loadReferences(), load()])
+  const equipmentId = Number(route.query.equipmentId)
+  if (Number.isInteger(equipmentId) && equipmentId > 0) {
+    await showDetailById(equipmentId)
+  }
 })
 
 async function loadReferences() {
@@ -266,6 +272,19 @@ async function showDetail(row: EquipmentRow) {
   try {
     detail.value = await equipmentApi.detail(row.id)
   } catch (error) {
+    ElMessage.error(errorMessage(error))
+  }
+}
+
+async function showDetailById(equipmentId: number) {
+  detailVisible.value = true
+  detail.value = null
+  try {
+    const loaded = await equipmentApi.detail(equipmentId)
+    detail.value = loaded
+    selected.value = loaded.equipment
+  } catch (error) {
+    detailVisible.value = false
     ElMessage.error(errorMessage(error))
   }
 }

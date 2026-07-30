@@ -36,7 +36,7 @@ class MySqlMigrationIntegrationTest {
     @Test
     void appliesEveryMigrationAndFoundationTable() throws Exception {
         assertThat(number("SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1"))
-                .isEqualTo(11);
+                .isEqualTo(12);
         assertThat(number("""
                 SELECT COUNT(*)
                 FROM information_schema.tables
@@ -92,9 +92,13 @@ class MySqlMigrationIntegrationTest {
                     'equipment_output_record',
                     'equipment_downtime_record',
                     'equipment_loss_reason',
-                    'equipment_oee_calculation_log'
+                    'equipment_oee_calculation_log',
+                    'visualization_model_resource',
+                    'visualization_scene',
+                    'visualization_scene_node',
+                    'visualization_status_color'
                   )
-                """)).isEqualTo(51);
+                """)).isEqualTo(55);
     }
 
     @Test
@@ -145,12 +149,12 @@ class MySqlMigrationIntegrationTest {
                 WHERE l.tenant_id = 1
                   AND l.deleted = 0
                   AND o.deleted = 0
-                """)).isEqualTo(5);
+                """)).isEqualTo(8);
         assertThat(number("""
                 SELECT COUNT(*)
                 FROM equipment_category
                 WHERE tenant_id = 1 AND deleted = 0
-                """)).isEqualTo(3);
+                """)).isEqualTo(4);
         assertThat(number("""
                 SELECT COUNT(*)
                 FROM information_schema.statistics
@@ -239,6 +243,32 @@ class MySqlMigrationIntegrationTest {
                     'STARTUP_REJECT'
                   )
                 """)).isEqualTo(6);
+    }
+
+    @Test
+    void seedsRunnableVisualizationDemoAndStatusPalette() throws Exception {
+        assertThat(number("""
+                SELECT COUNT(*)
+                FROM equipment
+                WHERE tenant_id = 1
+                  AND equipment_code LIKE 'VIZ-%'
+                  AND deleted = 0
+                """)).isEqualTo(8);
+        assertThat(number("""
+                SELECT COUNT(*)
+                FROM visualization_scene
+                WHERE tenant_id = 1 AND status = 1 AND deleted = 0
+                """)).isEqualTo(7);
+        assertThat(number("""
+                SELECT COUNT(*)
+                FROM visualization_scene_node
+                WHERE tenant_id = 1 AND visible_flag = 1 AND deleted = 0
+                """)).isEqualTo(14);
+        assertThat(number("""
+                SELECT COUNT(*)
+                FROM visualization_status_color
+                WHERE tenant_id = 1 AND status = 1 AND deleted = 0
+                """)).isEqualTo(12);
     }
 
     private long number(String sql) throws Exception {

@@ -1154,8 +1154,11 @@
                 AS oee_rate,
             COALESCE(ROUND(AVG(r.target_oee_rate), 6), 0) AS target_oee_rate,
             COUNT(*) AS record_count,
-            SUM(CASE WHEN r.target_oee_rate IS NOT NULL AND r.oee_rate &lt; r.target_oee_rate
-                     THEN 1 ELSE 0 END) AS below_target_count,
+            COALESCE(SUM(
+                CASE WHEN r.target_oee_rate IS NOT NULL
+                          AND r.oee_rate &lt; r.target_oee_rate
+                     THEN 1 ELSE 0 END
+            ), 0) AS below_target_count,
             COALESCE(SUM(r.planned_work_minutes), 0) AS planned_work_minutes,
             COALESCE(SUM(r.run_time_minutes), 0) AS run_time_minutes,
             COALESCE(SUM(r.actual_quantity), 0) AS actual_quantity,

@@ -258,6 +258,48 @@ const routes: RouteRecordRaw[] = [
         meta: { title: 'OEE分析', permission: 'oee:analysis:view' },
       },
       {
+        path: 'visualization/cockpit',
+        name: 'VisualizationCockpit',
+        component: () => import('@/views/visualization/cockpit/OperationsCockpitView.vue'),
+        meta: { title: '设备综合大屏', permission: 'visualization:cockpit:view' },
+      },
+      {
+        path: 'visualization/three',
+        name: 'VisualizationThree',
+        component: () => import('@/views/visualization/three/ThreeSceneView.vue'),
+        meta: { title: '三维运行大屏', permission: 'visualization:3d:view' },
+      },
+      {
+        path: 'visualization/status',
+        name: 'VisualizationStatus',
+        component: () => import('@/views/visualization/topic/VisualizationTopicView.vue'),
+        meta: { title: '设备状态大屏', permission: 'visualization:status:view' },
+      },
+      {
+        path: 'visualization/inspection',
+        name: 'VisualizationInspection',
+        component: () => import('@/views/visualization/topic/VisualizationTopicView.vue'),
+        meta: { title: '点检分析大屏', permission: 'visualization:inspection:view' },
+      },
+      {
+        path: 'visualization/maintenance',
+        name: 'VisualizationMaintenance',
+        component: () => import('@/views/visualization/topic/VisualizationTopicView.vue'),
+        meta: { title: '维保分析大屏', permission: 'visualization:maintenance:view' },
+      },
+      {
+        path: 'visualization/oee',
+        name: 'VisualizationOee',
+        component: () => import('@/views/visualization/topic/VisualizationTopicView.vue'),
+        meta: { title: 'OEE 分析大屏', permission: 'visualization:oee:view' },
+      },
+      {
+        path: 'visualization/scenes',
+        name: 'VisualizationScenes',
+        component: () => import('@/views/visualization/scenes/SceneManagementView.vue'),
+        meta: { title: '三维场景配置', permission: 'visualization:scene:view' },
+      },
+      {
         path: 'coming-soon/:module',
         name: 'ComingSoon',
         component: () => import('@/views/common/ComingSoonView.vue'),

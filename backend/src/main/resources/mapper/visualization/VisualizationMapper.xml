@@ -1,0 +1,828 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.leantpm.visualization.VisualizationMapper">
+    <sql id="equipmentScope">
+        <choose>
+            <when test="scope.allData">1 = 1</when>
+            <when test="scope.selfData or (scope.organizationIds != null and !scope.organizationIds.isEmpty())">
+                (
+                    <if test="scope.selfData">
+                        e.created_by = #{scope.userId}
+                        OR e.primary_responsible_user_id = #{scope.userId}
+                        OR EXISTS (
+                            SELECT 1
+                            FROM equipment_responsible_person scoped_person
+                            WHERE scoped_person.tenant_id = e.tenant_id
+                              AND scoped_person.equipment_id = e.id
+                              AND scoped_person.user_id = #{scope.userId}
+                              AND scoped_person.status = 1
+                              AND scoped_person.deleted = 0
+                        )
+                    </if>
+                    <if test="scope.selfData and scope.organizationIds != null and !scope.organizationIds.isEmpty()">
+                        OR
+                    </if>
+                    <if test="scope.organizationIds != null and !scope.organizationIds.isEmpty()">
+                        e.organization_id IN
+                        <foreach collection="scope.organizationIds" item="organizationId"
+                                 open="(" separator="," close=")">
+                            #{organizationId}
+                        </foreach>
+                    </if>
+                )
+            </when>
+            <otherwise>1 = 0</otherwise>
+        </choose>
+    </sql>
+
+    <sql id="organizationFilter">
+        <if test="organizationIds != null and !organizationIds.isEmpty()">
+            AND e.organization_id IN
+            <foreach collection="organizationIds" item="organizationId"
+                     open="(" separator="," close=")">
+                #{organizationId}
+            </foreach>
+        </if>
+    </sql>
+
+    <select id="coreMetrics"
+            resultType="com.leantpm.visualization.VisualizationDtos$CoreMetrics">
+        SELECT COUNT(*) AS total,
+               COALESCE(SUM(cs.status_code = 'RUNNING'), 0) AS running,
+               COALESCE(SUM(cs.status_code = 'STOPPED'), 0) AS stopped,
+               COALESCE(SUM(cs.status_code = 'FAULT'), 0) AS fault,
+               COALESCE(SUM(cs.status_code = 'REPAIR'), 0) AS repair,
+               COALESCE(SUM(cs.status_code = 'MAINTENANCE'), 0) AS maintenance,
+               COALESCE(SUM(cs.status_code = 'OFFLINE'), 0) AS offline,
+               COALESCE(SUM(cs.status_code = 'INSPECTION'), 0) AS inspection,
+               COALESCE(SUM(cs.status_code IS NULL OR cs.status_code NOT IN (
+                    'RUNNING', 'STOPPED', 'FAULT', 'REPAIR',
+                    'MAINTENANCE', 'OFFLINE', 'INSPECTION'
+               )), 0) AS other
+        FROM equipment e
+        LEFT JOIN equipment_current_status cs
+          ON cs.tenant_id = e.tenant_id AND cs.equipment_id = e.id
+        WHERE e.tenant_id = #{tenantId}
+          AND e.deleted = 0
+          AND e.status = 1
+          AND <include refid="equipmentScope"/>
+          <include refid="organizationFilter"/>
+    </select>
+
+    <select id="statusDistribution"
+            resultType="com.leantpm.visualization.VisualizationDtos$StatusMetric">
+        SELECT palette.status_code,
+               palette.status_name,
+               palette.display_color,
+               COUNT(e.id) AS equipment_count,
+               ROUND(
+                   COUNT(e.id) / NULLIF(SUM(COUNT(e.id)) OVER (), 0),
+                   6
+               ) AS proportion
+        FROM visualization_status_color palette
+        LEFT JOIN equipment_current_status cs
+          ON cs.tenant_id = palette.tenant_id
+         AND cs.status_code = palette.status_code
+        LEFT JOIN equipment e
+          ON e.tenant_id = cs.tenant_id
+         AND e.id = cs.equipment_id
+         AND e.deleted = 0
+         AND e.status = 1
+         AND <include refid="equipmentScope"/>
+         <if test="organizationIds != null and !organizationIds.isEmpty()">
+             AND e.organization_id IN
+             <foreach collection="organizationIds" item="organizationId"
+                      open="(" separator="," close=")">
+                 #{organizationId}
+             </foreach>
+         </if>
+        WHERE palette.tenant_id = #{tenantId}
+          AND palette.status = 1
+          AND palette.deleted = 0
+        GROUP BY palette.id, palette.status_code, palette.status_name,
+                 palette.display_color, palette.sort_order
+        ORDER BY palette.sort_order, palette.id
+    </select>
+
+    <select id="organizationDistribution"
+            resultType="com.leantpm.visualization.VisualizationDtos$OrganizationMetric">
+        SELECT organization.id AS organization_id,
+               organization.organization_code,
+               organization.organization_name,
+               organization.organization_type,
+               COUNT(e.id) AS equipment_count,
+               COALESCE(SUM(cs.status_code = 'RUNNING'), 0) AS running_count,
+               COALESCE(SUM(cs.status_code = 'FAULT'), 0) AS fault_count,
+               COALESCE(SUM(cs.status_code IN ('STOPPED', 'IDLE')), 0) AS stopped_count,
+               COALESCE(SUM(cs.status_code = 'OFFLINE'), 0) AS offline_count
+        FROM equipment e
+        JOIN organization
+          ON organization.tenant_id = e.tenant_id
+         AND organization.id = e.organization_id
+         AND organization.deleted = 0
+        LEFT JOIN equipment_current_status cs
+          ON cs.tenant_id = e.tenant_id AND cs.equipment_id = e.id
+        WHERE e.tenant_id = #{tenantId}
+          AND e.deleted = 0
+          AND e.status = 1
+          AND <include refid="equipmentScope"/>
+          <include refid="organizationFilter"/>
+        GROUP BY organization.id, organization.organization_code,
+                 organization.organization_name, organization.organization_type,
+                 organization.sort_order
+        ORDER BY organization.sort_order, organization.id
+    </select>
+
+    <select id="liveEquipment"
+            resultType="com.leantpm.visualization.VisualizationDtos$LiveEquipment">
+        SELECT e.id AS equipment_id,
+               e.equipment_code,
+               e.equipment_name,
+               e.organization_id,
+               organization.organization_name,
+               COALESCE(cs.status_code, 'OFFLINE') AS status_code,
+               COALESCE(palette.status_name, '离线') AS status_name,
+               COALESCE(palette.display_color, '#475569') AS display_color,
+               cs.status_since,
+               COALESCE(TIMESTAMPDIFF(SECOND, cs.status_since, CURRENT_TIMESTAMP(3)), 0)
+                   AS duration_seconds,
+               ROUND(AVG(oee.oee_rate), 6) AS today_oee,
+               CASE
+                   WHEN cs.status_code IN ('STOPPED', 'FAULT', 'REPAIR')
+                        AND TIMESTAMPDIFF(MINUTE, cs.status_since, CURRENT_TIMESTAMP(3))
+                            >= #{longStopMinutes} THEN TRUE
+                   WHEN cs.status_code = 'OFFLINE'
+                        AND TIMESTAMPDIFF(MINUTE, cs.status_since, CURRENT_TIMESTAMP(3))
+                            >= #{longOfflineMinutes} THEN TRUE
+                   ELSE FALSE
+               END AS long_duration
+        FROM equipment e
+        JOIN organization
+          ON organization.tenant_id = e.tenant_id
+         AND organization.id = e.organization_id
+         AND organization.deleted = 0
+        LEFT JOIN equipment_current_status cs
+          ON cs.tenant_id = e.tenant_id AND cs.equipment_id = e.id
+        LEFT JOIN visualization_status_color palette
+          ON palette.tenant_id = e.tenant_id
+         AND palette.status_code = cs.status_code
+         AND palette.deleted = 0
+        LEFT JOIN equipment_oee_record oee
+          ON oee.tenant_id = e.tenant_id
+         AND oee.equipment_id = e.id
+         AND oee.production_date = CURRENT_DATE()
+         AND oee.deleted = 0
+        WHERE e.tenant_id = #{tenantId}
+          AND e.deleted = 0
+          AND e.status = 1
+          AND <include refid="equipmentScope"/>
+          <include refid="organizationFilter"/>
+        GROUP BY e.id, e.equipment_code, e.equipment_name, e.organization_id,
+                 organization.organization_name, cs.status_code, cs.status_since,
+                 palette.status_name, palette.display_color
+        ORDER BY long_duration DESC,
+                 FIELD(cs.status_code, 'FAULT', 'REPAIR', 'OFFLINE', 'STOPPED',
+                       'MAINTENANCE', 'INSPECTION', 'IDLE', 'RUNNING'),
+                 cs.status_since, e.id
+        LIMIT #{limit}
+    </select>
+
+    <select id="workflowMetrics"
+            resultType="com.leantpm.visualization.VisualizationDtos$WorkflowMetrics">
+        SELECT #{workflowType} AS workflow_type,
+               COUNT(*) AS due,
+               COALESCE(SUM(t.task_status = 'COMPLETED'), 0) AS completed,
+               COALESCE(SUM(t.task_status NOT IN ('COMPLETED', 'CANCELLED', 'VOIDED')), 0)
+                   AS pending,
+               COALESCE(SUM(t.task_status = 'OVERDUE'
+                    OR (t.task_status NOT IN ('COMPLETED', 'CANCELLED', 'VOIDED')
+                        AND t.due_time &lt; CURRENT_TIMESTAMP(3))), 0) AS overdue,
+               COALESCE(SUM(abnormal_count &gt; 0), 0) AS abnormal,
+               ROUND(
+                   COALESCE(SUM(t.task_status = 'COMPLETED'), 0)
+                       / NULLIF(COUNT(*), 0), 6
+               ) AS completion_rate,
+               ROUND(
+                   COALESCE(SUM(t.task_status = 'COMPLETED'
+                       AND t.completed_time &lt;= t.due_time), 0)
+                       / NULLIF(COALESCE(SUM(t.task_status = 'COMPLETED'), 0), 0),
+                   6
+               ) AS on_time_rate
+        FROM
+        <choose>
+            <when test="workflowType == 'INSPECTION'">inspection_task</when>
+            <otherwise>maintenance_task</otherwise>
+        </choose>
+        t
+        JOIN equipment e
+          ON e.tenant_id = t.tenant_id
+         AND e.id = t.equipment_id
+         AND e.deleted = 0
+        LEFT JOIN (
+            SELECT task_id, COUNT(*) AS abnormal_count
+            FROM
+            <choose>
+                <when test="workflowType == 'INSPECTION'">inspection_abnormal</when>
+                <otherwise>maintenance_abnormal</otherwise>
+            </choose>
+            WHERE tenant_id = #{tenantId}
+              AND deleted = 0
+            GROUP BY task_id
+        ) abnormalities ON abnormalities.task_id = t.id
+        WHERE t.tenant_id = #{tenantId}
+          AND t.deleted = 0
+          AND t.planned_date BETWEEN #{startDate} AND #{endDate}
+          AND <include refid="equipmentScope"/>
+          <include refid="organizationFilter"/>
+    </select>
+
+    <select id="workflowTrend"
+            resultType="com.leantpm.visualization.VisualizationDtos$WorkflowTrend">
+        SELECT t.planned_date AS statistic_date,
+               #{workflowType} AS workflow_type,
+               COUNT(*) AS due,
+               COALESCE(SUM(t.task_status = 'COMPLETED'), 0) AS completed,
+               COALESCE(SUM(t.task_status = 'OVERDUE'
+                    OR (t.task_status NOT IN ('COMPLETED', 'CANCELLED', 'VOIDED')
+                        AND t.due_time &lt; CURRENT_TIMESTAMP(3))), 0) AS overdue,
+               COALESCE(SUM(abnormal_count &gt; 0), 0) AS abnormal
+        FROM
+        <choose>
+            <when test="workflowType == 'INSPECTION'">inspection_task</when>
+            <otherwise>maintenance_task</otherwise>
+        </choose>
+        t
+        JOIN equipment e
+          ON e.tenant_id = t.tenant_id
+         AND e.id = t.equipment_id
+         AND e.deleted = 0
+        LEFT JOIN (
+            SELECT task_id, COUNT(*) AS abnormal_count
+            FROM
+            <choose>
+                <when test="workflowType == 'INSPECTION'">inspection_abnormal</when>
+                <otherwise>maintenance_abnormal</otherwise>
+            </choose>
+            WHERE tenant_id = #{tenantId}
+              AND deleted = 0
+            GROUP BY task_id
+        ) abnormalities ON abnormalities.task_id = t.id
+        WHERE t.tenant_id = #{tenantId}
+          AND t.deleted = 0
+          AND t.planned_date BETWEEN #{startDate} AND #{endDate}
+          AND <include refid="equipmentScope"/>
+          <include refid="organizationFilter"/>
+        GROUP BY t.planned_date
+        ORDER BY t.planned_date
+    </select>
+
+    <select id="integerParameter" resultType="int">
+        SELECT CAST(parameter_value AS SIGNED)
+        FROM system_parameter
+        WHERE tenant_id = #{tenantId}
+          AND parameter_key = #{parameterKey}
+          AND status = 1
+          AND deleted = 0
+        LIMIT 1
+    </select>
+
+    <select id="organizationAndDescendantIds" resultType="long">
+        WITH RECURSIVE organization_tree AS (
+            SELECT id
+            FROM organization
+            WHERE tenant_id = #{tenantId}
+              AND id = #{organizationId}
+              AND status = 1
+              AND deleted = 0
+            UNION ALL
+            SELECT child.id
+            FROM organization child
+            JOIN organization_tree parent ON child.parent_id = parent.id
+            WHERE child.tenant_id = #{tenantId}
+              AND child.status = 1
+              AND child.deleted = 0
+        )
+        SELECT id FROM organization_tree
+    </select>
+
+    <sql id="sceneScope">
+        <choose>
+            <when test="scope.allData">1 = 1</when>
+            <when test="scope.organizationIds != null and !scope.organizationIds.isEmpty()">
+                scene.organization_id IN
+                <foreach collection="scope.organizationIds" item="organizationId"
+                         open="(" separator="," close=")">
+                    #{organizationId}
+                </foreach>
+            </when>
+            <otherwise>1 = 0</otherwise>
+        </choose>
+    </sql>
+
+    <sql id="sceneSummaryColumns">
+        scene.id, scene.parent_scene_id, scene.scene_code, scene.scene_name,
+        scene.scene_level, scene.organization_id, organization.organization_name,
+        scene.model_resource_id, scene.sort_order, scene.status,
+        (SELECT COUNT(*)
+         FROM visualization_scene_node counted_node
+         WHERE counted_node.tenant_id = scene.tenant_id
+           AND counted_node.scene_id = scene.id
+           AND counted_node.deleted = 0) AS node_count,
+        scene.version
+    </sql>
+
+    <select id="scenes"
+            resultType="com.leantpm.visualization.VisualizationDtos$SceneSummary">
+        SELECT <include refid="sceneSummaryColumns"/>
+        FROM visualization_scene scene
+        JOIN organization
+          ON organization.tenant_id = scene.tenant_id
+         AND organization.id = scene.organization_id
+         AND organization.deleted = 0
+        WHERE scene.tenant_id = #{tenantId}
+          AND scene.deleted = 0
+          AND <include refid="sceneScope"/>
+        ORDER BY scene.parent_scene_id, scene.sort_order, scene.id
+    </select>
+
+    <select id="scene"
+            resultType="com.leantpm.visualization.VisualizationDtos$SceneConfig">
+        SELECT scene.id, scene.parent_scene_id, scene.scene_code, scene.scene_name,
+               scene.scene_level, scene.organization_id,
+               organization.organization_name, scene.model_resource_id,
+               scene.background_color, scene.grid_color,
+               scene.camera_x, scene.camera_y, scene.camera_z,
+               scene.target_x, scene.target_y, scene.target_z,
+               scene.auto_rotate_flag, scene.sort_order, scene.status,
+               scene.description, scene.version
+        FROM visualization_scene scene
+        JOIN organization
+          ON organization.tenant_id = scene.tenant_id
+         AND organization.id = scene.organization_id
+         AND organization.deleted = 0
+        WHERE scene.tenant_id = #{tenantId}
+          AND scene.id = #{sceneId}
+          AND scene.deleted = 0
+          AND <include refid="sceneScope"/>
+        LIMIT 1
+    </select>
+
+    <select id="sceneBreadcrumb"
+            resultType="com.leantpm.visualization.VisualizationDtos$SceneSummary">
+        WITH RECURSIVE scene_path AS (
+            SELECT id, parent_scene_id, 0 AS depth
+            FROM visualization_scene
+            WHERE tenant_id = #{tenantId} AND id = #{sceneId} AND deleted = 0
+            UNION ALL
+            SELECT parent.id, parent.parent_scene_id, child.depth + 1
+            FROM visualization_scene parent
+            JOIN scene_path child ON child.parent_scene_id = parent.id
+            WHERE parent.tenant_id = #{tenantId} AND parent.deleted = 0
+        )
+        SELECT <include refid="sceneSummaryColumns"/>
+        FROM scene_path path
+        JOIN visualization_scene scene
+          ON scene.tenant_id = #{tenantId} AND scene.id = path.id
+        JOIN organization
+          ON organization.tenant_id = scene.tenant_id
+         AND organization.id = scene.organization_id
+         AND organization.deleted = 0
+        ORDER BY path.depth DESC
+    </select>
+
+    <select id="sceneNodes"
+            resultType="com.leantpm.visualization.VisualizationDtos$SceneNode">
+        SELECT node.id, node.scene_id, node.node_code, node.display_name,
+               node.node_type, node.organization_id, node.equipment_id,
+               node.target_scene_id, node.model_resource_id,
+               model.model_format, model.primitive_type, model.attachment_id,
+               model.fallback_color,
+               node.position_x, node.position_y, node.position_z,
+               node.rotation_x, node.rotation_y, node.rotation_z,
+               node.scale_x, node.scale_y, node.scale_z,
+               node.label_visible_flag, node.visible_flag, node.sort_order,
+               COALESCE(cs.status_code, 'OFFLINE') AS status_code,
+               COALESCE(palette.status_name, '离线') AS status_name,
+               COALESCE(palette.display_color, model.fallback_color) AS display_color,
+               COALESCE(palette.pulse_flag, 0) AS pulse_flag,
+               node.version
+        FROM visualization_scene_node node
+        JOIN visualization_scene scene
+          ON scene.tenant_id = node.tenant_id
+         AND scene.id = node.scene_id
+         AND scene.deleted = 0
+        LEFT JOIN visualization_model_resource model
+          ON model.tenant_id = node.tenant_id
+         AND model.id = node.model_resource_id
+         AND model.deleted = 0
+        LEFT JOIN equipment e
+          ON e.tenant_id = node.tenant_id
+         AND e.id = node.equipment_id
+         AND e.deleted = 0
+        LEFT JOIN equipment_current_status cs
+          ON cs.tenant_id = e.tenant_id AND cs.equipment_id = e.id
+        LEFT JOIN visualization_status_color palette
+          ON palette.tenant_id = node.tenant_id
+         AND palette.status_code = cs.status_code
+         AND palette.deleted = 0
+        WHERE node.tenant_id = #{tenantId}
+          AND node.scene_id = #{sceneId}
+          AND node.deleted = 0
+          AND (
+              node.node_type != 'EQUIPMENT'
+              OR (e.id IS NOT NULL AND <include refid="equipmentScope"/>)
+          )
+        ORDER BY node.sort_order, node.id
+    </select>
+
+    <select id="models"
+            resultType="com.leantpm.visualization.VisualizationDtos$ModelResource">
+        SELECT id, resource_code, resource_name, resource_level, attachment_id,
+               model_format, primitive_type, fallback_color,
+               thumbnail_attachment_id, description, status, version
+        FROM visualization_model_resource
+        WHERE tenant_id = #{tenantId} AND deleted = 0
+        ORDER BY resource_level, resource_name, id
+    </select>
+
+    <select id="model"
+            resultType="com.leantpm.visualization.VisualizationDtos$ModelResource">
+        SELECT id, resource_code, resource_name, resource_level, attachment_id,
+               model_format, primitive_type, fallback_color,
+               thumbnail_attachment_id, description, status, version
+        FROM visualization_model_resource
+        WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0
+        LIMIT 1
+    </select>
+
+    <select id="statusColors"
+            resultType="com.leantpm.visualization.VisualizationDtos$StatusColor">
+        SELECT id, status_code, status_name, display_color, emissive_color,
+               pulse_flag, sort_order, status, description, version
+        FROM visualization_status_color
+        WHERE tenant_id = #{tenantId} AND deleted = 0
+        ORDER BY sort_order, id
+    </select>
+
+    <select id="equipmentSnapshot"
+            resultType="com.leantpm.visualization.VisualizationDtos$EquipmentSnapshotBase">
+        SELECT e.id AS equipment_id, e.equipment_code, e.equipment_name,
+               category.category_name, organization.organization_name,
+               location.location_name,
+               COALESCE(cs.status_code, 'OFFLINE') AS status_code,
+               COALESCE(palette.status_name, '离线') AS status_name,
+               COALESCE(palette.display_color, '#475569') AS status_color,
+               cs.status_since,
+               COALESCE(TIMESTAMPDIFF(SECOND, cs.status_since, CURRENT_TIMESTAMP(3)), 0)
+                   AS status_duration_seconds,
+               responsible.real_name AS responsible_name,
+               COALESCE((
+                   SELECT SUM(TIMESTAMPDIFF(
+                       SECOND,
+                       GREATEST(history.started_time, CURRENT_DATE()),
+                       LEAST(COALESCE(history.ended_time, CURRENT_TIMESTAMP(3)),
+                             CURRENT_TIMESTAMP(3))
+                   )) / 60
+                   FROM equipment_status_history history
+                   WHERE history.tenant_id = e.tenant_id
+                     AND history.equipment_id = e.id
+                     AND history.to_status_code = 'RUNNING'
+                     AND COALESCE(history.ended_time, CURRENT_TIMESTAMP(3)) &gt;= CURRENT_DATE()
+               ), 0) AS today_run_minutes,
+               COALESCE((
+                   SELECT SUM(TIMESTAMPDIFF(
+                       SECOND,
+                       GREATEST(history.started_time, CURRENT_DATE()),
+                       LEAST(COALESCE(history.ended_time, CURRENT_TIMESTAMP(3)),
+                             CURRENT_TIMESTAMP(3))
+                   )) / 60
+                   FROM equipment_status_history history
+                   WHERE history.tenant_id = e.tenant_id
+                     AND history.equipment_id = e.id
+                     AND history.to_status_code IN ('STOPPED', 'FAULT', 'REPAIR', 'OFFLINE')
+                     AND COALESCE(history.ended_time, CURRENT_TIMESTAMP(3)) &gt;= CURRENT_DATE()
+               ), 0) AS today_stop_minutes,
+               (SELECT ROUND(AVG(oee.oee_rate), 6)
+                FROM equipment_oee_record oee
+                WHERE oee.tenant_id = e.tenant_id
+                  AND oee.equipment_id = e.id
+                  AND oee.production_date = CURRENT_DATE()
+                  AND oee.deleted = 0) AS today_oee,
+               (SELECT COUNT(*) FROM inspection_task task
+                WHERE task.tenant_id = e.tenant_id AND task.equipment_id = e.id
+                  AND task.planned_date = CURRENT_DATE() AND task.deleted = 0)
+                   AS today_inspection_due,
+               (SELECT COUNT(*) FROM inspection_task task
+                WHERE task.tenant_id = e.tenant_id AND task.equipment_id = e.id
+                  AND task.planned_date = CURRENT_DATE()
+                  AND task.task_status = 'COMPLETED' AND task.deleted = 0)
+                   AS today_inspection_completed,
+               (SELECT COUNT(*) FROM maintenance_task task
+                WHERE task.tenant_id = e.tenant_id AND task.equipment_id = e.id
+                  AND task.planned_date = CURRENT_DATE() AND task.deleted = 0)
+                   AS today_maintenance_due,
+               (SELECT COUNT(*) FROM maintenance_task task
+                WHERE task.tenant_id = e.tenant_id AND task.equipment_id = e.id
+                  AND task.planned_date = CURRENT_DATE()
+                  AND task.task_status = 'COMPLETED' AND task.deleted = 0)
+                   AS today_maintenance_completed,
+               (
+                   (SELECT COUNT(*) FROM inspection_abnormal abnormal
+                    WHERE abnormal.tenant_id = e.tenant_id
+                      AND abnormal.equipment_id = e.id
+                      AND abnormal.abnormal_status != 'CLOSED'
+                      AND abnormal.deleted = 0)
+                   +
+                   (SELECT COUNT(*) FROM maintenance_abnormal abnormal
+                    WHERE abnormal.tenant_id = e.tenant_id
+                      AND abnormal.equipment_id = e.id
+                      AND abnormal.abnormal_status != 'CLOSED'
+                      AND abnormal.deleted = 0)
+               ) AS open_abnormal_count
+        FROM equipment e
+        JOIN equipment_category category
+          ON category.tenant_id = e.tenant_id
+         AND category.id = e.category_id
+         AND category.deleted = 0
+        JOIN organization
+          ON organization.tenant_id = e.tenant_id
+         AND organization.id = e.organization_id
+         AND organization.deleted = 0
+        JOIN location
+          ON location.tenant_id = e.tenant_id
+         AND location.id = e.location_id
+         AND location.deleted = 0
+        LEFT JOIN system_user responsible
+          ON responsible.tenant_id = e.tenant_id
+         AND responsible.id = e.primary_responsible_user_id
+         AND responsible.deleted = 0
+        LEFT JOIN equipment_current_status cs
+          ON cs.tenant_id = e.tenant_id AND cs.equipment_id = e.id
+        LEFT JOIN visualization_status_color palette
+          ON palette.tenant_id = e.tenant_id
+         AND palette.status_code = cs.status_code
+         AND palette.deleted = 0
+        WHERE e.tenant_id = #{tenantId}
+          AND e.id = #{equipmentId}
+          AND e.deleted = 0
+          AND <include refid="equipmentScope"/>
+        LIMIT 1
+    </select>
+
+    <select id="equipmentEvents"
+            resultType="com.leantpm.visualization.VisualizationDtos$EquipmentEvent">
+        SELECT event_type, event_code, event_status, description, event_time
+        FROM (
+            SELECT 'STATUS' AS event_type,
+                   CONCAT(COALESCE(history.from_status_code, '-'), '→',
+                          history.to_status_code) AS event_code,
+                   history.to_status_code AS event_status,
+                   history.reason AS description,
+                   history.started_time AS event_time
+            FROM equipment_status_history history
+            WHERE history.tenant_id = #{tenantId}
+              AND history.equipment_id = #{equipmentId}
+            UNION ALL
+            SELECT 'INSPECTION', task.task_code, task.task_status,
+                   task.scheme_name_snapshot, task.updated_time
+            FROM inspection_task task
+            WHERE task.tenant_id = #{tenantId}
+              AND task.equipment_id = #{equipmentId}
+              AND task.deleted = 0
+            UNION ALL
+            SELECT 'MAINTENANCE', task.task_code, task.task_status,
+                   task.scheme_name_snapshot, task.updated_time
+            FROM maintenance_task task
+            WHERE task.tenant_id = #{tenantId}
+              AND task.equipment_id = #{equipmentId}
+              AND task.deleted = 0
+        ) events
+        ORDER BY event_time DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="countModelCode" resultType="int">
+        SELECT COUNT(*)
+        FROM visualization_model_resource
+        WHERE tenant_id = #{tenantId}
+          AND resource_code = #{resourceCode}
+          AND deleted = 0
+          <if test="excludeId != null">AND id != #{excludeId}</if>
+    </select>
+
+    <insert id="insertModel">
+        INSERT INTO visualization_model_resource
+            (tenant_id, resource_code, resource_name, resource_level,
+             attachment_id, model_format, primitive_type, fallback_color,
+             thumbnail_attachment_id, description, status, created_by, updated_by)
+        VALUES
+            (#{tenantId}, #{request.resourceCode}, #{request.resourceName},
+             #{request.resourceLevel}, #{request.attachmentId}, #{request.modelFormat},
+             #{request.primitiveType}, #{request.fallbackColor},
+             #{request.thumbnailAttachmentId}, #{request.description}, #{request.status},
+             #{operatorId}, #{operatorId})
+    </insert>
+
+    <select id="modelIdByCode" resultType="long">
+        SELECT id FROM visualization_model_resource
+        WHERE tenant_id = #{tenantId}
+          AND resource_code = #{resourceCode}
+          AND deleted = 0
+        LIMIT 1
+    </select>
+
+    <update id="updateModel">
+        UPDATE visualization_model_resource
+        SET resource_name = #{request.resourceName},
+            resource_level = #{request.resourceLevel},
+            attachment_id = #{request.attachmentId},
+            model_format = #{request.modelFormat},
+            primitive_type = #{request.primitiveType},
+            fallback_color = #{request.fallbackColor},
+            thumbnail_attachment_id = #{request.thumbnailAttachmentId},
+            description = #{request.description},
+            status = #{request.status},
+            updated_by = #{operatorId},
+            version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0
+          AND version = #{request.version}
+    </update>
+
+    <update id="deleteModel">
+        UPDATE visualization_model_resource
+        SET deleted = 1, status = 0, updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0
+          AND version = #{version}
+    </update>
+
+    <select id="countModelReferences" resultType="int">
+        SELECT
+            (SELECT COUNT(*) FROM visualization_scene
+             WHERE tenant_id = #{tenantId} AND model_resource_id = #{id} AND deleted = 0)
+            +
+            (SELECT COUNT(*) FROM visualization_scene_node
+             WHERE tenant_id = #{tenantId} AND model_resource_id = #{id} AND deleted = 0)
+    </select>
+
+    <select id="countSceneCode" resultType="int">
+        SELECT COUNT(*)
+        FROM visualization_scene
+        WHERE tenant_id = #{tenantId} AND scene_code = #{sceneCode} AND deleted = 0
+        <if test="excludeId != null">AND id != #{excludeId}</if>
+    </select>
+
+    <insert id="insertScene">
+        INSERT INTO visualization_scene
+            (tenant_id, parent_scene_id, scene_code, scene_name, scene_level,
+             organization_id, model_resource_id, background_color, grid_color,
+             camera_x, camera_y, camera_z, target_x, target_y, target_z,
+             auto_rotate_flag, sort_order, status, description, created_by, updated_by)
+        VALUES
+            (#{tenantId}, #{request.parentSceneId}, #{request.sceneCode},
+             #{request.sceneName}, #{request.sceneLevel}, #{request.organizationId},
+             #{request.modelResourceId}, #{request.backgroundColor}, #{request.gridColor},
+             #{request.cameraX}, #{request.cameraY}, #{request.cameraZ},
+             #{request.targetX}, #{request.targetY}, #{request.targetZ},
+             #{request.autoRotateFlag}, #{request.sortOrder}, #{request.status},
+             #{request.description}, #{operatorId}, #{operatorId})
+    </insert>
+
+    <select id="sceneIdByCode" resultType="long">
+        SELECT id FROM visualization_scene
+        WHERE tenant_id = #{tenantId} AND scene_code = #{sceneCode} AND deleted = 0
+        LIMIT 1
+    </select>
+
+    <update id="updateScene">
+        UPDATE visualization_scene
+        SET parent_scene_id = #{request.parentSceneId},
+            scene_name = #{request.sceneName},
+            scene_level = #{request.sceneLevel},
+            organization_id = #{request.organizationId},
+            model_resource_id = #{request.modelResourceId},
+            background_color = #{request.backgroundColor},
+            grid_color = #{request.gridColor},
+            camera_x = #{request.cameraX},
+            camera_y = #{request.cameraY},
+            camera_z = #{request.cameraZ},
+            target_x = #{request.targetX},
+            target_y = #{request.targetY},
+            target_z = #{request.targetZ},
+            auto_rotate_flag = #{request.autoRotateFlag},
+            sort_order = #{request.sortOrder},
+            status = #{request.status},
+            description = #{request.description},
+            updated_by = #{operatorId},
+            version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0
+          AND version = #{request.version}
+    </update>
+
+    <update id="deleteScene">
+        UPDATE visualization_scene
+        SET deleted = 1, status = 0, updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0
+          AND version = #{version}
+    </update>
+
+    <select id="countSceneReferences" resultType="int">
+        SELECT
+            (SELECT COUNT(*) FROM visualization_scene
+             WHERE tenant_id = #{tenantId} AND parent_scene_id = #{id} AND deleted = 0)
+            +
+            (SELECT COUNT(*) FROM visualization_scene_node
+             WHERE tenant_id = #{tenantId}
+               AND (scene_id = #{id} OR target_scene_id = #{id}) AND deleted = 0)
+    </select>
+
+    <select id="countNodeCode" resultType="int">
+        SELECT COUNT(*) FROM visualization_scene_node
+        WHERE tenant_id = #{tenantId} AND scene_id = #{sceneId}
+          AND node_code = #{nodeCode} AND deleted = 0
+        <if test="excludeId != null">AND id != #{excludeId}</if>
+    </select>
+
+    <insert id="insertNode">
+        INSERT INTO visualization_scene_node
+            (tenant_id, scene_id, node_code, display_name, node_type,
+             organization_id, equipment_id, target_scene_id, model_resource_id,
+             position_x, position_y, position_z, rotation_x, rotation_y, rotation_z,
+             scale_x, scale_y, scale_z, label_visible_flag, visible_flag,
+             sort_order, description, created_by, updated_by)
+        VALUES
+            (#{tenantId}, #{sceneId}, #{request.nodeCode}, #{request.displayName},
+             #{request.nodeType}, #{request.organizationId}, #{request.equipmentId},
+             #{request.targetSceneId}, #{request.modelResourceId},
+             #{request.positionX}, #{request.positionY}, #{request.positionZ},
+             #{request.rotationX}, #{request.rotationY}, #{request.rotationZ},
+             #{request.scaleX}, #{request.scaleY}, #{request.scaleZ},
+             #{request.labelVisibleFlag}, #{request.visibleFlag},
+             #{request.sortOrder}, #{request.description}, #{operatorId}, #{operatorId})
+    </insert>
+
+    <select id="nodeIdByCode" resultType="long">
+        SELECT id FROM visualization_scene_node
+        WHERE tenant_id = #{tenantId} AND scene_id = #{sceneId}
+          AND node_code = #{nodeCode} AND deleted = 0
+        LIMIT 1
+    </select>
+
+    <select id="nodeSceneId" resultType="long">
+        SELECT scene_id
+        FROM visualization_scene_node
+        WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0
+        LIMIT 1
+    </select>
+
+    <update id="updateNode">
+        UPDATE visualization_scene_node
+        SET display_name = #{request.displayName},
+            node_type = #{request.nodeType},
+            organization_id = #{request.organizationId},
+            equipment_id = #{request.equipmentId},
+            target_scene_id = #{request.targetSceneId},
+            model_resource_id = #{request.modelResourceId},
+            position_x = #{request.positionX},
+            position_y = #{request.positionY},
+            position_z = #{request.positionZ},
+            rotation_x = #{request.rotationX},
+            rotation_y = #{request.rotationY},
+            rotation_z = #{request.rotationZ},
+            scale_x = #{request.scaleX},
+            scale_y = #{request.scaleY},
+            scale_z = #{request.scaleZ},
+            label_visible_flag = #{request.labelVisibleFlag},
+            visible_flag = #{request.visibleFlag},
+            sort_order = #{request.sortOrder},
+            description = #{request.description},
+            updated_by = #{operatorId},
+            version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0
+          AND version = #{request.version}
+    </update>
+
+    <update id="deleteNode">
+        UPDATE visualization_scene_node
+        SET deleted = 1, updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0
+          AND version = #{version}
+    </update>
+
+    <update id="updateStatusColor">
+        UPDATE visualization_status_color
+        SET status_name = #{request.statusName},
+            display_color = #{request.displayColor},
+            emissive_color = #{request.emissiveColor},
+            pulse_flag = #{request.pulseFlag},
+            sort_order = #{request.sortOrder},
+            status = #{request.status},
+            description = #{request.description},
+            updated_by = #{operatorId},
+            version = version + 1
+        WHERE tenant_id = #{tenantId}
+          AND status_code = #{statusCode}
+          AND deleted = 0
+          AND version = #{request.version}
+    </update>
+</mapper>
