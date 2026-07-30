@@ -18,7 +18,7 @@ LeanTPM
 - Maven 3.9+
 - Node.js 20.19+ 或 22.12+
 - MySQL 8.0+
-- Redis 7.x（认证会话、令牌撤销、在线用户和登录失败限制必须使用）
+- Redis 7.x（认证会话、令牌撤销、在线用户、登录失败限制、验证码和请求幂等必须使用）
 
 ## 快速启动
 
@@ -54,6 +54,37 @@ LeanTPM
    npm install
    npm run dev
    ```
+
+## 测试
+
+后端单元测试：
+
+```powershell
+cd backend
+mvn test
+```
+
+使用独立临时数据库执行 Flyway、递归组织范围和 JSON 变更快照集成测试：
+
+```powershell
+.\scripts\run-mysql-integration.ps1 `
+  -MySqlUser root `
+  -MySqlPassword '你的数据库密码'
+```
+
+脚本会创建唯一命名的临时数据库，并在成功或失败后通过 `finally` 自动删除。
+
+完整验证登录验证码默认开关、必填校验、正确登录和一次性消费：
+
+```powershell
+.\scripts\verify-captcha-e2e.ps1 `
+  -MySqlUser root `
+  -MySqlPassword '你的数据库密码'
+```
+
+该脚本下载并校验临时 Redis 压缩包，在独立端口和临时数据库运行；结束后自动停止进程并清理数据。
+
+接口错误码、幂等约束和调用示例见 `docs/05-API错误码与幂等说明.md`。
 
 前端默认地址为 `http://localhost:5173`，后端接口为 `http://localhost:8080/api/v1`，接口文档为 `http://localhost:8080/swagger-ui.html`。
 

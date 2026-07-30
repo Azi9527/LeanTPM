@@ -11,8 +11,13 @@ export const useAuthStore = defineStore('auth', () => {
   const displayName = computed(() => user.value?.realName || user.value?.username || '用户')
   const permissions = computed(() => new Set(user.value?.permissions || []))
 
-  async function signIn(username: string, password: string): Promise<UserProfile> {
-    const result = await authApi.login(username, password)
+  async function signIn(
+    username: string,
+    password: string,
+    captchaId?: string,
+    captchaCode?: string,
+  ): Promise<UserProfile> {
+    const result = await authApi.login(username, password, captchaId, captchaCode)
     storeTokens(result.tokens)
     user.value = result.user
     initialized.value = true

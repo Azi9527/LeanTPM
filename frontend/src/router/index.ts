@@ -87,6 +87,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '数据权限', permission: 'system:data-scope:view' },
       },
       {
+        path: 'system/change-logs',
+        name: 'SystemChangeLogs',
+        component: () => import('@/views/system/logs/ChangeLogView.vue'),
+        meta: { title: '数据变更日志', permission: 'system:change-log:view' },
+      },
+      {
         path: 'coming-soon/:module',
         name: 'ComingSoon',
         component: () => import('@/views/common/ComingSoonView.vue'),

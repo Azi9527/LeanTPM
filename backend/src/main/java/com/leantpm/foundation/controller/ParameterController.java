@@ -1,6 +1,7 @@
 package com.leantpm.foundation.controller;
 
 import com.leantpm.common.api.ApiResponse;
+import com.leantpm.common.idempotency.Idempotent;
 import com.leantpm.foundation.dto.FoundationDtos;
 import com.leantpm.foundation.service.ParameterService;
 import jakarta.validation.Valid;
@@ -37,6 +38,7 @@ public class ParameterController {
     }
 
     @PostMapping
+    @Idempotent
     @PreAuthorize("hasAuthority('system:parameter:manage')")
     public ApiResponse<Map<String, Long>> create(
             @Valid @RequestBody FoundationDtos.SaveParameterRequest request
@@ -45,6 +47,7 @@ public class ParameterController {
     }
 
     @PutMapping("/{id}")
+    @Idempotent
     @PreAuthorize("hasAuthority('system:parameter:manage')")
     public ApiResponse<Void> update(
             @PathVariable long id,
@@ -55,6 +58,7 @@ public class ParameterController {
     }
 
     @DeleteMapping("/{id}")
+    @Idempotent
     @PreAuthorize("hasAuthority('system:parameter:delete')")
     public ApiResponse<Void> delete(@PathVariable long id) {
         service.delete(id);

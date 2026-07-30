@@ -1,6 +1,7 @@
 package com.leantpm.system.online;
 
 import com.leantpm.common.api.ApiResponse;
+import com.leantpm.common.idempotency.Idempotent;
 import com.leantpm.security.session.OnlineSession;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -27,6 +28,7 @@ public class OnlineUserController {
     }
 
     @DeleteMapping("/{sessionId}")
+    @Idempotent
     @PreAuthorize("hasAuthority('system:online-user:kickout')")
     public ApiResponse<Void> kickout(@PathVariable String sessionId) {
         service.kickout(sessionId);

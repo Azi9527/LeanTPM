@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.leantpm.system.mapper.ChangeLogMapper">
+    <sql id="changeLogFilter">
+        tenant_id = #{tenantId}
+        <if test="resourceType != null and resourceType != ''">
+            AND resource_type = #{resourceType}
+        </if>
+        <if test="keyword != null and keyword != ''">
+            AND (
+                resource_id LIKE CONCAT('%', #{keyword}, '%')
+                OR operator_name LIKE CONCAT('%', #{keyword}, '%')
+                OR operation_type LIKE CONCAT('%', #{keyword}, '%')
+            )
+        </if>
+        <if test="startTime != null">
+            AND change_time &gt;= #{startTime}
+        </if>
+        <if test="endTime != null">
+            AND change_time &lt; #{endTime}
+        </if>
+    </sql>
+
+    <insert id="insertChangeLog">
+        INSERT INTO system_change_log
+            (tenant_id, resource_type, resource_id, operation_type,
+             before_data, after_data, changed_fields, operator_id, operator_name, request_id)
+        VALUES
+            (#{tenantId}, #{resourceType}, #{resourceId}, #{operationType},
+             #{beforeData}, #{afterData}, #{changedFields}, #{operatorId}, #{operatorName},
+             #{requestId})
+    </insert>
+
+    <select id="findChangeLogs"
+            resultType="com.leantpm.system.audit.ChangeLogDtos$ChangeLogRow">
+        SELECT id, resource_type, resource_id, operation_type,
+               CAST(before_data AS CHAR) AS before_data,
+               CAST(after_data AS CHAR) AS after_data,
+               CAST(changed_fields AS CHAR) AS changed_fields,
+               operator_id, operator_name, request_id, change_time
+        FROM system_change_log
+        WHERE <include refid="changeLogFilter"/>
+        ORDER BY change_time DESC, id DESC
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
+    <select id="countChangeLogs" resultType="long">
+        SELECT COUNT(*)
+        FROM system_change_log
+        WHERE <include refid="changeLogFilter"/>
+    </select>
+</mapper>

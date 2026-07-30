@@ -2,6 +2,7 @@ package com.leantpm.system.controller;
 
 import com.leantpm.common.api.ApiResponse;
 import com.leantpm.common.api.PageResult;
+import com.leantpm.common.idempotency.Idempotent;
 import com.leantpm.system.dto.SystemDtos;
 import com.leantpm.system.service.SystemService;
 import jakarta.validation.Valid;
@@ -45,6 +46,7 @@ public class SystemController {
     }
 
     @PostMapping("/users")
+    @Idempotent
     @PreAuthorize("hasAuthority('system:user:create')")
     public ApiResponse<Map<String, Long>> createUser(
             @Valid @RequestBody SystemDtos.CreateUserRequest request
@@ -53,6 +55,7 @@ public class SystemController {
     }
 
     @PutMapping("/users/{id}")
+    @Idempotent
     @PreAuthorize("hasAuthority('system:user:update')")
     public ApiResponse<Void> updateUser(
             @PathVariable long id,
@@ -63,6 +66,7 @@ public class SystemController {
     }
 
     @PatchMapping("/users/{id}/status")
+    @Idempotent
     @PreAuthorize("hasAuthority('system:user:status')")
     public ApiResponse<Void> updateUserStatus(
             @PathVariable long id,
@@ -73,6 +77,7 @@ public class SystemController {
     }
 
     @PostMapping("/users/{id}/reset-password")
+    @Idempotent
     @PreAuthorize("hasAuthority('system:user:reset-password')")
     public ApiResponse<Void> resetPassword(
             @PathVariable long id,
@@ -89,6 +94,7 @@ public class SystemController {
     }
 
     @PostMapping("/roles")
+    @Idempotent
     @PreAuthorize(
             "hasAuthority('system:role:create') and hasAuthority('system:data-scope:manage')"
     )
@@ -99,6 +105,7 @@ public class SystemController {
     }
 
     @PutMapping("/roles/{id}")
+    @Idempotent
     @PreAuthorize(
             "(hasAuthority('system:role:update') or hasAuthority('system:role:authorize')) "
                     + "and hasAuthority('system:data-scope:manage')"
@@ -127,6 +134,7 @@ public class SystemController {
     }
 
     @PutMapping("/roles/{id}/data-scope")
+    @Idempotent
     @PreAuthorize("hasAuthority('system:data-scope:manage')")
     public ApiResponse<Void> updateRoleDataScope(
             @PathVariable long id,
@@ -149,6 +157,7 @@ public class SystemController {
     }
 
     @PostMapping("/dictionaries")
+    @Idempotent
     @PreAuthorize("hasAuthority('system:dictionary:manage')")
     public ApiResponse<Map<String, Long>> createDictionaryType(
             @Valid @RequestBody SystemDtos.SaveDictionaryTypeRequest request
@@ -157,6 +166,7 @@ public class SystemController {
     }
 
     @PutMapping("/dictionaries/{id}")
+    @Idempotent
     @PreAuthorize("hasAuthority('system:dictionary:manage')")
     public ApiResponse<Void> updateDictionaryType(
             @PathVariable long id,
@@ -167,6 +177,7 @@ public class SystemController {
     }
 
     @DeleteMapping("/dictionaries/{id}")
+    @Idempotent
     @PreAuthorize("hasAuthority('system:dictionary:manage')")
     public ApiResponse<Void> deleteDictionaryType(@PathVariable long id) {
         service.deleteDictionaryType(id);
@@ -174,6 +185,7 @@ public class SystemController {
     }
 
     @PostMapping("/dictionaries/{typeId}/items")
+    @Idempotent
     @PreAuthorize("hasAuthority('system:dictionary:manage')")
     public ApiResponse<Void> createDictionaryItem(
             @PathVariable long typeId,
@@ -184,6 +196,7 @@ public class SystemController {
     }
 
     @PutMapping("/dictionary-items/{id}")
+    @Idempotent
     @PreAuthorize("hasAuthority('system:dictionary:manage')")
     public ApiResponse<Void> updateDictionaryItem(
             @PathVariable long id,
@@ -194,6 +207,7 @@ public class SystemController {
     }
 
     @DeleteMapping("/dictionary-items/{id}")
+    @Idempotent
     @PreAuthorize("hasAuthority('system:dictionary:manage')")
     public ApiResponse<Void> deleteDictionaryItem(@PathVariable long id) {
         service.deleteDictionaryItem(id);

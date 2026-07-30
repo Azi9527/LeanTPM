@@ -3,6 +3,7 @@ import type { ApiResponse, TokenPair } from '@/types/api'
 
 const ACCESS_TOKEN_KEY = 'leantpm_access_token'
 const REFRESH_TOKEN_KEY = 'leantpm_refresh_token'
+const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
 export const http = axios.create({
   baseURL: '/api/v1',
@@ -31,6 +32,18 @@ http.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const accessToken = token()
   if (accessToken) {
     config.headers.Authorization = `Bearer ${accessToken}`
+  }
+  const method = config.method?.toUpperCase()
+  if (
+    method
+    && MUTATING_METHODS.has(method)
+    && !config.url?.startsWith('/auth/')
+    && !config.headers.get('Idempotency-Key')
+  ) {
+    const randomPart = typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`
+    config.headers.set('Idempotency-Key', `web-${randomPart}`)
   }
   return config
 })

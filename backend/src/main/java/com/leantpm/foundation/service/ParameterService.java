@@ -4,6 +4,7 @@ import com.leantpm.common.exception.BusinessException;
 import com.leantpm.foundation.dto.FoundationDtos;
 import com.leantpm.foundation.mapper.FoundationMapper;
 import com.leantpm.security.SecurityUtils;
+import com.leantpm.system.audit.ChangeLogService;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,9 +15,11 @@ import java.util.List;
 @Service
 public class ParameterService {
     private final FoundationMapper mapper;
+    private final ChangeLogService changeLogService;
 
-    public ParameterService(FoundationMapper mapper) {
+    public ParameterService(FoundationMapper mapper, ChangeLogService changeLogService) {
         this.mapper = mapper;
+        this.changeLogService = changeLogService;
     }
 
     @Transactional(readOnly = true)
@@ -37,7 +40,15 @@ public class ParameterService {
             throw new BusinessException("PARAMETER_KEY_EXISTS", "参数键已存在", HttpStatus.CONFLICT);
         }
         mapper.insertParameter(current.tenantId(), normalized, current.userId());
-        return mapper.findParameterIdByKey(current.tenantId(), normalized.parameterKey());
+        long id = mapper.findParameterIdByKey(current.tenantId(), normalized.parameterKey());
+        changeLogService.record(
+                "SYSTEM_PARAMETER",
+                id,
+                "CREATE",
+                null,
+                mapper.findParameterById(current.tenantId(), id)
+        );
+        return id;
     }
 
     @Transactional
@@ -56,6 +67,13 @@ public class ParameterService {
                 || mapper.updateParameter(current.tenantId(), id, normalized, current.userId()) == 0) {
             throw optimisticConflict();
         }
+        changeLogService.record(
+                "SYSTEM_PARAMETER",
+                id,
+                "UPDATE",
+                existing,
+                mapper.findParameterById(current.tenantId(), id)
+        );
     }
 
     @Transactional
@@ -71,6 +89,7 @@ public class ParameterService {
         if (mapper.deleteParameter(current.tenantId(), id, current.userId()) == 0) {
             throw new BusinessException("PARAMETER_NOT_FOUND", "系统参数不存在", HttpStatus.NOT_FOUND);
         }
+        changeLogService.record("SYSTEM_PARAMETER", id, "DELETE", existing, null);
     }
 
     @Transactional(readOnly = true)

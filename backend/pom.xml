@@ -22,6 +22,7 @@
         <mybatis-spring-boot.version>3.0.4</mybatis-spring-boot.version>
         <jjwt.version>0.12.6</jjwt.version>
         <springdoc.version>2.8.9</springdoc.version>
+        <leantpm.build.directory>target</leantpm.build.directory>
     </properties>
 
     <dependencies>
@@ -99,6 +100,7 @@
     </dependencies>
 
     <build>
+        <directory>${leantpm.build.directory}</directory>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>

@@ -82,3 +82,6 @@ leantpm:
       - zip
       - glb
       - gltf
+  idempotency:
+    processing-seconds: ${LEANTPM_IDEMPOTENCY_PROCESSING_SECONDS:300}
+    completed-hours: ${LEANTPM_IDEMPOTENCY_COMPLETED_HOURS:24}

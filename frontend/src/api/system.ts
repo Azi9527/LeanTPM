@@ -99,8 +99,6 @@ export interface OperationLogRow {
 
 export interface AttachmentRow {
   id: number
-  businessType?: string
-  businessId?: number
   originalName: string
   storedName: string
   storagePath: string
@@ -109,6 +107,32 @@ export interface AttachmentRow {
   fileSize: number
   sha256: string
   createdTime: string
+  relations: AttachmentRelationRow[]
+}
+
+export interface AttachmentRelationRow {
+  id: number
+  attachmentId: number
+  businessType: string
+  businessId: number
+  relationType: 'IMAGE' | 'DOCUMENT' | 'MODEL' | 'OTHER'
+  sortOrder: number
+  remark?: string
+  createdTime: string
+}
+
+export interface ChangeLogRow {
+  id: number
+  resourceType: string
+  resourceId: string
+  operationType: 'CREATE' | 'UPDATE' | 'DELETE' | 'BIND' | 'UNBIND'
+  beforeData?: string
+  afterData?: string
+  changedFields: string
+  operatorId: number
+  operatorName: string
+  requestId?: string
+  changeTime: string
 }
 
 export interface ParameterRow {
@@ -212,6 +236,19 @@ export const systemApi = {
     }),
   downloadAttachment: (id: number) =>
     http.get<Blob>(`/system/attachments/${id}/content`, { responseType: 'blob' }),
+  addAttachmentRelation: (attachmentId: number, data: object) =>
+    http.post(`/system/attachments/${attachmentId}/relations`, data),
+  removeAttachmentRelation: (relationId: number) =>
+    http.delete(`/system/attachments/relations/${relationId}`),
+
+  changeLogs: (query: {
+    resourceType?: string
+    keyword?: string
+    startDate?: string
+    endDate?: string
+    page: number
+    pageSize: number
+  }) => getData<PageResult<ChangeLogRow>>('/system/change-logs', query),
 
   parameters: (params?: { keyword?: string; groupCode?: string }) =>
     getData<ParameterRow[]>('/system/parameters', params),

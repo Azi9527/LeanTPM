@@ -5,6 +5,8 @@ import jakarta.validation.constraints.Size;
 
 public record LoginRequest(
         @NotBlank @Size(max = 64) String username,
-        @NotBlank @Size(max = 128) String password
+        @NotBlank @Size(max = 128) String password,
+        @Size(max = 64) String captchaId,
+        @Size(max = 16) String captchaCode
 ) {
 }

@@ -1,6 +1,7 @@
 package com.leantpm;
 
 import com.leantpm.security.JwtProperties;
+import com.leantpm.common.idempotency.IdempotencyProperties;
 import com.leantpm.system.attachment.StorageProperties;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
@@ -17,7 +18,11 @@ import org.springframework.scheduling.annotation.EnableScheduling;
         "com.leantpm.foundation.mapper",
         "com.leantpm.security.datascope"
 })
-@EnableConfigurationProperties({JwtProperties.class, StorageProperties.class})
+@EnableConfigurationProperties({
+        JwtProperties.class,
+        StorageProperties.class,
+        IdempotencyProperties.class
+})
 public class LeanTpmApplication {
 
     public static void main(String[] args) {

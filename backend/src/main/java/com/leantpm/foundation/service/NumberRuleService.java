@@ -4,6 +4,7 @@ import com.leantpm.common.exception.BusinessException;
 import com.leantpm.foundation.dto.FoundationDtos;
 import com.leantpm.foundation.mapper.FoundationMapper;
 import com.leantpm.security.SecurityUtils;
+import com.leantpm.system.audit.ChangeLogService;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,10 +21,16 @@ public class NumberRuleService {
 
     private final FoundationMapper mapper;
     private final ParameterService parameterService;
+    private final ChangeLogService changeLogService;
 
-    public NumberRuleService(FoundationMapper mapper, ParameterService parameterService) {
+    public NumberRuleService(
+            FoundationMapper mapper,
+            ParameterService parameterService,
+            ChangeLogService changeLogService
+    ) {
         this.mapper = mapper;
         this.parameterService = parameterService;
+        this.changeLogService = changeLogService;
     }
 
     @Transactional(readOnly = true)
@@ -44,7 +51,15 @@ public class NumberRuleService {
             throw new BusinessException("NUMBER_RULE_CODE_EXISTS", "编号规则编码已存在", HttpStatus.CONFLICT);
         }
         mapper.insertNumberRule(current.tenantId(), normalized, current.userId());
-        return mapper.findNumberRuleIdByCode(current.tenantId(), normalized.ruleCode());
+        long id = mapper.findNumberRuleIdByCode(current.tenantId(), normalized.ruleCode());
+        changeLogService.record(
+                "NUMBER_RULE",
+                id,
+                "CREATE",
+                null,
+                mapper.findNumberRuleById(current.tenantId(), id)
+        );
+        return id;
     }
 
     @Transactional
@@ -67,6 +82,13 @@ public class NumberRuleService {
                     HttpStatus.CONFLICT
             );
         }
+        changeLogService.record(
+                "NUMBER_RULE",
+                id,
+                "UPDATE",
+                existing,
+                mapper.findNumberRuleById(current.tenantId(), id)
+        );
     }
 
     @Transactional

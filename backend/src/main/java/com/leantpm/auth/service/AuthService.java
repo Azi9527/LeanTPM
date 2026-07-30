@@ -29,22 +29,26 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenService tokenService;
     private final RedisAuthSessionService sessionService;
+    private final CaptchaService captchaService;
 
     public AuthService(
             AuthMapper authMapper,
             PasswordEncoder passwordEncoder,
             JwtTokenService tokenService,
-            RedisAuthSessionService sessionService
+            RedisAuthSessionService sessionService,
+            CaptchaService captchaService
     ) {
         this.authMapper = authMapper;
         this.passwordEncoder = passwordEncoder;
         this.tokenService = tokenService;
         this.sessionService = sessionService;
+        this.captchaService = captchaService;
     }
 
     @Transactional
     public LoginResponse login(LoginRequest request, HttpServletRequest servletRequest) {
         String username = request.username().trim();
+        captchaService.verify(request);
         sessionService.assertLoginAllowed(DEFAULT_TENANT_ID, username);
 
         UserAccount user = authMapper.findByUsername(DEFAULT_TENANT_ID, username);

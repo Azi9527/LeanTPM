@@ -1,6 +1,7 @@
 package com.leantpm.foundation.controller;
 
 import com.leantpm.common.api.ApiResponse;
+import com.leantpm.common.idempotency.Idempotent;
 import com.leantpm.foundation.dto.FoundationDtos;
 import com.leantpm.foundation.service.NumberRuleService;
 import jakarta.validation.Valid;
@@ -35,6 +36,7 @@ public class NumberRuleController {
     }
 
     @PostMapping
+    @Idempotent
     @PreAuthorize("hasAuthority('system:number-rule:manage')")
     public ApiResponse<Map<String, Long>> create(
             @Valid @RequestBody FoundationDtos.SaveNumberRuleRequest request
@@ -43,6 +45,7 @@ public class NumberRuleController {
     }
 
     @PutMapping("/{id}")
+    @Idempotent
     @PreAuthorize("hasAuthority('system:number-rule:manage')")
     public ApiResponse<Void> update(
             @PathVariable long id,
@@ -53,6 +56,7 @@ public class NumberRuleController {
     }
 
     @PostMapping("/{ruleCode}/generate")
+    @Idempotent
     @PreAuthorize("hasAuthority('system:number-rule:generate')")
     public ApiResponse<FoundationDtos.GeneratedNumber> generate(@PathVariable String ruleCode) {
         return ApiResponse.success(service.generate(ruleCode));

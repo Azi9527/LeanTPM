@@ -2,6 +2,7 @@ package com.leantpm.foundation.service;
 
 import com.leantpm.foundation.dto.FoundationDtos;
 import com.leantpm.foundation.mapper.FoundationMapper;
+import com.leantpm.system.audit.ChangeLogService;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
@@ -15,7 +16,9 @@ import static org.mockito.Mockito.when;
 class NumberRuleServiceTest {
     private final FoundationMapper mapper = mock(FoundationMapper.class);
     private final ParameterService parameterService = mock(ParameterService.class);
-    private final NumberRuleService service = new NumberRuleService(mapper, parameterService);
+    private final ChangeLogService changeLogService = mock(ChangeLogService.class);
+    private final NumberRuleService service =
+            new NumberRuleService(mapper, parameterService, changeLogService);
 
     @Test
     void formatsPrefixDateAndPaddedSequence() {
