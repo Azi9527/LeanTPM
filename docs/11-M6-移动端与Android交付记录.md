@@ -89,10 +89,12 @@ adb shell am start -n com.leantpm.mobile/.MainActivity
 | 前端生产构建 | 通过 |
 | npm 审计 | 0 个已知漏洞 |
 | Android Debug 构建 | `BUILD SUCCESSFUL` |
-| APK 大小 | 40,001,295 字节 |
-| APK SHA-256 | `01D2AFA76DA469A2ED44FD304266EF96E67ADE6B8E06453EC50B08EC90028D3B` |
+| APK 大小 | 40,002,963 字节 |
+| APK SHA-256 | `A37036F416F1436224E32B3BABE0323B480D5C6880D3894835B3B214E75D0481` |
 | APK 签名 | v2 调试签名校验通过 |
 | APK 清单 | `com.leantpm.mobile`，versionName 1.0.0，minSdk 26，targetSdk 36 |
+
+真机首次安装反馈原生 WebView 白屏后，已修正 `SecureVault` 自定义插件注册顺序：插件在 `BridgeActivity` 创建 WebView 前注册；前端启动异常同时增加可见错误页，避免无信息白屏。修复版重新完成 Web 资源同步、Android Debug 构建、单元测试和 v2 签名校验。
 
 构建机没有已连接 Android 设备，`adb devices -l` 返回空列表，因此没有伪造真机安装结论。接入 API 26+ 真机后，应按上节命令完成安装、登录、扫码、拍照、断网草稿和恢复提交复验。
 
