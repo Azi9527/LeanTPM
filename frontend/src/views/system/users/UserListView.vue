@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { systemApi, type RoleRow, type UserRow } from '@/api/system'
+import { systemApi, type OrganizationNode, type RoleRow, type UserRow } from '@/api/system'
 import { useAuthStore } from '@/stores/auth'
 import { errorMessage } from '@/utils/http'
 
@@ -14,6 +14,7 @@ const editing = ref<UserRow | null>(null)
 const formRef = ref<FormInstance>()
 const rows = ref<UserRow[]>([])
 const roles = ref<RoleRow[]>([])
+const organizations = ref<OrganizationNode[]>([])
 const total = ref(0)
 const query = reactive({ keyword: '', status: undefined as number | undefined, page: 1, pageSize: 20 })
 const form = reactive({
@@ -22,6 +23,7 @@ const form = reactive({
   employeeNo: '',
   mobile: '',
   email: '',
+  organizationId: undefined as number | undefined,
   mobileEnabled: true,
   roleIds: [] as number[],
   initialPassword: '',
@@ -29,6 +31,7 @@ const form = reactive({
 const rules: FormRules = {
   username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
   realName: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
+  organizationId: [{ required: true, message: '请选择所属组织', trigger: 'change' }],
   roleIds: [{ required: true, type: 'array', min: 1, message: '至少选择一个角色', trigger: 'change' }],
   initialPassword: [
     {
@@ -49,8 +52,26 @@ const statusOptions = [
 ]
 
 onMounted(async () => {
-  await Promise.all([load(), loadRoles()])
+  await Promise.all([load(), loadRoles(), loadOrganizations()])
 })
+
+const organizationTree = computed(() => {
+  type TreeNode = OrganizationNode & { children: TreeNode[] }
+  const nodes = new Map<number, TreeNode>()
+  organizations.value.forEach((item) => nodes.set(item.id, { ...item, children: [] }))
+  const roots: TreeNode[] = []
+  nodes.forEach((item) => {
+    const parent = nodes.get(item.parentId)
+    if (parent) parent.children.push(item)
+    else roots.push(item)
+  })
+  return roots
+})
+const organizationTreeProps = {
+  label: 'organizationName',
+  children: 'children',
+  disabled: (data: OrganizationNode) => data.status !== 1,
+}
 
 async function load() {
   loading.value = true
@@ -70,6 +91,14 @@ async function loadRoles() {
   roles.value = await systemApi.roles()
 }
 
+async function loadOrganizations() {
+  try {
+    organizations.value = await systemApi.organizations()
+  } catch (error) {
+    ElMessage.error(errorMessage(error, '组织数据加载失败'))
+  }
+}
+
 function resetQuery() {
   query.keyword = ''
   query.status = undefined
@@ -85,6 +114,7 @@ function openCreate() {
     employeeNo: '',
     mobile: '',
     email: '',
+    organizationId: organizations.value.find((item) => item.status === 1)?.id,
     mobileEnabled: true,
     roleIds: [],
     initialPassword: '',
@@ -100,6 +130,7 @@ function openEdit(row: UserRow) {
     employeeNo: row.employeeNo || '',
     mobile: row.mobile || '',
     email: row.email || '',
+    organizationId: row.organizationId,
     mobileEnabled: row.mobileEnabled,
     roleIds: [...row.roleIds],
     initialPassword: '',
@@ -117,6 +148,7 @@ async function save() {
         employeeNo: form.employeeNo,
         mobile: form.mobile,
         email: form.email,
+        organizationId: form.organizationId,
         mobileEnabled: form.mobileEnabled,
         roleIds: form.roleIds,
         version: editing.value.version,
@@ -208,6 +240,7 @@ const pageSummary = computed(() => `共 ${total.value} 个用户`)
             </el-tag>
           </template>
         </el-table-column>
+        <el-table-column prop="organizationName" label="所属组织" min-width="150" show-overflow-tooltip />
         <el-table-column prop="mobile" label="手机" min-width="130" />
         <el-table-column label="状态" width="100" align="center">
           <template #default="{ row }">
@@ -251,6 +284,17 @@ const pageSummary = computed(() => `共 ${total.value} 个用户`)
         <el-form-item label="工号"><el-input v-model="form.employeeNo" /></el-form-item>
         <el-form-item label="手机"><el-input v-model="form.mobile" /></el-form-item>
         <el-form-item label="邮箱"><el-input v-model="form.email" /></el-form-item>
+        <el-form-item label="所属组织" prop="organizationId">
+          <el-tree-select
+            v-model="form.organizationId"
+            :data="organizationTree"
+            node-key="id"
+            check-strictly
+            :props="organizationTreeProps"
+            placeholder="选择所属组织"
+            style="width: 100%"
+          />
+        </el-form-item>
         <el-form-item label="允许移动端">
           <el-switch v-model="form.mobileEnabled" />
         </el-form-item>

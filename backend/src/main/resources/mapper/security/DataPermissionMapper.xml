@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.leantpm.security.datascope.DataPermissionMapper">
+    <select id="findRoleScopeGrants"
+            resultType="com.leantpm.security.datascope.DataPermissionMapper$RoleScopeGrant">
+        SELECT ds.scope_type, rds.organization_id
+        FROM system_user_role ur
+        JOIN system_role r
+          ON r.tenant_id = ur.tenant_id
+         AND r.id = ur.role_id
+         AND r.status = 1
+         AND r.deleted = 0
+        JOIN system_role_data_scope rds
+          ON rds.tenant_id = r.tenant_id
+         AND rds.role_id = r.id
+         AND rds.deleted = 0
+        JOIN system_data_scope ds
+          ON ds.tenant_id = rds.tenant_id
+         AND ds.id = rds.data_scope_id
+         AND ds.status = 1
+         AND ds.deleted = 0
+        WHERE ur.tenant_id = #{tenantId}
+          AND ur.user_id = #{userId}
+          AND ur.deleted = 0
+    </select>
+
+    <select id="findUserOrganizationId" resultType="long">
+        SELECT organization_id
+        FROM system_user
+        WHERE tenant_id = #{tenantId}
+          AND id = #{userId}
+          AND deleted = 0
+        LIMIT 1
+    </select>
+
+    <select id="findOrganizationAndDescendantIds" resultType="long">
+        WITH RECURSIVE organization_tree AS (
+            SELECT id
+            FROM organization
+            WHERE tenant_id = #{tenantId}
+              AND deleted = 0
+              AND status = 1
+              AND id IN
+              <foreach collection="rootIds" item="rootId" open="(" separator="," close=")">
+                  #{rootId}
+              </foreach>
+            UNION ALL
+            SELECT child.id
+            FROM organization child
+            JOIN organization_tree parent ON child.parent_id = parent.id
+            WHERE child.tenant_id = #{tenantId}
+              AND child.deleted = 0
+              AND child.status = 1
+        )
+        SELECT DISTINCT id FROM organization_tree
+    </select>
+</mapper>

@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, type FormInstance } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { systemApi, type RoleRow } from '@/api/system'
+import { systemApi, type OrganizationNode, type RoleRow } from '@/api/system'
 import { useAuthStore } from '@/stores/auth'
 import { errorMessage } from '@/utils/http'
 import type { MenuItem } from '@/types/api'
@@ -18,6 +18,7 @@ const dialogVisible = ref(false)
 const editing = ref<RoleRow | null>(null)
 const rows = ref<RoleRow[]>([])
 const menus = ref<MenuItem[]>([])
+const organizations = ref<OrganizationNode[]>([])
 const menuTree = ref<MenuTree[]>([])
 const treeRef = ref()
 const formRef = ref<FormInstance>()
@@ -25,6 +26,7 @@ const form = reactive({
   roleCode: '',
   roleName: '',
   dataScope: 'ALL',
+  customOrganizationIds: [] as number[],
   enabled: true,
   sortOrder: 0,
   remark: '',
@@ -32,12 +34,24 @@ const form = reactive({
 
 const scopeOptions = [
   { value: 'ALL', label: '全部数据' },
-  { value: 'FACTORY', label: '本工厂数据' },
-  { value: 'WORKSHOP', label: '本车间数据' },
-  { value: 'TEAM', label: '本班组数据' },
-  { value: 'RESPONSIBLE_EQUIPMENT', label: '本人负责设备' },
-  { value: 'SELF_TASK', label: '本人任务' },
+  { value: 'ORGANIZATION', label: '本组织数据' },
+  { value: 'ORGANIZATION_AND_CHILDREN', label: '本组织及下级' },
+  { value: 'SELF', label: '仅本人数据' },
+  { value: 'CUSTOM', label: '自定义组织' },
 ]
+
+const organizationTree = computed(() => {
+  type TreeNode = OrganizationNode & { children: TreeNode[] }
+  const nodes = new Map<number, TreeNode>()
+  organizations.value.forEach((item) => nodes.set(item.id, { ...item, children: [] }))
+  const roots: TreeNode[] = []
+  nodes.forEach((item) => {
+    const parent = nodes.get(item.parentId)
+    if (parent) parent.children.push(item)
+    else roots.push(item)
+  })
+  return roots
+})
 
 onMounted(async () => {
   await load()
@@ -46,9 +60,14 @@ onMounted(async () => {
 async function load() {
   loading.value = true
   try {
-    const [roleRows, menuRows] = await Promise.all([systemApi.roles(), systemApi.menus()])
+    const [roleRows, menuRows, organizationRows] = await Promise.all([
+      systemApi.roles(),
+      systemApi.menus(),
+      systemApi.organizations(),
+    ])
     rows.value = roleRows
     menus.value = menuRows
+    organizations.value = organizationRows
     menuTree.value = buildTree(menuRows)
   } catch (error) {
     ElMessage.error(errorMessage(error, '角色数据加载失败'))
@@ -76,11 +95,20 @@ function openDialog(row?: RoleRow) {
         roleCode: row.roleCode,
         roleName: row.roleName,
         dataScope: row.dataScope,
+        customOrganizationIds: [...row.customOrganizationIds],
         enabled: row.status === 1,
         sortOrder: row.sortOrder,
         remark: row.remark || '',
       }
-    : { roleCode: '', roleName: '', dataScope: 'ALL', enabled: true, sortOrder: 0, remark: '' })
+    : {
+        roleCode: '',
+        roleName: '',
+        dataScope: 'ALL',
+        customOrganizationIds: [],
+        enabled: true,
+        sortOrder: 0,
+        remark: '',
+      })
   dialogVisible.value = true
   requestAnimationFrame(() => treeRef.value?.setCheckedKeys(row?.menuIds || []))
 }
@@ -116,7 +144,7 @@ function scopeLabel(value: string) {
     <header class="page-header">
       <div><h1>角色管理</h1><p>按岗位职责配置菜单、按钮与数据范围。</p></div>
       <div class="page-actions">
-        <el-button v-if="auth.can('system:role:create')" type="primary" :icon="Plus" @click="openDialog()">新增角色</el-button>
+        <el-button v-if="auth.can('system:role:create') && auth.can('system:data-scope:manage')" type="primary" :icon="Plus" @click="openDialog()">新增角色</el-button>
       </div>
     </header>
     <section class="surface-card table-card">
@@ -129,7 +157,7 @@ function scopeLabel(value: string) {
         <el-table-column label="状态" width="100"><template #default="{ row }"><el-tag :type="row.status === 1 ? 'success' : 'info'">{{ row.status === 1 ? '启用' : '停用' }}</el-tag></template></el-table-column>
         <el-table-column prop="remark" label="说明" min-width="200" show-overflow-tooltip />
         <el-table-column label="操作" width="100" fixed="right">
-          <template #default="{ row }"><el-button v-if="auth.can('system:role:update')" link type="primary" @click="openDialog(row)">编辑授权</el-button></template>
+          <template #default="{ row }"><el-button v-if="auth.can('system:role:update') && auth.can('system:data-scope:manage')" link type="primary" @click="openDialog(row)">编辑授权</el-button></template>
         </el-table-column>
         <template #empty><el-empty description="暂无角色数据" /></template>
       </el-table>
@@ -145,6 +173,19 @@ function scopeLabel(value: string) {
             <el-input v-model="form.roleName" />
           </el-form-item>
           <el-form-item label="数据范围"><el-select v-model="form.dataScope" style="width: 100%"><el-option v-for="item in scopeOptions" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
+          <el-form-item v-if="form.dataScope === 'CUSTOM'" label="允许访问的组织">
+            <el-tree-select
+              v-model="form.customOrganizationIds"
+              :data="organizationTree"
+              node-key="id"
+              multiple
+              show-checkbox
+              check-strictly
+              :props="{ label: 'organizationName', children: 'children' }"
+              placeholder="至少选择一个组织"
+              style="width: 100%"
+            />
+          </el-form-item>
           <el-form-item label="排序"><el-input-number v-model="form.sortOrder" :min="0" :max="999" /></el-form-item>
           <el-form-item label="启用"><el-switch v-model="form.enabled" /></el-form-item>
           <el-form-item label="说明"><el-input v-model="form.remark" type="textarea" :rows="3" /></el-form-item>

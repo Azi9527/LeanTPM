@@ -83,13 +83,15 @@ public class SystemController {
     }
 
     @GetMapping("/roles")
-    @PreAuthorize("hasAuthority('system:role:view')")
+    @PreAuthorize("hasAuthority('system:role:view') or hasAuthority('system:data-scope:view')")
     public ApiResponse<List<SystemDtos.RoleRow>> roles() {
         return ApiResponse.success(service.roles());
     }
 
     @PostMapping("/roles")
-    @PreAuthorize("hasAuthority('system:role:create')")
+    @PreAuthorize(
+            "hasAuthority('system:role:create') and hasAuthority('system:data-scope:manage')"
+    )
     public ApiResponse<Map<String, Long>> createRole(
             @Valid @RequestBody SystemDtos.SaveRoleRequest request
     ) {
@@ -97,12 +99,40 @@ public class SystemController {
     }
 
     @PutMapping("/roles/{id}")
-    @PreAuthorize("hasAuthority('system:role:update') or hasAuthority('system:role:authorize')")
+    @PreAuthorize(
+            "(hasAuthority('system:role:update') or hasAuthority('system:role:authorize')) "
+                    + "and hasAuthority('system:data-scope:manage')"
+    )
     public ApiResponse<Void> updateRole(
             @PathVariable long id,
             @Valid @RequestBody SystemDtos.SaveRoleRequest request
     ) {
         service.updateRole(id, request);
+        return ApiResponse.success();
+    }
+
+    @GetMapping("/organizations/tree")
+    @PreAuthorize(
+            "hasAuthority('system:user:view') or hasAuthority('system:role:view') "
+                    + "or hasAuthority('system:data-scope:view')"
+    )
+    public ApiResponse<List<SystemDtos.OrganizationNode>> organizations() {
+        return ApiResponse.success(service.organizations());
+    }
+
+    @GetMapping("/data-scopes")
+    @PreAuthorize("hasAuthority('system:data-scope:view')")
+    public ApiResponse<List<SystemDtos.DataScopeDefinition>> dataScopes() {
+        return ApiResponse.success(service.dataScopeDefinitions());
+    }
+
+    @PutMapping("/roles/{id}/data-scope")
+    @PreAuthorize("hasAuthority('system:data-scope:manage')")
+    public ApiResponse<Void> updateRoleDataScope(
+            @PathVariable long id,
+            @Valid @RequestBody SystemDtos.UpdateRoleDataScopeRequest request
+    ) {
+        service.updateRoleDataScope(id, request);
         return ApiResponse.success();
     }
 

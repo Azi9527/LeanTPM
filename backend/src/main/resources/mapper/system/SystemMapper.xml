@@ -2,34 +2,73 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.leantpm.system.mapper.SystemMapper">
     <sql id="userFilter">
-        tenant_id = #{tenantId} AND deleted = 0
+        u.tenant_id = #{tenantId} AND u.deleted = 0
         <if test="keyword != null and keyword != ''">
-            AND (username LIKE CONCAT('%', #{keyword}, '%')
-                 OR real_name LIKE CONCAT('%', #{keyword}, '%')
-                 OR employee_no LIKE CONCAT('%', #{keyword}, '%'))
+            AND (u.username LIKE CONCAT('%', #{keyword}, '%')
+                 OR u.real_name LIKE CONCAT('%', #{keyword}, '%')
+                 OR u.employee_no LIKE CONCAT('%', #{keyword}, '%'))
         </if>
         <if test="status != null">
-            AND status = #{status}
+            AND u.status = #{status}
+        </if>
+        <include refid="userDataPermission"/>
+    </sql>
+
+    <sql id="userDataPermission">
+        <if test="scope != null and !scope.allData">
+            AND
+            <choose>
+                <when test="scope.selfData or (scope.organizationIds != null and !scope.organizationIds.isEmpty())">
+                    (
+                    <if test="scope.selfData">
+                        u.id = #{scope.userId}
+                    </if>
+                    <if test="scope.selfData and scope.organizationIds != null and !scope.organizationIds.isEmpty()">
+                        OR
+                    </if>
+                    <if test="scope.organizationIds != null and !scope.organizationIds.isEmpty()">
+                        u.organization_id IN
+                        <foreach collection="scope.organizationIds" item="organizationId"
+                                 open="(" separator="," close=")">
+                            #{organizationId}
+                        </foreach>
+                    </if>
+                    )
+                </when>
+                <otherwise>1 = 0</otherwise>
+            </choose>
         </if>
     </sql>
 
     <select id="findUsers" resultType="com.leantpm.system.dto.SystemDtos$UserRow">
-        SELECT id, username, real_name, employee_no, mobile, email, status, mobile_enabled,
-               must_change_password, last_login_time, created_time, version, NULL AS role_ids
-        FROM system_user
+        SELECT u.id, u.username, u.real_name, u.employee_no, u.mobile, u.email,
+               u.organization_id, o.organization_name, u.status, u.mobile_enabled,
+               u.must_change_password, u.last_login_time, u.created_time, u.version,
+               NULL AS role_ids
+        FROM system_user u
+        LEFT JOIN organization o
+          ON o.tenant_id = u.tenant_id AND o.id = u.organization_id AND o.deleted = 0
         WHERE <include refid="userFilter"/>
-        ORDER BY id DESC
+        ORDER BY u.id DESC
         LIMIT #{offset}, #{pageSize}
     </select>
 
     <select id="countUsers" resultType="long">
-        SELECT COUNT(*) FROM system_user WHERE <include refid="userFilter"/>
+        SELECT COUNT(*) FROM system_user u WHERE <include refid="userFilter"/>
     </select>
 
     <select id="findUserRoleIds" resultType="long">
         SELECT role_id FROM system_user_role
         WHERE tenant_id = #{tenantId} AND user_id = #{userId} AND deleted = 0
         ORDER BY role_id
+    </select>
+
+    <select id="findUserScopeTarget"
+            resultType="com.leantpm.system.mapper.SystemMapper$UserScopeTarget">
+        SELECT id, organization_id
+        FROM system_user
+        WHERE tenant_id = #{tenantId} AND id = #{userId} AND deleted = 0
+        LIMIT 1
     </select>
 
     <select id="countUsername" resultType="int">
@@ -40,10 +79,10 @@
     <insert id="insertUser">
         INSERT INTO system_user
             (tenant_id, username, password_hash, real_name, employee_no, mobile, email,
-             mobile_enabled, must_change_password, created_by, updated_by)
+             organization_id, mobile_enabled, must_change_password, created_by, updated_by)
         VALUES
             (#{tenantId}, #{username}, #{passwordHash}, #{realName}, #{employeeNo}, #{mobile}, #{email},
-             #{mobileEnabled}, 1, #{operatorId}, #{operatorId})
+             #{organizationId}, #{mobileEnabled}, 1, #{operatorId}, #{operatorId})
     </insert>
 
     <select id="findUserIdByUsername" resultType="long">
@@ -53,30 +92,34 @@
     </select>
 
     <update id="updateUser">
-        UPDATE system_user
+        UPDATE system_user AS u
         SET real_name = #{request.realName},
             employee_no = #{request.employeeNo},
             mobile = #{request.mobile},
             email = #{request.email},
+            organization_id = #{request.organizationId},
             mobile_enabled = #{request.mobileEnabled},
             updated_by = #{operatorId},
             version = version + 1
-        WHERE tenant_id = #{tenantId} AND id = #{userId}
-          AND version = #{request.version} AND deleted = 0
+        WHERE u.tenant_id = #{tenantId} AND u.id = #{userId}
+          AND u.version = #{request.version} AND u.deleted = 0
+          <include refid="userDataPermission"/>
     </update>
 
     <update id="updateUserStatus">
-        UPDATE system_user
+        UPDATE system_user AS u
         SET status = IF(#{enabled}, 1, 0), updated_by = #{operatorId}, version = version + 1
-        WHERE tenant_id = #{tenantId} AND id = #{userId}
-          AND version = #{version} AND deleted = 0
+        WHERE u.tenant_id = #{tenantId} AND u.id = #{userId}
+          AND u.version = #{version} AND u.deleted = 0
+          <include refid="userDataPermission"/>
     </update>
 
     <update id="resetUserPassword">
-        UPDATE system_user
+        UPDATE system_user AS u
         SET password_hash = #{passwordHash}, must_change_password = 1,
             updated_by = #{operatorId}, version = version + 1
-        WHERE tenant_id = #{tenantId} AND id = #{userId} AND deleted = 0
+        WHERE u.tenant_id = #{tenantId} AND u.id = #{userId} AND u.deleted = 0
+          <include refid="userDataPermission"/>
     </update>
 
     <delete id="deleteUserRoles">
@@ -90,7 +133,7 @@
 
     <select id="findRoles" resultType="com.leantpm.system.dto.SystemDtos$RoleRow">
         SELECT id, role_code, role_name, data_scope, status, sort_order, remark, version,
-               NULL AS menu_ids
+               NULL AS menu_ids, NULL AS custom_organization_ids
         FROM system_role
         WHERE tenant_id = #{tenantId} AND deleted = 0
         ORDER BY sort_order, id
@@ -100,6 +143,21 @@
         SELECT menu_id FROM system_role_menu
         WHERE tenant_id = #{tenantId} AND role_id = #{roleId} AND deleted = 0
         ORDER BY menu_id
+    </select>
+
+    <select id="findRoleCustomOrganizationIds" resultType="long">
+        SELECT rds.organization_id
+        FROM system_role_data_scope rds
+        JOIN system_data_scope ds
+          ON ds.tenant_id = rds.tenant_id
+         AND ds.id = rds.data_scope_id
+         AND ds.scope_code = 'CUSTOM'
+         AND ds.deleted = 0
+        WHERE rds.tenant_id = #{tenantId}
+          AND rds.role_id = #{roleId}
+          AND rds.organization_id IS NOT NULL
+          AND rds.deleted = 0
+        ORDER BY rds.organization_id
     </select>
 
     <select id="countRoleCode" resultType="int">
@@ -143,6 +201,60 @@
         INSERT INTO system_role_menu (tenant_id, role_id, menu_id, created_by, updated_by)
         VALUES (#{tenantId}, #{roleId}, #{menuId}, #{operatorId}, #{operatorId})
     </insert>
+
+    <delete id="deleteRoleDataScopes">
+        DELETE FROM system_role_data_scope
+        WHERE tenant_id = #{tenantId} AND role_id = #{roleId}
+    </delete>
+
+    <insert id="insertRoleDataScope">
+        INSERT INTO system_role_data_scope
+            (tenant_id, role_id, data_scope_id, organization_id, created_by, updated_by)
+        SELECT #{tenantId}, #{roleId}, id, #{organizationId}, #{operatorId}, #{operatorId}
+        FROM system_data_scope
+        WHERE tenant_id = #{tenantId}
+          AND scope_code = #{scopeCode}
+          AND status = 1
+          AND deleted = 0
+        LIMIT 1
+    </insert>
+
+    <update id="updateRoleDataScope">
+        UPDATE system_role
+        SET data_scope = #{scopeCode}, updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId}
+          AND id = #{roleId}
+          AND version = #{version}
+          AND deleted = 0
+    </update>
+
+    <select id="countOrganizations" resultType="int">
+        SELECT COUNT(*)
+        FROM organization
+        WHERE tenant_id = #{tenantId}
+          AND status = 1
+          AND deleted = 0
+          AND id IN
+          <foreach collection="organizationIds" item="organizationId"
+                   open="(" separator="," close=")">
+              #{organizationId}
+          </foreach>
+    </select>
+
+    <select id="findOrganizations" resultType="com.leantpm.system.dto.SystemDtos$OrganizationNode">
+        SELECT id, parent_id, organization_code, organization_name, organization_type, status
+        FROM organization
+        WHERE tenant_id = #{tenantId} AND deleted = 0
+        ORDER BY parent_id, sort_order, id
+    </select>
+
+    <select id="findDataScopeDefinitions"
+            resultType="com.leantpm.system.dto.SystemDtos$DataScopeDefinition">
+        SELECT id, scope_code, scope_name, scope_type, description, sort_order
+        FROM system_data_scope
+        WHERE tenant_id = #{tenantId} AND status = 1 AND deleted = 0
+        ORDER BY sort_order, id
+    </select>
 
     <select id="findMenus" resultType="com.leantpm.system.dto.SystemDtos$MenuRow">
         SELECT id, parent_id, menu_type, menu_name, route_name, route_path, component_path,

@@ -81,6 +81,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '在线用户', permission: 'system:online-user:view' },
       },
       {
+        path: 'system/data-scopes',
+        name: 'SystemDataScopes',
+        component: () => import('@/views/system/data-scopes/DataScopeView.vue'),
+        meta: { title: '数据权限', permission: 'system:data-scope:view' },
+      },
+      {
         path: 'coming-soon/:module',
         name: 'ComingSoon',
         component: () => import('@/views/common/ComingSoonView.vue'),

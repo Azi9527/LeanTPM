@@ -1,5 +1,6 @@
 package com.leantpm.system.mapper;
 
+import com.leantpm.security.datascope.DataPermission;
 import com.leantpm.system.dto.SystemDtos;
 import org.apache.ibatis.annotations.Param;
 
@@ -10,6 +11,7 @@ public interface SystemMapper {
             @Param("tenantId") long tenantId,
             @Param("keyword") String keyword,
             @Param("status") Integer status,
+            @Param("scope") DataPermission scope,
             @Param("offset") int offset,
             @Param("pageSize") int pageSize
     );
@@ -17,10 +19,16 @@ public interface SystemMapper {
     long countUsers(
             @Param("tenantId") long tenantId,
             @Param("keyword") String keyword,
-            @Param("status") Integer status
+            @Param("status") Integer status,
+            @Param("scope") DataPermission scope
     );
 
     List<Long> findUserRoleIds(@Param("tenantId") long tenantId, @Param("userId") long userId);
+
+    UserScopeTarget findUserScopeTarget(
+            @Param("tenantId") long tenantId,
+            @Param("userId") long userId
+    );
 
     int countUsername(@Param("tenantId") long tenantId, @Param("username") String username);
 
@@ -32,6 +40,7 @@ public interface SystemMapper {
             @Param("employeeNo") String employeeNo,
             @Param("mobile") String mobile,
             @Param("email") String email,
+            @Param("organizationId") long organizationId,
             @Param("mobileEnabled") boolean mobileEnabled,
             @Param("operatorId") long operatorId
     );
@@ -42,6 +51,7 @@ public interface SystemMapper {
             @Param("tenantId") long tenantId,
             @Param("userId") long userId,
             @Param("request") SystemDtos.UpdateUserRequest request,
+            @Param("scope") DataPermission scope,
             @Param("operatorId") long operatorId
     );
 
@@ -50,6 +60,7 @@ public interface SystemMapper {
             @Param("userId") long userId,
             @Param("enabled") boolean enabled,
             @Param("version") int version,
+            @Param("scope") DataPermission scope,
             @Param("operatorId") long operatorId
     );
 
@@ -57,6 +68,7 @@ public interface SystemMapper {
             @Param("tenantId") long tenantId,
             @Param("userId") long userId,
             @Param("passwordHash") String passwordHash,
+            @Param("scope") DataPermission scope,
             @Param("operatorId") long operatorId
     );
 
@@ -72,6 +84,11 @@ public interface SystemMapper {
     List<SystemDtos.RoleRow> findRoles(@Param("tenantId") long tenantId);
 
     List<Long> findRoleMenuIds(@Param("tenantId") long tenantId, @Param("roleId") long roleId);
+
+    List<Long> findRoleCustomOrganizationIds(
+            @Param("tenantId") long tenantId,
+            @Param("roleId") long roleId
+    );
 
     int countRoleCode(@Param("tenantId") long tenantId, @Param("roleCode") String roleCode);
 
@@ -98,6 +115,33 @@ public interface SystemMapper {
             @Param("menuId") long menuId,
             @Param("operatorId") long operatorId
     );
+
+    int deleteRoleDataScopes(@Param("tenantId") long tenantId, @Param("roleId") long roleId);
+
+    int insertRoleDataScope(
+            @Param("tenantId") long tenantId,
+            @Param("roleId") long roleId,
+            @Param("scopeCode") String scopeCode,
+            @Param("organizationId") Long organizationId,
+            @Param("operatorId") long operatorId
+    );
+
+    int updateRoleDataScope(
+            @Param("tenantId") long tenantId,
+            @Param("roleId") long roleId,
+            @Param("scopeCode") String scopeCode,
+            @Param("version") int version,
+            @Param("operatorId") long operatorId
+    );
+
+    int countOrganizations(
+            @Param("tenantId") long tenantId,
+            @Param("organizationIds") List<Long> organizationIds
+    );
+
+    List<SystemDtos.OrganizationNode> findOrganizations(@Param("tenantId") long tenantId);
+
+    List<SystemDtos.DataScopeDefinition> findDataScopeDefinitions(@Param("tenantId") long tenantId);
 
     List<SystemDtos.MenuRow> findMenus(@Param("tenantId") long tenantId);
 
@@ -230,5 +274,8 @@ public interface SystemMapper {
             String sha256,
             java.time.LocalDateTime createdTime
     ) {
+    }
+
+    record UserScopeTarget(long id, Long organizationId) {
     }
 }

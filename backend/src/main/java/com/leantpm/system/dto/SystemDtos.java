@@ -21,6 +21,8 @@ public final class SystemDtos {
             String employeeNo,
             String mobile,
             String email,
+            Long organizationId,
+            String organizationName,
             Integer status,
             Boolean mobileEnabled,
             Boolean mustChangePassword,
@@ -37,6 +39,7 @@ public final class SystemDtos {
             @Size(max = 50) String employeeNo,
             @Pattern(regexp = "^$|^[0-9+\\-]{6,32}$", message = "格式不正确") String mobile,
             @Email @Size(max = 128) String email,
+            @NotNull Long organizationId,
             Boolean mobileEnabled,
             @NotEmpty List<Long> roleIds,
             @NotBlank
@@ -54,6 +57,7 @@ public final class SystemDtos {
             @Size(max = 50) String employeeNo,
             @Pattern(regexp = "^$|^[0-9+\\-]{6,32}$", message = "格式不正确") String mobile,
             @Email @Size(max = 128) String email,
+            @NotNull Long organizationId,
             Boolean mobileEnabled,
             @NotEmpty List<Long> roleIds,
             @NotNull Integer version
@@ -83,7 +87,8 @@ public final class SystemDtos {
             Integer sortOrder,
             String remark,
             Integer version,
-            List<Long> menuIds
+            List<Long> menuIds,
+            List<Long> customOrganizationIds
     ) {
     }
 
@@ -95,7 +100,35 @@ public final class SystemDtos {
             Integer sortOrder,
             @Size(max = 500) String remark,
             List<Long> menuIds,
+            List<Long> customOrganizationIds,
             Integer version
+    ) {
+    }
+
+    public record OrganizationNode(
+            long id,
+            long parentId,
+            String organizationCode,
+            String organizationName,
+            String organizationType,
+            Integer status
+    ) {
+    }
+
+    public record DataScopeDefinition(
+            long id,
+            String scopeCode,
+            String scopeName,
+            String scopeType,
+            String description,
+            Integer sortOrder
+    ) {
+    }
+
+    public record UpdateRoleDataScopeRequest(
+            @NotBlank String dataScope,
+            List<Long> customOrganizationIds,
+            @NotNull Integer version
     ) {
     }
 

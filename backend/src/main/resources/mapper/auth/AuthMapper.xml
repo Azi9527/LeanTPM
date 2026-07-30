@@ -104,10 +104,18 @@
 
     <insert id="insertBootstrapAdmin">
         INSERT INTO system_user
-            (tenant_id, username, password_hash, real_name, status, mobile_enabled,
+            (tenant_id, username, password_hash, real_name, organization_id, status, mobile_enabled,
              must_change_password, created_by, updated_by)
         VALUES
-            (#{tenantId}, #{username}, #{passwordHash}, #{realName}, 1, 1, 1, 0, 0)
+            (
+                #{tenantId}, #{username}, #{passwordHash}, #{realName},
+                (
+                    SELECT id FROM organization
+                    WHERE tenant_id = #{tenantId} AND parent_id = 0 AND deleted = 0
+                    ORDER BY sort_order, id LIMIT 1
+                ),
+                1, 1, 1, 0, 0
+            )
     </insert>
 
     <insert id="assignRole">

@@ -3,6 +3,8 @@ package com.leantpm.system.service;
 import com.leantpm.common.api.PageResult;
 import com.leantpm.common.exception.BusinessException;
 import com.leantpm.security.SecurityUtils;
+import com.leantpm.security.datascope.DataPermission;
+import com.leantpm.security.datascope.DataPermissionService;
 import com.leantpm.system.dto.SystemDtos;
 import com.leantpm.system.mapper.SystemMapper;
 import org.springframework.http.HttpStatus;
@@ -12,29 +14,44 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 @Service
 public class SystemService {
+    private static final Set<String> DATA_SCOPE_TYPES = Set.of(
+            "ALL", "ORGANIZATION", "ORGANIZATION_AND_CHILDREN", "SELF", "CUSTOM"
+    );
+
     private final SystemMapper mapper;
     private final PasswordEncoder passwordEncoder;
+    private final DataPermissionService dataPermissionService;
 
-    public SystemService(SystemMapper mapper, PasswordEncoder passwordEncoder) {
+    public SystemService(
+            SystemMapper mapper,
+            PasswordEncoder passwordEncoder,
+            DataPermissionService dataPermissionService
+    ) {
         this.mapper = mapper;
         this.passwordEncoder = passwordEncoder;
+        this.dataPermissionService = dataPermissionService;
     }
 
     @Transactional(readOnly = true)
     public PageResult<SystemDtos.UserRow> users(String keyword, Integer status, int page, int pageSize) {
         var current = SecurityUtils.currentUser();
-        var rows = mapper.findUsers(current.tenantId(), clean(keyword), status, offset(page, pageSize), pageSize);
+        DataPermission scope = dataPermissionService.current();
+        var rows = mapper.findUsers(
+                current.tenantId(), clean(keyword), status, scope, offset(page, pageSize), pageSize
+        );
         var enriched = rows.stream().map(row -> new SystemDtos.UserRow(
                 row.id(), row.username(), row.realName(), row.employeeNo(), row.mobile(), row.email(),
+                row.organizationId(), row.organizationName(),
                 row.status(), row.mobileEnabled(), row.mustChangePassword(), row.lastLoginTime(),
                 row.createdTime(), row.version(), mapper.findUserRoleIds(current.tenantId(), row.id())
         )).toList();
         return PageResult.of(
                 enriched,
-                mapper.countUsers(current.tenantId(), clean(keyword), status),
+                mapper.countUsers(current.tenantId(), clean(keyword), status, scope),
                 page,
                 pageSize
         );
@@ -43,6 +60,7 @@ public class SystemService {
     @Transactional
     public long createUser(SystemDtos.CreateUserRequest request) {
         var current = SecurityUtils.currentUser();
+        assertCanCreateIn(request.organizationId());
         String username = request.username().trim();
         if (mapper.countUsername(current.tenantId(), username) > 0) {
             throw new BusinessException("USERNAME_EXISTS", "用户名已存在", HttpStatus.CONFLICT);
@@ -55,6 +73,7 @@ public class SystemService {
                 clean(request.employeeNo()),
                 clean(request.mobile()),
                 clean(request.email()),
+                request.organizationId(),
                 !Boolean.FALSE.equals(request.mobileEnabled()),
                 current.userId()
         );
@@ -66,7 +85,12 @@ public class SystemService {
     @Transactional
     public void updateUser(long userId, SystemDtos.UpdateUserRequest request) {
         var current = SecurityUtils.currentUser();
-        if (mapper.updateUser(current.tenantId(), userId, request, current.userId()) == 0) {
+        DataPermission scope = dataPermissionService.current();
+        assertCanAccessUser(current.tenantId(), userId, scope);
+        if (!scope.canCreateIn(request.organizationId())) {
+            throw dataAccessDenied();
+        }
+        if (mapper.updateUser(current.tenantId(), userId, request, scope, current.userId()) == 0) {
             throw optimisticConflict();
         }
         replaceUserRoles(current.tenantId(), userId, request.roleIds(), current.userId());
@@ -78,8 +102,11 @@ public class SystemService {
         if (userId == current.userId() && !request.enabled()) {
             throw new BusinessException("CANNOT_DISABLE_SELF", "不能停用当前登录账号");
         }
+        DataPermission scope = dataPermissionService.current();
+        assertCanAccessUser(current.tenantId(), userId, scope);
         if (mapper.updateUserStatus(
-                current.tenantId(), userId, request.enabled(), request.version(), current.userId()
+                current.tenantId(), userId, request.enabled(), request.version(),
+                scope, current.userId()
         ) == 0) {
             throw optimisticConflict();
         }
@@ -88,10 +115,13 @@ public class SystemService {
     @Transactional
     public void resetPassword(long userId, SystemDtos.ResetPasswordRequest request) {
         var current = SecurityUtils.currentUser();
+        DataPermission scope = dataPermissionService.current();
+        assertCanAccessUser(current.tenantId(), userId, scope);
         if (mapper.resetUserPassword(
                 current.tenantId(),
                 userId,
                 passwordEncoder.encode(request.newPassword()),
+                scope,
                 current.userId()
         ) == 0) {
             throw new BusinessException("USER_NOT_FOUND", "用户不存在", HttpStatus.NOT_FOUND);
@@ -105,7 +135,8 @@ public class SystemService {
                 .map(role -> new SystemDtos.RoleRow(
                         role.id(), role.roleCode(), role.roleName(), role.dataScope(), role.status(),
                         role.sortOrder(), role.remark(), role.version(),
-                        mapper.findRoleMenuIds(current.tenantId(), role.id())
+                        mapper.findRoleMenuIds(current.tenantId(), role.id()),
+                        mapper.findRoleCustomOrganizationIds(current.tenantId(), role.id())
                 ))
                 .toList();
     }
@@ -113,17 +144,21 @@ public class SystemService {
     @Transactional
     public long createRole(SystemDtos.SaveRoleRequest request) {
         var current = SecurityUtils.currentUser();
+        validateDataScope(current.tenantId(), request.dataScope(), request.customOrganizationIds());
         String code = request.roleCode().trim().toUpperCase();
         if (mapper.countRoleCode(current.tenantId(), code) > 0) {
             throw new BusinessException("ROLE_CODE_EXISTS", "角色编码已存在", HttpStatus.CONFLICT);
         }
         var normalized = new SystemDtos.SaveRoleRequest(
                 code, request.roleName(), request.dataScope(), request.enabled(), request.sortOrder(),
-                request.remark(), request.menuIds(), request.version()
+                request.remark(), request.menuIds(), request.customOrganizationIds(), request.version()
         );
         mapper.insertRole(current.tenantId(), normalized, current.userId());
         long roleId = mapper.findRoleIdByCode(current.tenantId(), code);
         replaceRoleMenus(current.tenantId(), roleId, request.menuIds(), current.userId());
+        replaceRoleDataScopes(
+                current.tenantId(), roleId, request.dataScope(), request.customOrganizationIds(), current.userId()
+        );
         return roleId;
     }
 
@@ -133,10 +168,46 @@ public class SystemService {
         if (request.version() == null) {
             throw new BusinessException("VERSION_REQUIRED", "缺少数据版本");
         }
+        validateDataScope(current.tenantId(), request.dataScope(), request.customOrganizationIds());
         if (mapper.updateRole(current.tenantId(), roleId, request, current.userId()) == 0) {
             throw optimisticConflict();
         }
         replaceRoleMenus(current.tenantId(), roleId, request.menuIds(), current.userId());
+        replaceRoleDataScopes(
+                current.tenantId(), roleId, request.dataScope(), request.customOrganizationIds(), current.userId()
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public List<SystemDtos.OrganizationNode> organizations() {
+        return mapper.findOrganizations(SecurityUtils.currentUser().tenantId());
+    }
+
+    @Transactional(readOnly = true)
+    public List<SystemDtos.DataScopeDefinition> dataScopeDefinitions() {
+        return mapper.findDataScopeDefinitions(SecurityUtils.currentUser().tenantId());
+    }
+
+    @Transactional
+    public void updateRoleDataScope(long roleId, SystemDtos.UpdateRoleDataScopeRequest request) {
+        var current = SecurityUtils.currentUser();
+        validateDataScope(current.tenantId(), request.dataScope(), request.customOrganizationIds());
+        if (mapper.updateRoleDataScope(
+                current.tenantId(),
+                roleId,
+                request.dataScope(),
+                request.version(),
+                current.userId()
+        ) == 0) {
+            throw optimisticConflict();
+        }
+        replaceRoleDataScopes(
+                current.tenantId(),
+                roleId,
+                request.dataScope(),
+                request.customOrganizationIds(),
+                current.userId()
+        );
     }
 
     @Transactional(readOnly = true)
@@ -245,6 +316,53 @@ public class SystemService {
         }
     }
 
+    private void replaceRoleDataScopes(
+            long tenantId,
+            long roleId,
+            String scopeCode,
+            List<Long> customOrganizationIds,
+            long operatorId
+    ) {
+        mapper.deleteRoleDataScopes(tenantId, roleId);
+        if ("CUSTOM".equals(scopeCode)) {
+            for (Long organizationId : customOrganizationIds.stream().distinct().toList()) {
+                mapper.insertRoleDataScope(tenantId, roleId, scopeCode, organizationId, operatorId);
+            }
+            return;
+        }
+        mapper.insertRoleDataScope(tenantId, roleId, scopeCode, null, operatorId);
+    }
+
+    private void validateDataScope(long tenantId, String scopeCode, List<Long> customOrganizationIds) {
+        if (!DATA_SCOPE_TYPES.contains(scopeCode)) {
+            throw new BusinessException("INVALID_DATA_SCOPE", "不支持的数据范围类型");
+        }
+        List<Long> organizations = customOrganizationIds == null
+                ? List.of()
+                : customOrganizationIds.stream().distinct().toList();
+        if ("CUSTOM".equals(scopeCode)) {
+            if (organizations.isEmpty()) {
+                throw new BusinessException("CUSTOM_SCOPE_REQUIRED", "自定义数据范围至少选择一个组织");
+            }
+            if (mapper.countOrganizations(tenantId, organizations) != organizations.size()) {
+                throw new BusinessException("ORGANIZATION_NOT_FOUND", "数据范围包含不存在或已停用的组织");
+            }
+        }
+    }
+
+    private void assertCanCreateIn(Long organizationId) {
+        if (!dataPermissionService.current().canCreateIn(organizationId)) {
+            throw dataAccessDenied();
+        }
+    }
+
+    private void assertCanAccessUser(long tenantId, long userId, DataPermission scope) {
+        SystemMapper.UserScopeTarget target = mapper.findUserScopeTarget(tenantId, userId);
+        if (target == null || !scope.canAccess(target.id(), target.organizationId())) {
+            throw dataAccessDenied();
+        }
+    }
+
     private int offset(int page, int pageSize) {
         return (page - 1) * pageSize;
     }
@@ -258,6 +376,14 @@ public class SystemService {
                 "OPTIMISTIC_LOCK_CONFLICT",
                 "数据已被其他用户修改，请刷新后重试",
                 HttpStatus.CONFLICT
+        );
+    }
+
+    private BusinessException dataAccessDenied() {
+        return new BusinessException(
+                "DATA_SCOPE_DENIED",
+                "目标数据不在当前用户的数据范围内",
+                HttpStatus.FORBIDDEN
         );
     }
 }

@@ -8,6 +8,8 @@ export interface UserRow {
   employeeNo?: string
   mobile?: string
   email?: string
+  organizationId: number
+  organizationName: string
   status: number
   mobileEnabled: boolean
   mustChangePassword: boolean
@@ -27,6 +29,25 @@ export interface RoleRow {
   remark?: string
   version: number
   menuIds: number[]
+  customOrganizationIds: number[]
+}
+
+export interface OrganizationNode {
+  id: number
+  parentId: number
+  organizationCode: string
+  organizationName: string
+  organizationType: string
+  status: number
+}
+
+export interface DataScopeDefinition {
+  id: number
+  scopeCode: string
+  scopeName: string
+  scopeType: string
+  description?: string
+  sortOrder: number
 }
 
 export interface DictionaryItem {
@@ -162,6 +183,11 @@ export const systemApi = {
   roles: () => getData<RoleRow[]>('/system/roles'),
   createRole: (data: object) => http.post('/system/roles', data),
   updateRole: (id: number, data: object) => http.put(`/system/roles/${id}`, data),
+  updateRoleDataScope: (id: number, data: object) =>
+    http.put(`/system/roles/${id}/data-scope`, data),
+
+  organizations: () => getData<OrganizationNode[]>('/system/organizations/tree'),
+  dataScopes: () => getData<DataScopeDefinition[]>('/system/data-scopes'),
 
   menus: () => getData<MenuItem[]>('/system/menus/tree'),
 
