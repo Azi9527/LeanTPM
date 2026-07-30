@@ -18,7 +18,7 @@ export const useAuthStore = defineStore('auth', () => {
     captchaCode?: string,
   ): Promise<UserProfile> {
     const result = await authApi.login(username, password, captchaId, captchaCode)
-    storeTokens(result.tokens)
+    await storeTokens(result.tokens)
     user.value = result.user
     initialized.value = true
     return result.user
@@ -33,7 +33,7 @@ export const useAuthStore = defineStore('auth', () => {
       user.value = await authApi.currentUser()
       return user.value
     } catch {
-      clearTokens()
+      await clearTokens()
       user.value = null
       return null
     } finally {
@@ -43,7 +43,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function updatePassword(currentPassword: string, newPassword: string): Promise<void> {
     const tokens = await authApi.changePassword(currentPassword, newPassword)
-    storeTokens(tokens)
+    await storeTokens(tokens)
     await loadProfile()
   }
 
@@ -51,7 +51,7 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       await authApi.logout()
     } finally {
-      clearTokens()
+      await clearTokens()
       user.value = null
       initialized.value = true
     }

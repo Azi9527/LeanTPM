@@ -7,9 +7,19 @@
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
     "typecheck": "vue-tsc -b",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "mobile:sync": "npm run build && cap sync android",
+    "android:doctor": "cap doctor android",
+    "android:debug": "npm run mobile:sync && cd android && gradlew.bat assembleDebug",
+    "android:release": "npm run mobile:sync && cd android && gradlew.bat assembleRelease"
   },
   "dependencies": {
+    "@capacitor/android": "8.4.2",
+    "@capacitor/app": "8.0.1",
+    "@capacitor/barcode-scanner": "3.1.0",
+    "@capacitor/camera": "8.2.1",
+    "@capacitor/core": "8.4.2",
+    "@capacitor/network": "8.0.1",
     "@element-plus/icons-vue": "^2.3.1",
     "axios": "^1.10.0",
     "echarts": "^6.1.0",
@@ -20,6 +30,7 @@
     "vue-router": "^4.5.1"
   },
   "devDependencies": {
+    "@capacitor/cli": "8.4.2",
     "@types/node": "^24.0.15",
     "@types/three": "^0.178.0",
     "@vitejs/plugin-vue": "^6.0.0",

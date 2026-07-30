@@ -1,35 +1,89 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios'
 import type { ApiResponse, TokenPair } from '@/types/api'
+import { nativeContainer, vaultGet, vaultRemove, vaultSet } from '@/mobile/secureVault'
 
 const ACCESS_TOKEN_KEY = 'leantpm_access_token'
 const REFRESH_TOKEN_KEY = 'leantpm_refresh_token'
+const API_BASE_URL_KEY = 'leantpm_api_base_url'
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
+const WEB_API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1'
+const NATIVE_API_BASE_URL = import.meta.env.VITE_MOBILE_API_BASE_URL
+  || 'http://10.0.2.2:8080/api/v1'
+
+let accessTokenCache: string | null = null
+let refreshTokenCache: string | null = null
+let apiBaseUrlCache = nativeContainer ? NATIVE_API_BASE_URL : WEB_API_BASE_URL
 
 export const http = axios.create({
-  baseURL: '/api/v1',
+  baseURL: apiBaseUrlCache,
   timeout: 15000,
 })
 
 function token(): string | null {
-  return localStorage.getItem(ACCESS_TOKEN_KEY)
+  return accessTokenCache
 }
 
 export function accessToken(): string | null {
   return token()
 }
 
-export function storeTokens(tokens: TokenPair): void {
-  localStorage.setItem(ACCESS_TOKEN_KEY, tokens.accessToken)
-  localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refreshToken)
+export async function initializeHttpStorage(): Promise<void> {
+  accessTokenCache = await vaultGet(ACCESS_TOKEN_KEY)
+  refreshTokenCache = await vaultGet(REFRESH_TOKEN_KEY)
+  const configuredBaseUrl = await vaultGet(API_BASE_URL_KEY)
+  if (configuredBaseUrl) {
+    apiBaseUrlCache = normalizeApiBaseUrl(configuredBaseUrl)
+    http.defaults.baseURL = apiBaseUrlCache
+  }
 }
 
-export function clearTokens(): void {
-  localStorage.removeItem(ACCESS_TOKEN_KEY)
-  localStorage.removeItem(REFRESH_TOKEN_KEY)
+export async function storeTokens(tokens: TokenPair): Promise<void> {
+  accessTokenCache = tokens.accessToken
+  refreshTokenCache = tokens.refreshToken
+  await Promise.all([
+    vaultSet(ACCESS_TOKEN_KEY, tokens.accessToken),
+    vaultSet(REFRESH_TOKEN_KEY, tokens.refreshToken),
+  ])
+}
+
+export async function clearTokens(): Promise<void> {
+  accessTokenCache = null
+  refreshTokenCache = null
+  await Promise.all([
+    vaultRemove(ACCESS_TOKEN_KEY),
+    vaultRemove(REFRESH_TOKEN_KEY),
+  ])
 }
 
 export function hasToken(): boolean {
   return Boolean(token())
+}
+
+export function serverBaseUrl(): string {
+  return apiBaseUrlCache
+}
+
+export async function setServerBaseUrl(value: string): Promise<string> {
+  const normalized = normalizeApiBaseUrl(value)
+  apiBaseUrlCache = normalized
+  http.defaults.baseURL = normalized
+  await vaultSet(API_BASE_URL_KEY, normalized)
+  return normalized
+}
+
+function normalizeApiBaseUrl(value: string): string {
+  const trimmed = value.trim().replace(/\/+$/, '')
+  if (trimmed.startsWith('/')) return trimmed.endsWith('/api/v1')
+    ? trimmed
+    : `${trimmed}/api/v1`
+  const parsed = new URL(trimmed)
+  if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) {
+    throw new Error('服务地址必须是有效的 HTTP(S) 地址，且不能包含账号密码')
+  }
+  parsed.hash = ''
+  parsed.search = ''
+  const clean = parsed.toString().replace(/\/+$/, '')
+  return clean.endsWith('/api/v1') ? clean : `${clean}/api/v1`
 }
 
 http.interceptors.request.use((config: InternalAxiosRequestConfig) => {
@@ -58,23 +112,29 @@ http.interceptors.response.use(
   (response) => response,
   async (error: AxiosError<ApiResponse<unknown>>) => {
     const original = error.config as (InternalAxiosRequestConfig & { _retried?: boolean }) | undefined
-    const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY)
+    const refreshToken = refreshTokenCache
     const isRefreshRequest = original?.url?.includes('/auth/refresh')
     if (error.response?.status === 401 && original && !original._retried && refreshToken && !isRefreshRequest) {
       original._retried = true
       try {
         refreshing ??= axios
-          .post<ApiResponse<TokenPair>>('/api/v1/auth/refresh', { refreshToken })
-          .then((response) => response.data.data)
+          .post<ApiResponse<TokenPair>>(
+            `${apiBaseUrlCache}/auth/refresh`,
+            { refreshToken },
+          )
+          .then(async (response) => {
+            const tokens = response.data.data
+            await storeTokens(tokens)
+            return tokens
+          })
           .finally(() => {
             refreshing = null
           })
         const tokens = await refreshing
-        storeTokens(tokens)
         original.headers.Authorization = `Bearer ${tokens.accessToken}`
         return http(original)
       } catch {
-        clearTokens()
+        await clearTokens()
         window.location.assign('/login')
       }
     }

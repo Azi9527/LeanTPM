@@ -329,8 +329,10 @@ export const inspectionApi = {
     http.put(`/inspection/tasks/${id}/assignment`, data),
   saveDraft: (id: number, data: object) =>
     http.put(`/inspection/tasks/${id}/draft`, data),
-  submitTask: (id: number, data: object) =>
-    http.post(`/inspection/tasks/${id}/submit`, data),
+  submitTask: (id: number, data: object, idempotencyKey?: string) =>
+    http.post(`/inspection/tasks/${id}/submit`, data, {
+      headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+    }),
   reviewTask: (id: number, data: object) =>
     http.post(`/inspection/tasks/${id}/review`, data),
   closeTask: (id: number, targetStatus: 'CANCELLED' | 'VOIDED', data: object) =>

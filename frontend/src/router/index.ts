@@ -1,6 +1,9 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
+import { Capacitor } from '@capacitor/core'
 import { useAuthStore } from '@/stores/auth'
 import { hasToken } from '@/utils/http'
+
+const nativeContainer = Capacitor.isNativePlatform()
 
 const routes: RouteRecordRaw[] = [
   {
@@ -16,10 +19,16 @@ const routes: RouteRecordRaw[] = [
     meta: { public: true, title: '设备扫码信息' },
   },
   {
+    path: '/mobile/setup',
+    name: 'MobileServerSetup',
+    component: () => import('@/views/mobile/profile/MobileServerSetupView.vue'),
+    meta: { public: true, title: '配置服务地址' },
+  },
+  {
     path: '/',
     component: () => import('@/layouts/AppLayout.vue'),
     children: [
-      { path: '', redirect: '/dashboard' },
+      { path: '', redirect: () => nativeContainer ? '/mobile/workbench' : '/dashboard' },
       {
         path: 'dashboard',
         name: 'Dashboard',
@@ -308,6 +317,62 @@ const routes: RouteRecordRaw[] = [
     ],
   },
   {
+    path: '/mobile',
+    component: () => import('@/layouts/MobileLayout.vue'),
+    meta: { permission: 'mobile:access' },
+    children: [
+      { path: '', redirect: '/mobile/workbench' },
+      {
+        path: 'workbench',
+        name: 'MobileWorkbench',
+        component: () => import('@/views/mobile/workbench/MobileWorkbenchView.vue'),
+        meta: { title: '移动工作台', permission: 'mobile:workbench:view' },
+      },
+      {
+        path: 'scan',
+        name: 'MobileScan',
+        component: () => import('@/views/mobile/scan/MobileScanView.vue'),
+        meta: { title: '设备扫码', permission: 'mobile:scan' },
+      },
+      {
+        path: 'equipment/:token',
+        name: 'MobileEquipment',
+        component: () => import('@/views/mobile/scan/MobileEquipmentView.vue'),
+        meta: { title: '设备现场信息', permission: 'mobile:scan' },
+      },
+      {
+        path: 'tasks',
+        name: 'MobileTasks',
+        component: () => import('@/views/mobile/tasks/MobileTaskHubView.vue'),
+        meta: { title: '现场任务', permission: 'mobile:task:view' },
+      },
+      {
+        path: 'inspection',
+        name: 'MobileInspection',
+        component: () => import('@/views/inspection/mobile/MyInspectionTaskView.vue'),
+        meta: { title: '移动点检', permission: 'inspection:my-task:view' },
+      },
+      {
+        path: 'maintenance',
+        name: 'MobileMaintenance',
+        component: () => import('@/views/maintenance/mobile/MyMaintenanceTaskView.vue'),
+        meta: { title: '移动维保', permission: 'maintenance:my-task:view' },
+      },
+      {
+        path: 'messages',
+        name: 'MobileMessages',
+        component: () => import('@/views/mobile/messages/MobileMessagesView.vue'),
+        meta: { title: '现场消息', permission: 'mobile:message:view' },
+      },
+      {
+        path: 'profile',
+        name: 'MobileProfile',
+        component: () => import('@/views/mobile/profile/MobileProfileView.vue'),
+        meta: { title: '移动设置', permission: 'mobile:profile:view' },
+      },
+    ],
+  },
+  {
     path: '/:pathMatch(.*)*',
     component: () => import('@/views/common/NotFoundView.vue'),
   },
@@ -321,7 +386,9 @@ const router = createRouter({
 router.beforeEach(async (to) => {
   const auth = useAuthStore()
   if (to.meta.public) {
-    if (to.name === 'Login' && hasToken()) return '/dashboard'
+    if (to.name === 'Login' && hasToken()) {
+      return nativeContainer ? '/mobile/workbench' : '/dashboard'
+    }
     return true
   }
   if (!hasToken()) return { name: 'Login', query: { redirect: to.fullPath } }
@@ -330,8 +397,13 @@ router.beforeEach(async (to) => {
   if (auth.user.mustChangePassword && to.name !== 'Login') {
     return true
   }
+  if (to.path.startsWith('/mobile') && !auth.can('mobile:access')) {
+    return nativeContainer ? '/login' : '/dashboard'
+  }
   const permission = to.meta.permission as string | undefined
-  if (permission && !auth.can(permission)) return '/dashboard'
+  if (permission && !auth.can(permission)) {
+    return nativeContainer ? '/login' : '/dashboard'
+  }
   return true
 })
 

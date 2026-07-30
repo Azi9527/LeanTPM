@@ -1,9 +1,18 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { UploadRequestOptions } from 'element-plus'
+import { useRoute } from 'vue-router'
 import { maintenanceApi, type TaskDetail, type TaskItemRow, type TaskRow, type TaskStatus } from '@/api/maintenance'
 import { systemApi } from '@/api/system'
+import {
+  loadMobileDraft,
+  newIdempotencyKey,
+  removeMobileDraft,
+  saveMobileDraft,
+} from '@/mobile/draftStore'
+import { capturePhotoFile } from '@/mobile/device'
+import { useMobileStore } from '@/stores/mobile'
 import { errorMessage } from '@/utils/http'
 
 interface ResultDraft {
@@ -22,6 +31,16 @@ interface ResultDraft {
   version?: number
 }
 
+interface SavePayload {
+  taskVersion: number
+  executionRemark: string | null
+  results: Array<ResultDraft & { taskItemId: number }>
+}
+
+type AttachmentKind = 'beforeAttachmentIds' | 'afterAttachmentIds' | 'attachmentIds'
+
+const route = useRoute()
+const mobile = useMobileStore()
 const loading = ref(false)
 const saving = ref(false)
 const uploadingItemId = ref<number>()
@@ -31,6 +50,12 @@ const detail = ref<TaskDetail | null>(null)
 const executionVisible = ref(false)
 const executionRemark = ref('')
 const drafts = reactive<Record<number, ResultDraft>>({})
+const localSavedAt = ref('')
+const pendingSubmit = ref(false)
+const idempotencyKey = ref('')
+let autosaveTimer: ReturnType<typeof setTimeout> | undefined
+let restoring = false
+let routeTaskOpened = false
 const materialForm = reactive({
   materialCode: '',
   materialName: '',
@@ -53,7 +78,14 @@ const statusLabels: Record<TaskStatus, string> = {
 const executable = computed(() => detail.value
   && detail.value.task.taskStatus === 'IN_PROGRESS')
 
-onMounted(load)
+onMounted(async () => {
+  await load()
+  const taskId = Number(route.query.taskId)
+  if (Number.isSafeInteger(taskId) && taskId > 0 && !routeTaskOpened) {
+    routeTaskOpened = true
+    await openTask({ id: taskId })
+  }
+})
 
 async function load() {
   loading.value = true
@@ -72,8 +104,9 @@ async function load() {
   }
 }
 
-async function openTask(row: TaskRow) {
+async function openTask(row: Pick<TaskRow, 'id'>) {
   try {
+    restoring = true
     detail.value = await maintenanceApi.task(row.id)
     executionRemark.value = detail.value.task.executionRemark || ''
     for (const item of detail.value.items) {
@@ -94,34 +127,122 @@ async function openTask(row: TaskRow) {
         version: result?.version,
       }
     }
+    const local = await loadMobileDraft<SavePayload>('maintenance', row.id)
+    if (local && local.taskVersion === detail.value.task.version) {
+      applyPayload(local.payload)
+      pendingSubmit.value = local.pendingSubmit
+      idempotencyKey.value = local.idempotencyKey
+      localSavedAt.value = local.updatedAt
+      ElMessage.info(local.pendingSubmit ? '已恢复待提交的本地草稿' : '已恢复本地加密草稿')
+    } else {
+      if (local) {
+        await removeMobileDraft('maintenance', row.id)
+        ElMessage.warning('任务版本已变化，旧的本地草稿已安全清除')
+      }
+      idempotencyKey.value = newIdempotencyKey('maintenance', row.id)
+      pendingSubmit.value = false
+      localSavedAt.value = ''
+    }
     executionVisible.value = true
   } catch (error) {
     ElMessage.error(errorMessage(error))
+  } finally {
+    restoring = false
   }
 }
+
+function buildPayload(): SavePayload | null {
+  if (!detail.value) return null
+  return {
+    taskVersion: detail.value.task.version,
+    executionRemark: executionRemark.value || null,
+    results: detail.value.items.map((item) => ({
+      taskItemId: item.id,
+      ...drafts[item.id],
+      abnormalDescription: drafts[item.id].abnormalDescription || undefined,
+      skipReason: drafts[item.id].skipReason || undefined,
+    })),
+  }
+}
+
+function applyPayload(payload: SavePayload) {
+  executionRemark.value = payload.executionRemark || ''
+  for (const result of payload.results) {
+    if (!drafts[result.taskItemId]) continue
+    Object.assign(drafts[result.taskItemId], result)
+  }
+}
+
+async function persistLocal(submit: boolean, force = false): Promise<void> {
+  const payload = buildPayload()
+  if (!detail.value || !payload || (!force && !executable.value)) return
+  const updatedAt = new Date().toISOString()
+  await saveMobileDraft({
+    schemaVersion: 1,
+    workflow: 'maintenance',
+    taskId: detail.value.task.id,
+    taskVersion: detail.value.task.version,
+    updatedAt,
+    pendingSubmit: submit,
+    idempotencyKey: idempotencyKey.value
+      || newIdempotencyKey('maintenance', detail.value.task.id),
+    payload,
+  })
+  pendingSubmit.value = submit
+  localSavedAt.value = updatedAt
+  await mobile.refreshDraftCount()
+}
+
+function scheduleLocalSave() {
+  if (restoring || !executionVisible.value || !executable.value) return
+  if (autosaveTimer) clearTimeout(autosaveTimer)
+  autosaveTimer = setTimeout(() => {
+    void persistLocal(pendingSubmit.value)
+  }, 700)
+}
+
+watch(drafts, scheduleLocalSave, { deep: true })
+watch(executionRemark, scheduleLocalSave)
+watch(executionVisible, (visible) => {
+  if (!visible) void persistLocal(pendingSubmit.value)
+})
+
+onBeforeUnmount(() => {
+  if (autosaveTimer) clearTimeout(autosaveTimer)
+  void persistLocal(pendingSubmit.value)
+})
 
 async function save(submit: boolean) {
   if (!detail.value) return
   saving.value = true
   try {
-    const payload = {
-      taskVersion: detail.value.task.version,
-      executionRemark: executionRemark.value || null,
-      results: detail.value.items.map((item) => ({
-        taskItemId: item.id,
-        ...drafts[item.id],
-        abnormalDescription: drafts[item.id].abnormalDescription || null,
-        skipReason: drafts[item.id].skipReason || null,
-      })),
+    const payload = buildPayload()
+    if (!payload) return
+    await persistLocal(submit)
+    if (!mobile.online) {
+      ElMessage.warning(submit
+        ? '当前离线，结果已加密保存；恢复网络后请再次提交'
+        : '当前离线，草稿已加密保存在本机')
+      return
     }
-    if (submit) await maintenanceApi.submitTask(detail.value.task.id, payload)
+    if (submit) {
+      await maintenanceApi.submitTask(
+        detail.value.task.id,
+        payload,
+        idempotencyKey.value,
+      )
+    }
     else await maintenanceApi.saveDraft(detail.value.task.id, payload)
     ElMessage.success(submit ? '维保结果已提交' : '草稿已保存')
+    await removeMobileDraft('maintenance', detail.value.task.id)
+    pendingSubmit.value = false
+    localSavedAt.value = ''
+    await mobile.refreshDraftCount()
     detail.value = await maintenanceApi.task(detail.value.task.id)
     if (submit) executionVisible.value = false
     await load()
   } catch (error) {
-    ElMessage.error(errorMessage(error))
+    ElMessage.error(`${errorMessage(error)}；本地加密草稿仍保留`)
   } finally {
     saving.value = false
   }
@@ -129,6 +250,11 @@ async function save(submit: boolean) {
 
 async function taskAction(action: 'start' | 'pause' | 'resume') {
   if (!detail.value) return
+  if (!mobile.online) {
+    ElMessage.warning('任务状态变更需要联网，当前填写内容已自动保存')
+    await persistLocal(false, true)
+    return
+  }
   try {
     if (action === 'start') {
       await maintenanceApi.startTask(detail.value.task.id, {
@@ -148,6 +274,7 @@ async function taskAction(action: 'start' | 'pause' | 'resume') {
     }
     ElMessage.success(action === 'start' ? '维保已开始' : action === 'pause' ? '维保已暂停' : '维保已恢复')
     detail.value = await maintenanceApi.task(detail.value.task.id)
+    await persistLocal(false, true)
     await load()
   } catch (error) {
     ElMessage.error(errorMessage(error))
@@ -157,6 +284,10 @@ async function taskAction(action: 'start' | 'pause' | 'resume') {
 async function saveMaterial() {
   if (!detail.value || !materialForm.materialCode || !materialForm.materialName) {
     ElMessage.warning('请填写备件编码和名称')
+    return
+  }
+  if (!mobile.online) {
+    ElMessage.warning('备件耗用登记需要联网')
     return
   }
   try {
@@ -176,9 +307,25 @@ async function saveMaterial() {
 
 async function upload(
   itemId: number,
-  kind: 'beforeAttachmentIds' | 'afterAttachmentIds' | 'attachmentIds',
+  kind: AttachmentKind,
   file: File,
 ) {
+  if (!mobile.online) {
+    ElMessage.warning('当前离线，附件需恢复网络后上传；文字结果已自动保存')
+    return
+  }
+  if (file.size > mobile.maxUploadMb * 1024 * 1024) {
+    ElMessage.warning(`单个附件不能超过 ${mobile.maxUploadMb} MB`)
+    return
+  }
+  if (
+    kind !== 'attachmentIds'
+    && file.type
+    && !file.type.startsWith('image/')
+  ) {
+    ElMessage.warning('维保前后照片仅支持图片文件')
+    return
+  }
   uploadingItemId.value = itemId
   try {
     const form = new FormData()
@@ -193,9 +340,25 @@ async function upload(
   }
 }
 
+async function capture(itemId: number, kind: AttachmentKind) {
+  if (!mobile.online) {
+    ElMessage.warning('当前离线，恢复网络后再拍照上传')
+    return
+  }
+  try {
+    const file = await capturePhotoFile(
+      `maintenance-${detail.value?.task.taskCode ?? itemId}-${kind}`,
+      mobile.maxUploadMb,
+    )
+    await upload(itemId, kind, file)
+  } catch (error) {
+    ElMessage.warning(errorMessage(error, '拍照已取消'))
+  }
+}
+
 function uploadHandler(
   itemId: number,
-  kind: 'beforeAttachmentIds' | 'afterAttachmentIds' | 'attachmentIds',
+  kind: AttachmentKind,
 ) {
   return (options: UploadRequestOptions) => upload(itemId, kind, options.file)
 }
@@ -275,9 +438,15 @@ function dueClass(row: TaskRow) {
                 <el-upload :show-file-list="false" :auto-upload="true" accept="image/*" capture="environment" :http-request="uploadHandler(item.id, 'beforeAttachmentIds')">
                   <el-button :loading="uploadingItemId === item.id" plain>维保前照片{{ item.photoRequiredFlag ? '（必需）' : '' }}</el-button>
                 </el-upload>
+                <el-button :loading="uploadingItemId === item.id" plain @click="capture(item.id, 'beforeAttachmentIds')">
+                  <el-icon><Camera /></el-icon>拍摄维保前
+                </el-button>
                 <el-upload :show-file-list="false" :auto-upload="true" accept="image/*" capture="environment" :http-request="uploadHandler(item.id, 'afterAttachmentIds')">
                   <el-button :loading="uploadingItemId === item.id" plain>维保后照片{{ item.photoRequiredFlag ? '（必需）' : '' }}</el-button>
                 </el-upload>
+                <el-button :loading="uploadingItemId === item.id" plain @click="capture(item.id, 'afterAttachmentIds')">
+                  <el-icon><Camera /></el-icon>拍摄维保后
+                </el-button>
                 <el-upload :show-file-list="false" :auto-upload="true" :http-request="uploadHandler(item.id, 'attachmentIds')">
                   <el-button :loading="uploadingItemId === item.id" plain>其他附件{{ item.attachmentRequiredFlag ? '（必需）' : '' }}</el-button>
                 </el-upload>
@@ -304,6 +473,11 @@ function dueClass(row: TaskRow) {
           </div>
         </section>
         <el-input v-if="executable" v-model="executionRemark" type="textarea" :rows="3" placeholder="执行备注" />
+        <div v-if="localSavedAt" class="local-draft-state">
+          <el-icon><Lock /></el-icon>
+          {{ pendingSubmit ? '待恢复网络后提交' : '本地草稿已加密保存' }}
+          · {{ localSavedAt.replace('T', ' ').slice(0, 19) }}
+        </div>
         <div v-if="executable" class="sticky-actions"><el-button :loading="saving" @click="save(false)">保存草稿</el-button><el-button type="primary" :loading="saving" @click="save(true)">提交维保</el-button></div>
       </template>
     </el-drawer>
@@ -331,5 +505,12 @@ function dueClass(row: TaskRow) {
 .material-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 .material-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--el-border-color-lighter); }
 .sticky-actions { position: sticky; bottom: 0; justify-content: flex-end; padding: 16px 0; background: var(--el-bg-color); z-index: 2; }
-@media (max-width: 600px) { .task-grid, .material-grid { grid-template-columns: 1fr; } .execution-head { align-items: flex-start; } .task-actions > * { flex: 1; min-height: 46px; } }
+.local-draft-state { display: flex; align-items: center; gap: 7px; margin-top: 14px; color: #53717c; font-size: 12px; }
+@media (max-width: 600px) {
+  .mobile-shell { padding: 0; }
+  .page-header p { display: none; }
+  .task-grid, .material-grid { grid-template-columns: 1fr; }
+  .execution-head { align-items: flex-start; }
+  .task-actions > *, .sticky-actions > * { flex: 1; min-height: 48px; }
+}
 </style>

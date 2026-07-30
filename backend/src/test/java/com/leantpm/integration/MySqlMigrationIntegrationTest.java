@@ -36,7 +36,7 @@ class MySqlMigrationIntegrationTest {
     @Test
     void appliesEveryMigrationAndFoundationTable() throws Exception {
         assertThat(number("SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1"))
-                .isEqualTo(12);
+                .isEqualTo(13);
         assertThat(number("""
                 SELECT COUNT(*)
                 FROM information_schema.tables
@@ -269,6 +269,43 @@ class MySqlMigrationIntegrationTest {
                 FROM visualization_status_color
                 WHERE tenant_id = 1 AND status = 1 AND deleted = 0
                 """)).isEqualTo(12);
+    }
+
+    @Test
+    void seedsMobileParametersMenusAndRoleGrants() throws Exception {
+        assertThat(number("""
+                SELECT COUNT(*)
+                FROM system_parameter
+                WHERE tenant_id = 1
+                  AND parameter_key IN (
+                    'mobile.draft-retention-days',
+                    'mobile.max-upload-mb',
+                    'mobile.scan-token-length'
+                  )
+                  AND status = 1
+                  AND deleted = 0
+                """)).isEqualTo(3);
+        assertThat(number("""
+                SELECT COUNT(*)
+                FROM system_menu
+                WHERE tenant_id = 1
+                  AND id BETWEEN 60 AND 65
+                  AND permission_code LIKE 'mobile:%'
+                  AND status = 1
+                  AND deleted = 0
+                """)).isEqualTo(6);
+        assertThat(number("""
+                SELECT COUNT(*)
+                FROM system_role role
+                JOIN system_role_menu relation
+                  ON relation.tenant_id = role.tenant_id
+                 AND relation.role_id = role.id
+                WHERE role.tenant_id = 1
+                  AND role.role_code IN (
+                    'SUPER_ADMIN', 'EQUIPMENT_MANAGER', 'INSPECTOR', 'MAINTAINER'
+                  )
+                  AND relation.menu_id BETWEEN 60 AND 65
+                """)).isEqualTo(24);
     }
 
     private long number(String sql) throws Exception {

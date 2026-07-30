@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">LeanTPM</string>
+    <string name="title_activity_main">LeanTPM</string>
+    <string name="package_name">com.leantpm.mobile</string>
+    <string name="custom_url_scheme">com.leantpm.mobile</string>
+</resources>

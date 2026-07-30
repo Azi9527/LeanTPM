@@ -6,6 +6,7 @@
 # Java
 backend/target/
 backend/target-codex/
+backend/target-*/
 *.log
 
 # Node

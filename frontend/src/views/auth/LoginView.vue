@@ -5,6 +5,7 @@ import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { captcha as fetchCaptcha, type CaptchaChallenge } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 import { errorMessage } from '@/utils/http'
+import { nativeContainer } from '@/mobile/secureVault'
 
 const route = useRoute()
 const router = useRouter()
@@ -52,7 +53,9 @@ async function submit() {
       challenge.value.captchaId,
       form.captchaCode.trim(),
     )
-    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/dashboard'
+    const redirect = typeof route.query.redirect === 'string'
+      ? route.query.redirect
+      : nativeContainer ? '/mobile/workbench' : '/dashboard'
     await router.replace(redirect)
   } catch (error) {
     ElMessage.error(errorMessage(error, '登录失败'))
@@ -151,6 +154,9 @@ onMounted(loadCaptcha)
           </el-button>
         </el-form>
         <p class="login-help">首次登录后需修改初始密码。如无法登录，请联系系统管理员。</p>
+        <el-button v-if="nativeContainer" text @click="router.push('/mobile/setup')">
+          <el-icon><Connection /></el-icon>配置企业服务地址
+        </el-button>
       </div>
       <footer>© 2026 LeanTPM · 精益设备管理系统</footer>
     </section>

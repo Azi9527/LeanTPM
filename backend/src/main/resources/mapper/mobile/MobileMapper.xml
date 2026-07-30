@@ -1,0 +1,329 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.leantpm.mobile.MobileMapper">
+    <sql id="equipmentScope">
+        <choose>
+            <when test="scope.allData">1 = 1</when>
+            <when test="scope.selfData or (scope.organizationIds != null and !scope.organizationIds.isEmpty())">
+                (
+                    <if test="scope.selfData">
+                        e.created_by = #{scope.userId}
+                        OR e.primary_responsible_user_id = #{scope.userId}
+                        OR EXISTS (
+                            SELECT 1
+                            FROM equipment_responsible_person scoped_person
+                            WHERE scoped_person.tenant_id = e.tenant_id
+                              AND scoped_person.equipment_id = e.id
+                              AND scoped_person.user_id = #{scope.userId}
+                              AND scoped_person.status = 1
+                              AND scoped_person.deleted = 0
+                        )
+                        OR EXISTS (
+                            SELECT 1
+                            FROM inspection_task scoped_inspection
+                            WHERE scoped_inspection.tenant_id = e.tenant_id
+                              AND scoped_inspection.equipment_id = e.id
+                              AND scoped_inspection.assignee_user_id = #{scope.userId}
+                              AND scoped_inspection.deleted = 0
+                        )
+                        OR EXISTS (
+                            SELECT 1
+                            FROM maintenance_task scoped_maintenance
+                            WHERE scoped_maintenance.tenant_id = e.tenant_id
+                              AND scoped_maintenance.equipment_id = e.id
+                              AND scoped_maintenance.assignee_user_id = #{scope.userId}
+                              AND scoped_maintenance.deleted = 0
+                        )
+                    </if>
+                    <if test="scope.selfData and scope.organizationIds != null and !scope.organizationIds.isEmpty()">
+                        OR
+                    </if>
+                    <if test="scope.organizationIds != null and !scope.organizationIds.isEmpty()">
+                        e.organization_id IN
+                        <foreach collection="scope.organizationIds" item="organizationId"
+                                 open="(" separator="," close=")">
+                            #{organizationId}
+                        </foreach>
+                    </if>
+                )
+            </when>
+            <otherwise>1 = 0</otherwise>
+        </choose>
+    </sql>
+
+    <select id="mobileEnabled" resultType="boolean">
+        SELECT mobile_enabled
+        FROM system_user
+        WHERE tenant_id = #{tenantId}
+          AND id = #{userId}
+          AND status = 1
+          AND deleted = 0
+        LIMIT 1
+    </select>
+
+    <select id="integerParameter" resultType="int">
+        SELECT CAST(parameter_value AS SIGNED)
+        FROM system_parameter
+        WHERE tenant_id = #{tenantId}
+          AND parameter_key = #{parameterKey}
+          AND status = 1
+          AND deleted = 0
+        LIMIT 1
+    </select>
+
+    <select id="inspectionCount"
+            resultType="com.leantpm.mobile.MobileDtos$WorkCount">
+        SELECT COALESCE(SUM(planned_date = CURRENT_DATE()), 0) AS due_today,
+               COALESCE(SUM(task_status IN (
+                   'PENDING', 'IN_PROGRESS', 'PENDING_REVIEW', 'OVERDUE'
+               )), 0) AS pending,
+               COALESCE(SUM(
+                   task_status = 'OVERDUE'
+                   OR (
+                       task_status NOT IN ('COMPLETED', 'CANCELLED', 'VOIDED')
+                       AND due_time &lt; CURRENT_TIMESTAMP(3)
+                   )
+               ), 0) AS overdue,
+               COALESCE(SUM(
+                   task_status = 'COMPLETED'
+                   AND DATE(completed_time) = CURRENT_DATE()
+               ), 0) AS completed_today
+        FROM inspection_task
+        WHERE tenant_id = #{tenantId}
+          AND assignee_user_id = #{userId}
+          AND deleted = 0
+    </select>
+
+    <select id="maintenanceCount"
+            resultType="com.leantpm.mobile.MobileDtos$WorkCount">
+        SELECT COALESCE(SUM(planned_date = CURRENT_DATE()), 0) AS due_today,
+               COALESCE(SUM(task_status IN (
+                   'PENDING', 'IN_PROGRESS', 'PAUSED',
+                   'PENDING_CONFIRMATION', 'OVERDUE'
+               )), 0) AS pending,
+               COALESCE(SUM(
+                   task_status = 'OVERDUE'
+                   OR (
+                       task_status NOT IN ('COMPLETED', 'CANCELLED', 'VOIDED')
+                       AND due_time &lt; CURRENT_TIMESTAMP(3)
+                   )
+               ), 0) AS overdue,
+               COALESCE(SUM(
+                   task_status = 'COMPLETED'
+                   AND DATE(completed_time) = CURRENT_DATE()
+               ), 0) AS completed_today
+        FROM maintenance_task task
+        WHERE task.tenant_id = #{tenantId}
+          AND task.deleted = 0
+          AND (
+              task.assignee_user_id = #{userId}
+              OR EXISTS (
+                  SELECT 1
+                  FROM maintenance_task_collaborator collaborator
+                  WHERE collaborator.tenant_id = task.tenant_id
+                    AND collaborator.task_id = task.id
+                    AND collaborator.user_id = #{userId}
+              )
+          )
+    </select>
+
+    <select id="messages"
+            resultType="com.leantpm.mobile.MobileDtos$MessageItem">
+        SELECT message_type, severity, title, content, occurred_time, route_path
+        FROM (
+            SELECT 'INSPECTION_OVERDUE' AS message_type,
+                   'HIGH' AS severity,
+                   CONCAT('点检任务逾期：', task.task_code) AS title,
+                   CONCAT(e.equipment_name, ' · 截止 ',
+                          DATE_FORMAT(task.due_time, '%Y-%m-%d %H:%i')) AS content,
+                   COALESCE(task.updated_time, task.due_time) AS occurred_time,
+                   CONCAT('/mobile/inspection?taskId=', task.id) AS route_path
+            FROM inspection_task task
+            JOIN equipment e
+              ON e.tenant_id = task.tenant_id
+             AND e.id = task.equipment_id
+             AND e.deleted = 0
+            WHERE task.tenant_id = #{tenantId}
+              AND task.assignee_user_id = #{userId}
+              AND task.deleted = 0
+              AND (
+                  task.task_status = 'OVERDUE'
+                  OR (
+                      task.task_status NOT IN ('COMPLETED', 'CANCELLED', 'VOIDED')
+                      AND task.due_time &lt; CURRENT_TIMESTAMP(3)
+                  )
+              )
+            UNION ALL
+            SELECT 'MAINTENANCE_OVERDUE',
+                   'HIGH',
+                   CONCAT('维保任务逾期：', task.task_code),
+                   CONCAT(e.equipment_name, ' · 截止 ',
+                          DATE_FORMAT(task.due_time, '%Y-%m-%d %H:%i')),
+                   COALESCE(task.updated_time, task.due_time),
+                   CONCAT('/mobile/maintenance?taskId=', task.id)
+            FROM maintenance_task task
+            JOIN equipment e
+              ON e.tenant_id = task.tenant_id
+             AND e.id = task.equipment_id
+             AND e.deleted = 0
+            WHERE task.tenant_id = #{tenantId}
+              AND task.deleted = 0
+              AND (
+                  task.assignee_user_id = #{userId}
+                  OR EXISTS (
+                      SELECT 1
+                      FROM maintenance_task_collaborator collaborator
+                      WHERE collaborator.tenant_id = task.tenant_id
+                        AND collaborator.task_id = task.id
+                        AND collaborator.user_id = #{userId}
+                  )
+              )
+              AND (
+                  task.task_status = 'OVERDUE'
+                  OR (
+                      task.task_status NOT IN ('COMPLETED', 'CANCELLED', 'VOIDED')
+                      AND task.due_time &lt; CURRENT_TIMESTAMP(3)
+                  )
+              )
+            UNION ALL
+            SELECT 'INSPECTION_ABNORMAL',
+                   abnormal.severity,
+                   CONCAT('点检异常：', abnormal.abnormal_title),
+                   CONCAT(e.equipment_name, ' · ', abnormal.abnormal_description),
+                   abnormal.created_time,
+                   '/mobile/messages'
+            FROM inspection_abnormal abnormal
+            JOIN inspection_task task
+              ON task.tenant_id = abnormal.tenant_id
+             AND task.id = abnormal.task_id
+             AND task.deleted = 0
+            JOIN equipment e
+              ON e.tenant_id = abnormal.tenant_id
+             AND e.id = abnormal.equipment_id
+             AND e.deleted = 0
+            WHERE abnormal.tenant_id = #{tenantId}
+              AND task.assignee_user_id = #{userId}
+              AND abnormal.abnormal_status != 'CLOSED'
+              AND abnormal.deleted = 0
+            UNION ALL
+            SELECT 'MAINTENANCE_ABNORMAL',
+                   abnormal.severity,
+                   CONCAT('维保异常：', abnormal.abnormal_title),
+                   CONCAT(e.equipment_name, ' · ', abnormal.abnormal_description),
+                   abnormal.created_time,
+                   '/mobile/messages'
+            FROM maintenance_abnormal abnormal
+            JOIN maintenance_task task
+              ON task.tenant_id = abnormal.tenant_id
+             AND task.id = abnormal.task_id
+             AND task.deleted = 0
+            JOIN equipment e
+              ON e.tenant_id = abnormal.tenant_id
+             AND e.id = abnormal.equipment_id
+             AND e.deleted = 0
+            WHERE abnormal.tenant_id = #{tenantId}
+              AND task.assignee_user_id = #{userId}
+              AND abnormal.abnormal_status != 'CLOSED'
+              AND abnormal.deleted = 0
+        ) message
+        ORDER BY occurred_time DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="equipmentByToken"
+            resultType="com.leantpm.mobile.MobileDtos$EquipmentBase">
+        SELECT e.id AS equipment_id,
+               e.equipment_code,
+               e.equipment_name,
+               category.category_name,
+               organization.organization_name,
+               location.location_name,
+               COALESCE(current_status.status_code, 'OFFLINE') AS status_code,
+               COALESCE(palette.status_name, '离线') AS status_name,
+               COALESCE(palette.display_color, '#64748b') AS status_color,
+               current_status.status_since,
+               responsible.real_name AS responsible_name
+        FROM equipment_barcode barcode
+        JOIN equipment e
+          ON e.tenant_id = barcode.tenant_id
+         AND e.id = barcode.equipment_id
+         AND e.deleted = 0
+         AND e.status = 1
+        JOIN equipment_category category
+          ON category.tenant_id = e.tenant_id
+         AND category.id = e.category_id
+         AND category.deleted = 0
+        JOIN organization
+          ON organization.tenant_id = e.tenant_id
+         AND organization.id = e.organization_id
+         AND organization.deleted = 0
+        JOIN location
+          ON location.tenant_id = e.tenant_id
+         AND location.id = e.location_id
+         AND location.deleted = 0
+        LEFT JOIN equipment_current_status current_status
+          ON current_status.tenant_id = e.tenant_id
+         AND current_status.equipment_id = e.id
+        LEFT JOIN visualization_status_color palette
+          ON palette.tenant_id = e.tenant_id
+         AND palette.status_code = COALESCE(current_status.status_code, 'OFFLINE')
+         AND palette.status = 1
+         AND palette.deleted = 0
+        LEFT JOIN system_user responsible
+          ON responsible.tenant_id = e.tenant_id
+         AND responsible.id = e.primary_responsible_user_id
+         AND responsible.deleted = 0
+        WHERE barcode.tenant_id = #{tenantId}
+          AND barcode.access_token = #{token}
+          AND barcode.active_slot = 1
+          AND <include refid="equipmentScope"/>
+        LIMIT 1
+    </select>
+
+    <select id="activeTasks"
+            resultType="com.leantpm.mobile.MobileDtos$TaskLink">
+        SELECT task_id, task_code, workflow_type, scheme_name, task_status,
+               due_time, route_path
+        FROM (
+            SELECT task.id AS task_id,
+                   task.task_code,
+                   'INSPECTION' AS workflow_type,
+                   task.scheme_name_snapshot AS scheme_name,
+                   task.task_status,
+                   task.due_time,
+                   CONCAT('/mobile/inspection?taskId=', task.id) AS route_path
+            FROM inspection_task task
+            WHERE task.tenant_id = #{tenantId}
+              AND task.equipment_id = #{equipmentId}
+              AND task.assignee_user_id = #{userId}
+              AND task.task_status NOT IN ('COMPLETED', 'CANCELLED', 'VOIDED')
+              AND task.deleted = 0
+            UNION ALL
+            SELECT task.id,
+                   task.task_code,
+                   'MAINTENANCE',
+                   task.scheme_name_snapshot,
+                   task.task_status,
+                   task.due_time,
+                   CONCAT('/mobile/maintenance?taskId=', task.id)
+            FROM maintenance_task task
+            WHERE task.tenant_id = #{tenantId}
+              AND task.equipment_id = #{equipmentId}
+              AND task.deleted = 0
+              AND task.task_status NOT IN ('COMPLETED', 'CANCELLED', 'VOIDED')
+              AND (
+                  task.assignee_user_id = #{userId}
+                  OR EXISTS (
+                      SELECT 1
+                      FROM maintenance_task_collaborator collaborator
+                      WHERE collaborator.tenant_id = task.tenant_id
+                        AND collaborator.task_id = task.id
+                        AND collaborator.user_id = #{userId}
+                  )
+              )
+        ) active
+        ORDER BY due_time, task_id
+        LIMIT 20
+    </select>
+</mapper>

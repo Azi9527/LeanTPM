@@ -406,8 +406,10 @@ export const maintenanceApi = {
     http.post(`/maintenance/tasks/${id}/resume`, data),
   saveDraft: (id: number, data: object) =>
     http.put(`/maintenance/tasks/${id}/draft`, data),
-  submitTask: (id: number, data: object) =>
-    http.post(`/maintenance/tasks/${id}/submit`, data),
+  submitTask: (id: number, data: object, idempotencyKey?: string) =>
+    http.post(`/maintenance/tasks/${id}/submit`, data, {
+      headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+    }),
   confirmTask: (id: number, data: object) =>
     http.post(`/maintenance/tasks/${id}/confirm`, data),
   saveMaterial: (id: number, data: object) =>

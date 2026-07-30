@@ -101,6 +101,16 @@ $env:VITE_BACKEND_URL = 'http://127.0.0.1:18080'
 
 当前本机数据库已初始化 `admin`；临时密码仅在本次本地交付说明中提供，不写入 Git。首次登录后系统会强制修改。
 
+## Android 构建
+
+安装 Java 21、Node.js 和 Android SDK Platform 36 后，可生成调试 APK：
+
+```powershell
+.\scripts\build-android.ps1 -Configuration Debug
+```
+
+发布构建必须先配置企业 keystore 环境变量，详见 `docs/11-M6-移动端与Android交付记录.md`。构建产物默认写入不受 Git 管理的 `runtime/deliverables`。
+
 ## 设计与交付
 
 - [总体设计](docs/01-总体设计.md)
@@ -111,3 +121,5 @@ $env:VITE_BACKEND_URL = 'http://127.0.0.1:18080'
 - [M2 点检管理交付记录](docs/07-M2点检管理交付记录.md)
 - [M3 维保管理交付记录](docs/08-M3维保管理交付记录.md)
 - [M4 OEE 管理交付记录](docs/09-M4-OEE管理交付记录.md)
+- [M5 可视化中心交付记录](docs/10-M5-可视化中心交付记录.md)
+- [M6 移动端与 Android 交付记录](docs/11-M6-移动端与Android交付记录.md)
