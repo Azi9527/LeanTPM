@@ -63,6 +63,18 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '操作日志', permission: 'system:operation-log:view' },
       },
       {
+        path: 'system/parameters',
+        name: 'SystemParameters',
+        component: () => import('@/views/system/parameters/ParameterView.vue'),
+        meta: { title: '系统参数', permission: 'system:parameter:view' },
+      },
+      {
+        path: 'system/number-rules',
+        name: 'SystemNumberRules',
+        component: () => import('@/views/system/number-rules/NumberRuleView.vue'),
+        meta: { title: '编号规则', permission: 'system:number-rule:view' },
+      },
+      {
         path: 'coming-soon/:module',
         name: 'ComingSoon',
         component: () => import('@/views/common/ComingSoonView.vue'),

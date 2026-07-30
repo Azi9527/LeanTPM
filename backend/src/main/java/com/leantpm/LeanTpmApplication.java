@@ -11,7 +11,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication(exclude = UserDetailsServiceAutoConfiguration.class)
 @EnableScheduling
-@MapperScan({"com.leantpm.auth.mapper", "com.leantpm.system.mapper"})
+@MapperScan({"com.leantpm.auth.mapper", "com.leantpm.system.mapper", "com.leantpm.foundation.mapper"})
 @EnableConfigurationProperties({JwtProperties.class, StorageProperties.class})
 public class LeanTpmApplication {
 

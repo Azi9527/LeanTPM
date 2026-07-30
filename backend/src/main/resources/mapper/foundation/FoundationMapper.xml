@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.leantpm.foundation.mapper.FoundationMapper">
+    <select id="findParameters" resultType="com.leantpm.foundation.dto.FoundationDtos$ParameterRow">
+        SELECT id, parameter_key, parameter_name, parameter_value, value_type, group_code,
+               description, built_in, status, updated_time, version
+        FROM system_parameter
+        WHERE tenant_id = #{tenantId} AND deleted = 0
+        <if test="keyword != null and keyword != ''">
+            AND (parameter_key LIKE CONCAT('%', #{keyword}, '%')
+                OR parameter_name LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        <if test="groupCode != null and groupCode != ''">
+            AND group_code = #{groupCode}
+        </if>
+        ORDER BY group_code, built_in DESC, parameter_key
+    </select>
+
+    <select id="findParameterByKey" resultType="com.leantpm.foundation.dto.FoundationDtos$ParameterRow">
+        SELECT id, parameter_key, parameter_name, parameter_value, value_type, group_code,
+               description, built_in, status, updated_time, version
+        FROM system_parameter
+        WHERE tenant_id = #{tenantId}
+          AND parameter_key = #{parameterKey}
+          AND deleted = 0
+        LIMIT 1
+    </select>
+
+    <select id="findParameterById" resultType="com.leantpm.foundation.dto.FoundationDtos$ParameterRow">
+        SELECT id, parameter_key, parameter_name, parameter_value, value_type, group_code,
+               description, built_in, status, updated_time, version
+        FROM system_parameter
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND deleted = 0
+        LIMIT 1
+    </select>
+
+    <select id="countParameterKey" resultType="long">
+        SELECT COUNT(*)
+        FROM system_parameter
+        WHERE tenant_id = #{tenantId} AND parameter_key = #{parameterKey}
+    </select>
+
+    <insert id="insertParameter">
+        INSERT INTO system_parameter
+            (tenant_id, parameter_key, parameter_name, parameter_value, value_type, group_code,
+             description, built_in, status, created_by, updated_by)
+        VALUES
+            (#{tenantId}, #{request.parameterKey}, #{request.parameterName}, #{request.parameterValue},
+             #{request.valueType}, #{request.groupCode}, #{request.description}, 0,
+             IF(#{request.enabled}, 1, 0), #{operatorId}, #{operatorId})
+    </insert>
+
+    <select id="findParameterIdByKey" resultType="long">
+        SELECT id
+        FROM system_parameter
+        WHERE tenant_id = #{tenantId} AND parameter_key = #{parameterKey}
+        LIMIT 1
+    </select>
+
+    <update id="updateParameter">
+        UPDATE system_parameter
+        SET parameter_name = #{request.parameterName},
+            parameter_value = #{request.parameterValue},
+            value_type = #{request.valueType},
+            group_code = #{request.groupCode},
+            description = #{request.description},
+            status = IF(#{request.enabled}, 1, 0),
+            updated_by = #{operatorId},
+            version = version + 1
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND version = #{request.version}
+          AND deleted = 0
+    </update>
+
+    <update id="deleteParameter">
+        UPDATE system_parameter
+        SET parameter_key = CONCAT(LEFT(parameter_key, 100), '#', id),
+            deleted = 1,
+            status = 0,
+            updated_by = #{operatorId},
+            version = version + 1
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND built_in = 0
+          AND deleted = 0
+    </update>
+
+    <select id="findNumberRules" resultType="com.leantpm.foundation.dto.FoundationDtos$NumberRuleRow">
+        SELECT id, rule_code, rule_name, prefix, date_pattern, separator_value, sequence_length,
+               reset_period, status, description, updated_time, version, NULL AS preview
+        FROM system_number_rule
+        WHERE tenant_id = #{tenantId}
+          AND deleted = 0
+        <if test="keyword != null and keyword != ''">
+            AND (rule_code LIKE CONCAT('%', #{keyword}, '%')
+                OR rule_name LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        ORDER BY rule_code
+    </select>
+
+    <select id="findNumberRuleByCode" resultType="com.leantpm.foundation.dto.FoundationDtos$NumberRuleRow">
+        SELECT id, rule_code, rule_name, prefix, date_pattern, separator_value, sequence_length,
+               reset_period, status, description, updated_time, version, NULL AS preview
+        FROM system_number_rule
+        WHERE tenant_id = #{tenantId}
+          AND rule_code = #{ruleCode}
+          AND deleted = 0
+        LIMIT 1
+    </select>
+
+    <select id="findNumberRuleById" resultType="com.leantpm.foundation.dto.FoundationDtos$NumberRuleRow">
+        SELECT id, rule_code, rule_name, prefix, date_pattern, separator_value, sequence_length,
+               reset_period, status, description, updated_time, version, NULL AS preview
+        FROM system_number_rule
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND deleted = 0
+        LIMIT 1
+    </select>
+
+    <select id="countNumberRuleCode" resultType="long">
+        SELECT COUNT(*)
+        FROM system_number_rule
+        WHERE tenant_id = #{tenantId} AND rule_code = #{ruleCode}
+    </select>
+
+    <insert id="insertNumberRule">
+        INSERT INTO system_number_rule
+            (tenant_id, rule_code, rule_name, prefix, date_pattern, separator_value, sequence_length,
+             reset_period, status, description, created_by, updated_by)
+        VALUES
+            (#{tenantId}, #{request.ruleCode}, #{request.ruleName}, #{request.prefix},
+             #{request.datePattern}, #{request.separatorValue}, #{request.sequenceLength},
+             #{request.resetPeriod}, IF(#{request.enabled}, 1, 0), #{request.description},
+             #{operatorId}, #{operatorId})
+    </insert>
+
+    <select id="findNumberRuleIdByCode" resultType="long">
+        SELECT id
+        FROM system_number_rule
+        WHERE tenant_id = #{tenantId} AND rule_code = #{ruleCode}
+        LIMIT 1
+    </select>
+
+    <update id="updateNumberRule">
+        UPDATE system_number_rule
+        SET rule_name = #{request.ruleName},
+            prefix = #{request.prefix},
+            date_pattern = #{request.datePattern},
+            separator_value = #{request.separatorValue},
+            sequence_length = #{request.sequenceLength},
+            reset_period = #{request.resetPeriod},
+            status = IF(#{request.enabled}, 1, 0),
+            description = #{request.description},
+            updated_by = #{operatorId},
+            version = version + 1
+        WHERE tenant_id = #{tenantId}
+          AND id = #{id}
+          AND version = #{request.version}
+          AND deleted = 0
+    </update>
+
+    <insert id="advanceSequence">
+        INSERT INTO system_number_sequence
+            (tenant_id, rule_id, period_key, current_value, created_by, updated_by)
+        VALUES
+            (#{tenantId}, #{ruleId}, #{periodKey}, 1, #{operatorId}, #{operatorId})
+        ON DUPLICATE KEY UPDATE
+            current_value = current_value + 1,
+            updated_by = VALUES(updated_by),
+            version = version + 1
+    </insert>
+
+    <select id="findCurrentSequence" resultType="long">
+        SELECT current_value
+        FROM system_number_sequence
+        WHERE tenant_id = #{tenantId}
+          AND rule_id = #{ruleId}
+          AND period_key = #{periodKey}
+    </select>
+</mapper>

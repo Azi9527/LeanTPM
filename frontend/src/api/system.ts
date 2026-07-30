@@ -90,6 +90,42 @@ export interface AttachmentRow {
   createdTime: string
 }
 
+export interface ParameterRow {
+  id: number
+  parameterKey: string
+  parameterName: string
+  parameterValue: string
+  valueType: 'STRING' | 'BOOLEAN' | 'INTEGER' | 'DECIMAL'
+  groupCode: string
+  description?: string
+  builtIn: boolean
+  status: number
+  updatedTime: string
+  version: number
+}
+
+export interface NumberRuleRow {
+  id: number
+  ruleCode: string
+  ruleName: string
+  prefix: string
+  datePattern: string
+  separatorValue: string
+  sequenceLength: number
+  resetPeriod: 'DAILY' | 'MONTHLY' | 'YEARLY' | 'NEVER'
+  status: number
+  description?: string
+  updatedTime: string
+  version: number
+  preview: string
+}
+
+export interface GeneratedNumber {
+  ruleCode: string
+  businessNumber: string
+  sequence: number
+}
+
 export interface PageQuery {
   keyword?: string
   status?: number
@@ -137,4 +173,19 @@ export const systemApi = {
     }),
   downloadAttachment: (id: number) =>
     http.get<Blob>(`/system/attachments/${id}/content`, { responseType: 'blob' }),
+
+  parameters: (params?: { keyword?: string; groupCode?: string }) =>
+    getData<ParameterRow[]>('/system/parameters', params),
+  createParameter: (data: object) => http.post('/system/parameters', data),
+  updateParameter: (id: number, data: object) => http.put(`/system/parameters/${id}`, data),
+  deleteParameter: (id: number) => http.delete(`/system/parameters/${id}`),
+
+  numberRules: (params?: { keyword?: string }) =>
+    getData<NumberRuleRow[]>('/system/number-rules', params),
+  createNumberRule: (data: object) => http.post('/system/number-rules', data),
+  updateNumberRule: (id: number, data: object) => http.put(`/system/number-rules/${id}`, data),
+  generateNumber: (ruleCode: string) =>
+    http.post<ApiResponse<GeneratedNumber>>(
+      `/system/number-rules/${encodeURIComponent(ruleCode)}/generate`,
+    ),
 }
