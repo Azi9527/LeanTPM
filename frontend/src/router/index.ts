@@ -180,6 +180,48 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '点检统计', permission: 'inspection:statistics:view' },
       },
       {
+        path: 'maintenance/items',
+        name: 'MaintenanceItems',
+        component: () => import('@/views/maintenance/items/MaintenanceItemView.vue'),
+        meta: { title: '维保项目', permission: 'maintenance:item:view' },
+      },
+      {
+        path: 'maintenance/schemes',
+        name: 'MaintenanceSchemes',
+        component: () => import('@/views/maintenance/schemes/MaintenanceSchemeView.vue'),
+        meta: { title: '维保方案', permission: 'maintenance:scheme:view' },
+      },
+      {
+        path: 'maintenance/plans',
+        name: 'MaintenancePlans',
+        component: () => import('@/views/maintenance/plans/MaintenancePlanView.vue'),
+        meta: { title: '维保计划', permission: 'maintenance:plan:view' },
+      },
+      {
+        path: 'maintenance/tasks',
+        name: 'MaintenanceTasks',
+        component: () => import('@/views/maintenance/tasks/MaintenanceTaskView.vue'),
+        meta: { title: '维保任务', permission: 'maintenance:task:view' },
+      },
+      {
+        path: 'maintenance/my-tasks',
+        name: 'MyMaintenanceTasks',
+        component: () => import('@/views/maintenance/mobile/MyMaintenanceTaskView.vue'),
+        meta: { title: '我的维保', permission: 'maintenance:my-task:view' },
+      },
+      {
+        path: 'maintenance/abnormal',
+        name: 'MaintenanceAbnormal',
+        component: () => import('@/views/maintenance/abnormal/MaintenanceAbnormalView.vue'),
+        meta: { title: '维保异常', permission: 'maintenance:abnormal:view' },
+      },
+      {
+        path: 'maintenance/statistics',
+        name: 'MaintenanceStatistics',
+        component: () => import('@/views/maintenance/statistics/MaintenanceStatisticsView.vue'),
+        meta: { title: '维保统计', permission: 'maintenance:statistics:view' },
+      },
+      {
         path: 'coming-soon/:module',
         name: 'ComingSoon',
         component: () => import('@/views/common/ComingSoonView.vue'),

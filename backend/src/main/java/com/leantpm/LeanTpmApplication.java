@@ -19,6 +19,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
         "com.leantpm.masterdata",
         "com.leantpm.equipment",
         "com.leantpm.inspection",
+        "com.leantpm.maintenance",
         "com.leantpm.security.datascope"
 })
 @EnableConfigurationProperties({

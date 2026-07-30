@@ -36,7 +36,7 @@ class MySqlMigrationIntegrationTest {
     @Test
     void appliesEveryMigrationAndFoundationTable() throws Exception {
         assertThat(number("SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1"))
-                .isEqualTo(9);
+                .isEqualTo(10);
         assertThat(number("""
                 SELECT COUNT(*)
                 FROM information_schema.tables
@@ -68,9 +68,25 @@ class MySqlMigrationIntegrationTest {
                     'inspection_task_result',
                     'inspection_abnormal',
                     'inspection_attachment',
-                    'inspection_task_event'
+                    'inspection_task_event',
+                    'maintenance_item',
+                    'maintenance_scheme',
+                    'maintenance_scheme_version',
+                    'maintenance_scheme_item',
+                    'maintenance_scheme_category',
+                    'maintenance_scheme_equipment',
+                    'maintenance_plan',
+                    'maintenance_task',
+                    'maintenance_task_item',
+                    'maintenance_task_result',
+                    'maintenance_task_collaborator',
+                    'maintenance_task_pause',
+                    'maintenance_material_usage',
+                    'maintenance_abnormal',
+                    'maintenance_attachment',
+                    'maintenance_task_event'
                   )
-                """)).isEqualTo(27);
+                """)).isEqualTo(43);
     }
 
     @Test

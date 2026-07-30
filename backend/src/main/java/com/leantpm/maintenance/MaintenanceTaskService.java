@@ -1,4 +1,4 @@
-package com.leantpm.inspection;
+package com.leantpm.maintenance;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -28,11 +28,11 @@ import java.util.Locale;
 import java.util.Set;
 
 @Service
-public class InspectionTaskService {
+public class MaintenanceTaskService {
     private static final Set<String> EDITABLE_STATUSES =
-            Set.of("PENDING", "IN_PROGRESS", "OVERDUE");
+            Set.of("IN_PROGRESS");
 
-    private final InspectionMapper mapper;
+    private final MaintenanceMapper mapper;
     private final NumberRuleService numberRuleService;
     private final ParameterService parameterService;
     private final DataPermissionService dataPermissionService;
@@ -40,8 +40,8 @@ public class InspectionTaskService {
     private final ObjectMapper objectMapper;
     private final EquipmentService equipmentService;
 
-    public InspectionTaskService(
-            InspectionMapper mapper,
+    public MaintenanceTaskService(
+            MaintenanceMapper mapper,
             NumberRuleService numberRuleService,
             ParameterService parameterService,
             DataPermissionService dataPermissionService,
@@ -59,7 +59,7 @@ public class InspectionTaskService {
     }
 
     @Transactional(readOnly = true)
-    public PageResult<InspectionDtos.TaskRow> tasks(
+    public PageResult<MaintenanceDtos.TaskRow> tasks(
             String keyword,
             String taskStatus,
             LocalDate plannedDate,
@@ -86,40 +86,49 @@ public class InspectionTaskService {
     }
 
     @Transactional(readOnly = true)
-    public InspectionDtos.TaskDetail detail(long id) {
+    public MaintenanceDtos.TaskDetail detail(long id) {
         var current = SecurityUtils.currentUser();
-        InspectionDtos.TaskRow task = requireTask(
+        MaintenanceDtos.TaskRow task = requireTask(
                 current.tenantId(), id, dataPermissionService.current()
         );
         return taskDetail(current.tenantId(), task);
     }
 
     @Transactional
-    public InspectionDtos.GenerationResult generateDueTasks() {
+    public MaintenanceDtos.GenerationResult generateDueTasks() {
         var current = SecurityUtils.currentUser();
         return generateScheduled(current.tenantId(), current.userId());
     }
 
     @Transactional
-    public InspectionDtos.GenerationResult generateScheduled(long tenantId, long operatorId) {
+    public MaintenanceDtos.GenerationResult generateScheduled(long tenantId, long operatorId) {
         int lookahead = parseLookahead(tenantId);
         return generate(tenantId, operatorId, LocalDate.now().plusDays(lookahead));
     }
 
     @Transactional
-    public InspectionDtos.GenerationResult generate(
+    public MaintenanceDtos.GenerationResult generate(
             long tenantId,
             long operatorId,
             LocalDate throughDate
     ) {
-        List<InspectionMapper.GenerationPlan> plans =
+        List<MaintenanceMapper.GenerationPlan> plans =
                 mapper.findGenerationPlans(tenantId, throughDate);
         List<String> taskCodes = new ArrayList<>();
         int generated = 0;
         int skipped = 0;
-        for (InspectionMapper.GenerationPlan plan : plans) {
-            LocalDate occurrence = plan.nextGenerationDate();
-            while (!occurrence.isAfter(throughDate)) {
+        for (MaintenanceMapper.GenerationPlan plan : plans) {
+            boolean meterBased = Set.of(
+                    "RUNNING_HOURS", "PRODUCTION_QUANTITY"
+            ).contains(plan.cycleType());
+            LocalDate planThroughDate = LocalDate.now().plusDays(
+                    Math.max(0, plan.generationLeadDays())
+            );
+            if (planThroughDate.isAfter(throughDate)) {
+                planThroughDate = throughDate;
+            }
+            LocalDate occurrence = meterBased ? LocalDate.now() : plan.nextGenerationDate();
+            while (meterBased || !occurrence.isAfter(planThroughDate)) {
                 if (plan.expiryDate() != null && occurrence.isAfter(plan.expiryDate())) {
                     break;
                 }
@@ -127,10 +136,12 @@ public class InspectionTaskService {
                     occurrence = nextOccurrence(plan, occurrence);
                     continue;
                 }
-                String occurrenceKey = occurrence.toString();
+                String occurrenceKey = meterBased
+                        ? plan.cycleType() + ":" + plan.nextTriggerValue().stripTrailingZeros()
+                        : occurrence.toString();
                 Long existing = mapper.findTaskIdByOccurrence(tenantId, plan.id(), occurrenceKey);
                 if (existing == null) {
-                    InspectionMapper.EquipmentSnapshot equipment =
+                    MaintenanceMapper.EquipmentSnapshot equipment =
                             mapper.findEquipmentSnapshot(
                                     tenantId, plan.equipmentId(), DataPermission.all(operatorId)
                             );
@@ -138,7 +149,7 @@ public class InspectionTaskService {
                         skipped++;
                     } else {
                         String code = numberRuleService.generate(
-                                tenantId, operatorId, "INSPECTION_TASK"
+                                tenantId, operatorId, "MAINTENANCE_TASK"
                         ).businessNumber();
                         LocalDateTime start = occurrence.atTime(
                                 plan.scheduledTime() == null ? LocalTime.of(8, 0)
@@ -156,8 +167,10 @@ public class InspectionTaskService {
                             mapper.copyTaskItems(
                                     tenantId, taskId, plan.schemeVersionId()
                             );
+                            String initialStatus = plan.assigneeUserId() == null
+                                    ? "PENDING_ASSIGNMENT" : "PENDING";
                             mapper.insertTaskEvent(
-                                    tenantId, taskId, "GENERATED", null, "PENDING",
+                                    tenantId, taskId, "GENERATED", null, initialStatus,
                                     "计划自动生成", operatorId
                             );
                             generated++;
@@ -170,32 +183,38 @@ public class InspectionTaskService {
                     skipped++;
                 }
                 LocalDate completedOccurrence = occurrence;
+                if (meterBased) {
+                    mapper.updateMeterPlanGeneration(
+                            tenantId, plan.id(), completedOccurrence, operatorId
+                    );
+                    break;
+                }
                 occurrence = nextOccurrence(plan, occurrence);
                 mapper.updatePlanGeneration(
                         tenantId, plan.id(), completedOccurrence, occurrence, operatorId
                 );
             }
         }
-        return new InspectionDtos.GenerationResult(
+        return new MaintenanceDtos.GenerationResult(
                 plans.size(), generated, skipped, List.copyOf(taskCodes)
         );
     }
 
     @Transactional
-    public long createManualTask(InspectionDtos.ManualTaskRequest request) {
+    public long createManualTask(MaintenanceDtos.ManualTaskRequest request) {
         var current = SecurityUtils.currentUser();
         DataPermission scope = dataPermissionService.current();
-        InspectionDtos.SchemeVersionRow version =
+        MaintenanceDtos.SchemeVersionRow version =
                 mapper.findSchemeVersion(current.tenantId(), request.schemeVersionId());
         if (version == null || !"PUBLISHED".equals(version.versionStatus())) {
             throw new BusinessException(
-                    "INSPECTION_SCHEME_VERSION_NOT_PUBLISHED", "只能按已发布方案创建任务"
+                    "MAINTENANCE_SCHEME_VERSION_NOT_PUBLISHED", "只能按已发布方案创建任务"
             );
         }
         if (Boolean.TRUE.equals(request.backfill())
                 && !Boolean.TRUE.equals(version.backfillAllowedFlag())) {
             throw new BusinessException(
-                    "INSPECTION_BACKFILL_NOT_ALLOWED", "该方案不允许补录任务"
+                    "MAINTENANCE_BACKFILL_NOT_ALLOWED", "该方案不允许补录任务"
             );
         }
         if (request.dueTime().isBefore(
@@ -204,17 +223,17 @@ public class InspectionTaskService {
                         : request.plannedStartTime()
         )) {
             throw new BusinessException(
-                    "INSPECTION_TASK_DUE_INVALID", "截止时间不能早于计划开始时间"
+                    "MAINTENANCE_TASK_DUE_INVALID", "截止时间不能早于计划开始时间"
             );
         }
-        InspectionDtos.SchemeRow scheme =
+        MaintenanceDtos.SchemeRow scheme =
                 mapper.findScheme(current.tenantId(), version.schemeId());
         if (scheme == null) {
             throw new BusinessException(
-                    "INSPECTION_SCHEME_NOT_FOUND", "点检方案不存在", HttpStatus.NOT_FOUND
+                    "MAINTENANCE_SCHEME_NOT_FOUND", "维保方案不存在", HttpStatus.NOT_FOUND
             );
         }
-        InspectionMapper.EquipmentSnapshot equipment = mapper.findEquipmentSnapshot(
+        MaintenanceMapper.EquipmentSnapshot equipment = mapper.findEquipmentSnapshot(
                 current.tenantId(), request.equipmentId(), scope
         );
         if (equipment == null) {
@@ -230,7 +249,7 @@ public class InspectionTaskService {
             );
         }
         String code = numberRuleService.generate(
-                current.tenantId(), current.userId(), "INSPECTION_TASK"
+                current.tenantId(), current.userId(), "MAINTENANCE_TASK"
         ).businessNumber();
         mapper.insertManualTask(
                 current.tenantId(), code, scheme, version, equipment, request, current.userId()
@@ -238,26 +257,27 @@ public class InspectionTaskService {
         Long taskId = mapper.findTaskIdByCode(current.tenantId(), code);
         if (taskId == null) {
             throw new BusinessException(
-                    "INSPECTION_TASK_CREATE_FAILED", "点检任务创建失败",
+                    "MAINTENANCE_TASK_CREATE_FAILED", "维保任务创建失败",
                     HttpStatus.INTERNAL_SERVER_ERROR
             );
         }
         mapper.copyTaskItems(current.tenantId(), taskId, version.id());
         mapper.insertTaskEvent(
-                current.tenantId(), taskId, "CREATED", null, "PENDING",
+                current.tenantId(), taskId, "CREATED", null,
+                request.assigneeUserId() == null ? "PENDING_ASSIGNMENT" : "PENDING",
                 clean(request.remark()), current.userId()
         );
         changeLogService.record(
-                "INSPECTION_TASK", taskId, "CREATE", null,
+                "MAINTENANCE_TASK", taskId, "CREATE", null,
                 mapper.findTask(current.tenantId(), taskId, DataPermission.all(current.userId()))
         );
         return taskId;
     }
 
     @Transactional
-    public void assign(long id, InspectionDtos.AssignTaskRequest request) {
+    public void assign(long id, MaintenanceDtos.AssignTaskRequest request) {
         var current = SecurityUtils.currentUser();
-        InspectionDtos.TaskRow before = requireTask(
+        MaintenanceDtos.TaskRow before = requireTask(
                 current.tenantId(), id, dataPermissionService.current()
         );
         if (mapper.countActiveUser(current.tenantId(), request.assigneeUserId()) == 0) {
@@ -268,32 +288,161 @@ public class InspectionTaskService {
         if (mapper.assignTask(current.tenantId(), id, request, current.userId()) == 0) {
             throw optimisticConflict();
         }
+        MaintenanceDtos.TaskRow after = mapper.findTask(
+                current.tenantId(), id, DataPermission.all(current.userId())
+        );
+        String event = before.assigneeUserId() == null ? "ASSIGNED" : "TRANSFERRED";
         mapper.insertTaskEvent(
-                current.tenantId(), id, "ASSIGNED", before.taskStatus(), before.taskStatus(),
+                current.tenantId(), id, event, before.taskStatus(), after.taskStatus(),
                 "任务已派给用户 " + request.assigneeUserId(), current.userId()
         );
         changeLogService.record(
-                "INSPECTION_TASK", id, "ASSIGN", before,
+                "MAINTENANCE_TASK", id, "ASSIGN", before,
                 mapper.findTask(current.tenantId(), id, DataPermission.all(current.userId()))
         );
     }
 
     @Transactional
-    public void saveDraft(long id, InspectionDtos.SaveTaskResultsRequest request) {
+    public void replaceCollaborators(
+            long id,
+            MaintenanceDtos.CollaboratorRequest request
+    ) {
+        var current = SecurityUtils.currentUser();
+        MaintenanceDtos.TaskRow before = requireTask(
+                current.tenantId(), id, dataPermissionService.current()
+        );
+        Set<Long> userIds = new java.util.LinkedHashSet<>(
+                request.userIds() == null ? List.of() : request.userIds()
+        );
+        userIds.remove(before.assigneeUserId());
+        for (Long userId : userIds) {
+            if (mapper.countActiveUser(current.tenantId(), userId) == 0) {
+                throw new BusinessException(
+                        "USER_NOT_FOUND", "协同人员不存在或已停用", HttpStatus.NOT_FOUND
+                );
+            }
+        }
+        if (mapper.touchTask(
+                current.tenantId(), id, request.version(), current.userId()
+        ) == 0) {
+            throw optimisticConflict();
+        }
+        mapper.deleteTaskCollaborators(current.tenantId(), id);
+        for (Long userId : userIds) {
+            mapper.insertTaskCollaborator(
+                    current.tenantId(), id, userId, current.userId()
+            );
+        }
+        mapper.insertTaskEvent(
+                current.tenantId(), id, "COLLABORATORS_CHANGED",
+                before.taskStatus(), before.taskStatus(),
+                "协同人员数量：" + userIds.size(), current.userId()
+        );
+    }
+
+    @Transactional
+    public void start(long id, MaintenanceDtos.TaskActionRequest request) {
+        CurrentUser current = SecurityUtils.currentUser();
+        MaintenanceDtos.TaskRow task = requireTask(
+                current.tenantId(), id, dataPermissionService.current()
+        );
+        assertCanExecute(current, task);
+        if (!Set.of("PENDING", "OVERDUE").contains(task.taskStatus())) {
+            throw invalidTransition(task.taskStatus(), "IN_PROGRESS");
+        }
+        MaintenanceMapper.EquipmentRuntime runtime =
+                mapper.findEquipmentRuntime(current.tenantId(), task.equipmentId());
+        if (runtime == null) {
+            throw new BusinessException(
+                    "EQUIPMENT_STATUS_NOT_FOUND", "设备当前状态不存在", HttpStatus.NOT_FOUND
+            );
+        }
+        if (Boolean.TRUE.equals(task.stopRequiredFlag())
+                && !"MAINTENANCE".equals(runtime.statusCode())) {
+            equipmentService.changeStatusFromBusiness(
+                    task.equipmentId(),
+                    new EquipmentDtos.ChangeStatusRequest(
+                            "MAINTENANCE",
+                            "维保任务 " + task.taskCode() + " 开始，设备进入保养状态",
+                            "MAINTENANCE",
+                            runtime.statusVersion()
+                    )
+            );
+        }
+        if (mapper.startTask(
+                current.tenantId(), id, task.taskStatus(), request.version(),
+                runtime.statusCode(), current.userId()
+        ) == 0) {
+            throw optimisticConflict();
+        }
+        mapper.insertTaskEvent(
+                current.tenantId(), id, "STARTED", task.taskStatus(), "IN_PROGRESS",
+                clean(request.remark()), current.userId()
+        );
+    }
+
+    @Transactional
+    public void pause(long id, MaintenanceDtos.PauseTaskRequest request) {
+        CurrentUser current = SecurityUtils.currentUser();
+        MaintenanceDtos.TaskRow task = requireTask(
+                current.tenantId(), id, dataPermissionService.current()
+        );
+        assertCanExecute(current, task);
+        if (!"IN_PROGRESS".equals(task.taskStatus())) {
+            throw invalidTransition(task.taskStatus(), "PAUSED");
+        }
+        if (mapper.pauseTask(
+                current.tenantId(), id, request.version(), current.userId()
+        ) == 0) {
+            throw optimisticConflict();
+        }
+        mapper.insertTaskPause(
+                current.tenantId(), id, request.reason().trim(), current.userId()
+        );
+        mapper.insertTaskEvent(
+                current.tenantId(), id, "PAUSED", "IN_PROGRESS", "PAUSED",
+                request.reason().trim(), current.userId()
+        );
+    }
+
+    @Transactional
+    public void resume(long id, MaintenanceDtos.TaskActionRequest request) {
+        CurrentUser current = SecurityUtils.currentUser();
+        MaintenanceDtos.TaskRow task = requireTask(
+                current.tenantId(), id, dataPermissionService.current()
+        );
+        assertCanExecute(current, task);
+        if (!"PAUSED".equals(task.taskStatus())) {
+            throw invalidTransition(task.taskStatus(), "IN_PROGRESS");
+        }
+        if (mapper.resumeTask(
+                current.tenantId(), id, request.version(), current.userId()
+        ) == 0) {
+            throw optimisticConflict();
+        }
+        mapper.closeTaskPause(current.tenantId(), id, current.userId());
+        mapper.insertTaskEvent(
+                current.tenantId(), id, "RESUMED", "PAUSED", "IN_PROGRESS",
+                clean(request.remark()), current.userId()
+        );
+    }
+
+    @Transactional
+    public void saveDraft(long id, MaintenanceDtos.SaveTaskResultsRequest request) {
         CurrentUser current = SecurityUtils.currentUser();
         DataPermission scope = dataPermissionService.current();
-        InspectionDtos.TaskRow task = requireTask(current.tenantId(), id, scope);
+        MaintenanceDtos.TaskRow task = requireTask(current.tenantId(), id, scope);
         assertCanExecute(current, task);
         if (!EDITABLE_STATUSES.contains(task.taskStatus())) {
             throw new BusinessException(
-                    "INSPECTION_TASK_NOT_EDITABLE", "当前任务状态不允许录入结果",
+                    "MAINTENANCE_TASK_NOT_EDITABLE", "当前任务状态不允许录入结果",
                     HttpStatus.CONFLICT
             );
         }
         if (task.version() != request.taskVersion()) {
             throw optimisticConflict();
         }
-        for (InspectionDtos.SaveResultRequest resultRequest : request.results()) {
+        for (MaintenanceDtos.SaveResultRequest resultRequest : request.results()) {
             saveResult(current, task, resultRequest);
         }
         if (mapper.updateTaskAfterDraft(
@@ -304,89 +453,92 @@ public class InspectionTaskService {
         }
         mapper.insertTaskEvent(
                 current.tenantId(), id, "DRAFT_SAVED", task.taskStatus(), "IN_PROGRESS",
-                "保存点检草稿", current.userId()
+                "保存维保草稿", current.userId()
         );
     }
 
     @Transactional
-    public void submit(long id, InspectionDtos.SaveTaskResultsRequest request) {
+    public void submit(long id, MaintenanceDtos.SaveTaskResultsRequest request) {
         CurrentUser current = SecurityUtils.currentUser();
         saveDraft(id, request);
-        InspectionDtos.TaskRow task = requireTask(
+        MaintenanceDtos.TaskRow task = requireTask(
                 current.tenantId(), id, DataPermission.all(current.userId())
         );
         if (mapper.countMissingRequiredResults(current.tenantId(), id) > 0) {
             throw new BusinessException(
-                    "INSPECTION_RESULT_REQUIRED_MISSING", "必填点检项目尚未完整填写"
+                    "MAINTENANCE_RESULT_REQUIRED_MISSING", "必填维保项目尚未完整填写"
             );
         }
         if (mapper.countInvalidResultAttachments(current.tenantId(), id) > 0) {
             throw new BusinessException(
-                    "INSPECTION_RESULT_PHOTO_REQUIRED", "存在未上传必需照片的点检项目"
+                    "MAINTENANCE_RESULT_PHOTO_REQUIRED", "存在未上传必需照片的维保项目"
             );
         }
         mapper.submitResults(current.tenantId(), id);
         createAbnormalities(current, task);
-        String targetStatus = Boolean.TRUE.equals(task.reviewRequiredFlag())
-                ? "PENDING_REVIEW" : "COMPLETED";
-        if (mapper.updateTaskStatus(
-                current.tenantId(), id, task.version(), "IN_PROGRESS", targetStatus,
+        if (mapper.finishTask(
+                current.tenantId(), id, task.version(),
                 clean(request.executionRemark()), current.userId()
         ) == 0) {
             throw optimisticConflict();
         }
         mapper.insertTaskEvent(
-                current.tenantId(), id, "SUBMITTED", "IN_PROGRESS", targetStatus,
-                "提交点检结果", current.userId()
+                current.tenantId(), id, "FINISHED", "IN_PROGRESS", "PENDING_CONFIRMATION",
+                "提交维保结果", current.userId()
         );
         changeLogService.record(
-                "INSPECTION_TASK", id, "SUBMIT", task,
+                "MAINTENANCE_TASK", id, "SUBMIT", task,
                 mapper.findTask(current.tenantId(), id, DataPermission.all(current.userId()))
         );
     }
 
     @Transactional
-    public void review(long id, InspectionDtos.ReviewTaskRequest request) {
+    public void review(long id, MaintenanceDtos.ReviewTaskRequest request) {
         var current = SecurityUtils.currentUser();
-        InspectionDtos.TaskRow before = requireTask(
+        MaintenanceDtos.TaskRow before = requireTask(
                 current.tenantId(), id, dataPermissionService.current()
         );
-        if (!"PENDING_REVIEW".equals(before.taskStatus())) {
+        if (!"PENDING_CONFIRMATION".equals(before.taskStatus())) {
             throw new BusinessException(
-                    "INSPECTION_TASK_NOT_REVIEWABLE", "当前任务状态不允许复核",
+                    "MAINTENANCE_TASK_NOT_CONFIRMABLE", "当前任务状态不允许确认",
                     HttpStatus.CONFLICT
             );
         }
         if (!Boolean.TRUE.equals(request.approved()) && clean(request.comment()) == null) {
             throw new BusinessException(
-                    "INSPECTION_REVIEW_COMMENT_REQUIRED", "驳回时必须填写原因"
+                    "MAINTENANCE_REVIEW_COMMENT_REQUIRED", "驳回时必须填写原因"
             );
         }
-        String target = Boolean.TRUE.equals(request.approved()) ? "COMPLETED" : "IN_PROGRESS";
-        if (mapper.reviewTask(
-                current.tenantId(), id, request, target, current.userId()
-        ) == 0) {
+        boolean approved = Boolean.TRUE.equals(request.approved());
+        int updated = approved
+                ? mapper.confirmTask(current.tenantId(), id, request, current.userId())
+                : mapper.returnTask(current.tenantId(), id, request, current.userId());
+        if (updated == 0) {
             throw optimisticConflict();
         }
+        String target = approved ? "COMPLETED" : "IN_PROGRESS";
         mapper.insertTaskEvent(
                 current.tenantId(), id,
-                Boolean.TRUE.equals(request.approved()) ? "REVIEW_APPROVED" : "REVIEW_REJECTED",
-                "PENDING_REVIEW", target, clean(request.comment()), current.userId()
+                approved ? "CONFIRMED" : "RETURNED",
+                "PENDING_CONFIRMATION", target, clean(request.comment()), current.userId()
         );
+        if (approved) {
+            restoreEquipmentStatus(current, before);
+        }
         changeLogService.record(
-                "INSPECTION_TASK", id, "REVIEW", before,
+                "MAINTENANCE_TASK", id, "REVIEW", before,
                 mapper.findTask(current.tenantId(), id, DataPermission.all(current.userId()))
         );
     }
 
     @Transactional
-    public void close(long id, String targetStatus, InspectionDtos.CloseTaskRequest request) {
+    public void close(long id, String targetStatus, MaintenanceDtos.CloseTaskRequest request) {
         var current = SecurityUtils.currentUser();
         String target = upper(targetStatus);
         if (!Set.of("CANCELLED", "VOIDED").contains(target)) {
-            throw new BusinessException("INSPECTION_TASK_CLOSE_STATUS_INVALID", "任务关闭状态不正确");
+            throw new BusinessException("MAINTENANCE_TASK_CLOSE_STATUS_INVALID", "任务关闭状态不正确");
         }
-        InspectionDtos.TaskRow before = requireTask(
+        MaintenanceDtos.TaskRow before = requireTask(
                 current.tenantId(), id, dataPermissionService.current()
         );
         if (mapper.closeTask(
@@ -398,14 +550,76 @@ public class InspectionTaskService {
                 current.tenantId(), id, target, before.taskStatus(), target,
                 request.reason().trim(), current.userId()
         );
+        if ("PAUSED".equals(before.taskStatus())) {
+            mapper.closeTaskPause(current.tenantId(), id, current.userId());
+        }
+        restoreEquipmentStatus(current, before);
         changeLogService.record(
-                "INSPECTION_TASK", id, target, before,
+                "MAINTENANCE_TASK", id, target, before,
                 mapper.findTask(current.tenantId(), id, DataPermission.all(current.userId()))
         );
     }
 
+    @Transactional
+    public void saveMaterial(
+            long taskId,
+            MaintenanceDtos.MaterialUsageRequest request
+    ) {
+        CurrentUser current = SecurityUtils.currentUser();
+        MaintenanceDtos.TaskRow task = requireTask(
+                current.tenantId(), taskId, dataPermissionService.current()
+        );
+        assertCanExecute(current, task);
+        if (!"IN_PROGRESS".equals(task.taskStatus())) {
+            throw new BusinessException(
+                    "MAINTENANCE_MATERIAL_NOT_EDITABLE", "只有执行中的任务可以登记备件"
+            );
+        }
+        if (request.quantity().compareTo(BigDecimal.ZERO) <= 0
+                || request.unitCost() != null
+                && request.unitCost().compareTo(BigDecimal.ZERO) < 0) {
+            throw new BusinessException(
+                    "MAINTENANCE_MATERIAL_VALUE_INVALID", "备件数量必须大于零且单价不能为负数"
+            );
+        }
+        if (request.id() == null) {
+            mapper.insertMaterial(current.tenantId(), taskId, request, current.userId());
+        } else {
+            if (request.version() == null || mapper.updateMaterial(
+                    current.tenantId(), taskId, request, current.userId()
+            ) == 0) {
+                throw optimisticConflict();
+            }
+        }
+        mapper.insertTaskEvent(
+                current.tenantId(), taskId, "MATERIAL_SAVED",
+                task.taskStatus(), task.taskStatus(),
+                request.materialCode() + " × " + request.quantity(), current.userId()
+        );
+    }
+
+    @Transactional
+    public void deleteMaterial(long taskId, long materialId, int version) {
+        CurrentUser current = SecurityUtils.currentUser();
+        MaintenanceDtos.TaskRow task = requireTask(
+                current.tenantId(), taskId, dataPermissionService.current()
+        );
+        assertCanExecute(current, task);
+        if (!"IN_PROGRESS".equals(task.taskStatus())
+                || mapper.deleteMaterial(
+                current.tenantId(), taskId, materialId, version, current.userId()
+        ) == 0) {
+            throw optimisticConflict();
+        }
+        mapper.insertTaskEvent(
+                current.tenantId(), taskId, "MATERIAL_DELETED",
+                task.taskStatus(), task.taskStatus(),
+                "删除备件耗用记录 " + materialId, current.userId()
+        );
+    }
+
     @Transactional(readOnly = true)
-    public PageResult<InspectionDtos.AbnormalRow> abnormalities(
+    public PageResult<MaintenanceDtos.AbnormalRow> abnormalities(
             String keyword,
             String status,
             int page,
@@ -428,15 +642,15 @@ public class InspectionTaskService {
     }
 
     @Transactional
-    public void handleAbnormal(long id, InspectionDtos.HandleAbnormalRequest request) {
+    public void handleAbnormal(long id, MaintenanceDtos.HandleAbnormalRequest request) {
         var current = SecurityUtils.currentUser();
-        InspectionDtos.AbnormalRow before = requireAbnormal(
+        MaintenanceDtos.AbnormalRow before = requireAbnormal(
                 current.tenantId(), id, dataPermissionService.current()
         );
         if ("PENDING_VERIFY".equals(request.targetStatus())
                 && clean(request.finalResult()) == null) {
             throw new BusinessException(
-                    "INSPECTION_ABNORMAL_RESULT_REQUIRED", "提交验证前必须填写最终处理结果"
+                    "MAINTENANCE_ABNORMAL_RESULT_REQUIRED", "提交验证前必须填写最终处理结果"
             );
         }
         if (request.responsibleUserId() != null
@@ -459,15 +673,15 @@ public class InspectionTaskService {
                         before.equipmentId(),
                         new EquipmentDtos.ChangeStatusRequest(
                                 requestedStatus,
-                                "点检异常 " + before.abnormalCode() + " 触发设备状态联动",
-                                "INSPECTION",
+                                "维保异常 " + before.abnormalCode() + " 触发设备状态联动",
+                                "MAINTENANCE",
                                 equipment.equipment().currentStatusVersion()
                         )
                 );
             }
         }
         changeLogService.record(
-                "INSPECTION_ABNORMAL", id, "HANDLE", before,
+                "MAINTENANCE_ABNORMAL", id, "HANDLE", before,
                 mapper.findAbnormal(
                         current.tenantId(), id, DataPermission.all(current.userId())
                 )
@@ -475,9 +689,9 @@ public class InspectionTaskService {
     }
 
     @Transactional
-    public void verifyAbnormal(long id, InspectionDtos.VerifyAbnormalRequest request) {
+    public void verifyAbnormal(long id, MaintenanceDtos.VerifyAbnormalRequest request) {
         var current = SecurityUtils.currentUser();
-        InspectionDtos.AbnormalRow before = requireAbnormal(
+        MaintenanceDtos.AbnormalRow before = requireAbnormal(
                 current.tenantId(), id, dataPermissionService.current()
         );
         String target = Boolean.TRUE.equals(request.passed()) ? "CLOSED" : "PROCESSING";
@@ -487,7 +701,7 @@ public class InspectionTaskService {
             throw optimisticConflict();
         }
         changeLogService.record(
-                "INSPECTION_ABNORMAL", id, "VERIFY", before,
+                "MAINTENANCE_ABNORMAL", id, "VERIFY", before,
                 mapper.findAbnormal(
                         current.tenantId(), id, DataPermission.all(current.userId())
                 )
@@ -495,15 +709,15 @@ public class InspectionTaskService {
     }
 
     @Transactional(readOnly = true)
-    public InspectionDtos.Statistics statistics() {
+    public MaintenanceDtos.Statistics statistics() {
         var current = SecurityUtils.currentUser();
-        InspectionDtos.Statistics value = mapper.statistics(
+        MaintenanceDtos.Statistics value = mapper.statistics(
                 current.tenantId(), dataPermissionService.current(), LocalDate.now()
         );
         if (value != null) {
             return value;
         }
-        return new InspectionDtos.Statistics(
+        return new MaintenanceDtos.Statistics(
                 0, 0, 0, 0, 0, BigDecimal.ZERO.setScale(2),
                 BigDecimal.ZERO.setScale(2)
         );
@@ -520,19 +734,19 @@ public class InspectionTaskService {
 
     private void saveResult(
             CurrentUser current,
-            InspectionDtos.TaskRow task,
-            InspectionDtos.SaveResultRequest request
+            MaintenanceDtos.TaskRow task,
+            MaintenanceDtos.SaveResultRequest request
     ) {
-        InspectionMapper.TaskItemData item =
+        MaintenanceMapper.TaskItemData item =
                 mapper.findTaskItem(current.tenantId(), task.id(), request.taskItemId());
         if (item == null) {
             throw new BusinessException(
-                    "INSPECTION_TASK_ITEM_NOT_FOUND", "任务点检项目不存在",
+                    "MAINTENANCE_TASK_ITEM_NOT_FOUND", "任务维保项目不存在",
                     HttpStatus.NOT_FOUND
             );
         }
         validateResult(item, request);
-        InspectionDtos.ResultRow existing =
+        MaintenanceDtos.ResultRow existing =
                 mapper.findResult(current.tenantId(), request.taskItemId());
         if (existing == null) {
             mapper.insertResult(
@@ -545,39 +759,53 @@ public class InspectionTaskService {
         ) == 0) {
             throw optimisticConflict();
         }
-        InspectionDtos.ResultRow saved =
+        MaintenanceDtos.ResultRow saved =
                 mapper.findResult(current.tenantId(), request.taskItemId());
         mapper.deleteResultAttachments(current.tenantId(), saved.id());
-        String attachmentType = "IMAGE".equals(item.resultType())
-                || Boolean.TRUE.equals(item.photoRequiredFlag())
-                ? "RESULT_PHOTO" : "RESULT_ATTACHMENT";
-        for (Long attachmentId : request.attachmentIds() == null
-                ? List.<Long>of() : request.attachmentIds()) {
+        saveAttachments(
+                current, task, saved.id(), request.beforeAttachmentIds(), "BEFORE_PHOTO"
+        );
+        saveAttachments(
+                current, task, saved.id(), request.afterAttachmentIds(), "AFTER_PHOTO"
+        );
+        saveAttachments(
+                current, task, saved.id(), request.attachmentIds(), "RESULT_ATTACHMENT"
+        );
+    }
+
+    private void saveAttachments(
+            CurrentUser current,
+            MaintenanceDtos.TaskRow task,
+            long resultId,
+            List<Long> attachmentIds,
+            String attachmentType
+    ) {
+        for (Long attachmentId : attachmentIds == null ? List.<Long>of() : attachmentIds) {
             if (mapper.countAvailableAttachment(current.tenantId(), attachmentId) == 0) {
                 throw new BusinessException(
                         "ATTACHMENT_NOT_FOUND", "附件不存在或不可用", HttpStatus.NOT_FOUND
                 );
             }
             mapper.replaceResultAttachments(
-                    current.tenantId(), task.id(), saved.id(), attachmentId,
+                    current.tenantId(), task.id(), resultId, attachmentId,
                     attachmentType, current.userId()
             );
         }
     }
 
     private void validateResult(
-            InspectionMapper.TaskItemData item,
-            InspectionDtos.SaveResultRequest request
+            MaintenanceMapper.TaskItemData item,
+            MaintenanceDtos.SaveResultRequest request
     ) {
         if (Boolean.TRUE.equals(request.skipped())) {
             if (!Boolean.TRUE.equals(item.skipAllowedFlag())) {
                 throw new BusinessException(
-                        "INSPECTION_RESULT_SKIP_NOT_ALLOWED", item.itemName() + " 不允许跳过"
+                        "MAINTENANCE_RESULT_SKIP_NOT_ALLOWED", item.itemName() + " 不允许跳过"
                 );
             }
             if (clean(request.skipReason()) == null) {
                 throw new BusinessException(
-                        "INSPECTION_RESULT_SKIP_REASON_REQUIRED", "跳过项目必须填写原因"
+                        "MAINTENANCE_RESULT_SKIP_REASON_REQUIRED", "跳过项目必须填写原因"
                 );
             }
             return;
@@ -585,7 +813,7 @@ public class InspectionTaskService {
         if (Boolean.TRUE.equals(request.abnormal())
                 && clean(request.abnormalDescription()) == null) {
             throw new BusinessException(
-                    "INSPECTION_ABNORMAL_DESCRIPTION_REQUIRED", "异常结果必须填写异常说明"
+                    "MAINTENANCE_ABNORMAL_DESCRIPTION_REQUIRED", "异常结果必须填写异常说明"
             );
         }
         String normalizedResultCode = upper(request.resultCode());
@@ -593,14 +821,14 @@ public class InspectionTaskService {
                 && Set.of("ABNORMAL", "FAIL").contains(normalizedResultCode)
                 && !Boolean.TRUE.equals(request.abnormal())) {
             throw new BusinessException(
-                    "INSPECTION_ABNORMAL_FLAG_REQUIRED",
+                    "MAINTENANCE_ABNORMAL_FLAG_REQUIRED",
                     item.itemName() + " 的异常结果必须标记异常"
             );
         }
         if ("NUMBER".equals(item.resultType())) {
             if (request.numericValue() == null) {
                 throw new BusinessException(
-                        "INSPECTION_RESULT_NUMBER_REQUIRED", item.itemName() + " 必须填写数值"
+                        "MAINTENANCE_RESULT_NUMBER_REQUIRED", item.itemName() + " 必须填写数值"
                 );
             }
             boolean outOfRange =
@@ -610,70 +838,73 @@ public class InspectionTaskService {
                             && request.numericValue().compareTo(item.maximumValue()) > 0;
             if (outOfRange && !Boolean.TRUE.equals(request.abnormal())) {
                 throw new BusinessException(
-                        "INSPECTION_RESULT_RANGE_ABNORMAL",
+                        "MAINTENANCE_RESULT_RANGE_ABNORMAL",
                         item.itemName() + " 超出标准范围，必须标记异常"
                 );
             }
         }
         if ("TEXT".equals(item.resultType()) && clean(request.textValue()) == null) {
             throw new BusinessException(
-                    "INSPECTION_RESULT_TEXT_REQUIRED", item.itemName() + " 必须填写文本结果"
+                    "MAINTENANCE_RESULT_TEXT_REQUIRED", item.itemName() + " 必须填写文本结果"
             );
         }
         if ("SINGLE_CHOICE".equals(item.resultType())
                 && clean(request.selectedValue()) == null) {
             throw new BusinessException(
-                    "INSPECTION_RESULT_CHOICE_REQUIRED", item.itemName() + " 必须选择结果"
+                    "MAINTENANCE_RESULT_CHOICE_REQUIRED", item.itemName() + " 必须选择结果"
             );
         }
         if ("MULTIPLE_CHOICE".equals(item.resultType())
                 && (request.selectedValues() == null || request.selectedValues().isEmpty())) {
             throw new BusinessException(
-                    "INSPECTION_RESULT_CHOICE_REQUIRED", item.itemName() + " 必须选择结果"
+                    "MAINTENANCE_RESULT_CHOICE_REQUIRED", item.itemName() + " 必须选择结果"
             );
         }
     }
 
-    private void createAbnormalities(CurrentUser current, InspectionDtos.TaskRow task) {
-        for (InspectionMapper.TaskItemData item : mapper.findTaskItems(
+    private void createAbnormalities(CurrentUser current, MaintenanceDtos.TaskRow task) {
+        for (MaintenanceMapper.TaskItemData item : mapper.findTaskItems(
                 current.tenantId(), task.id()
         )) {
-            InspectionDtos.ResultRow result =
+            MaintenanceDtos.ResultRow result =
                     mapper.findResult(current.tenantId(), item.id());
             if (result != null && Boolean.TRUE.equals(result.abnormalFlag())) {
                 String code = numberRuleService.generate(
-                        current.tenantId(), current.userId(), "INSPECTION_ABNORMAL"
+                        current.tenantId(), current.userId(), "MAINTENANCE_ABNORMAL"
                 ).businessNumber();
                 mapper.insertAbnormal(
                         current.tenantId(), code, task, item, result.id(),
                         clean(result.abnormalDescription()) == null
-                                ? item.itemName() + "点检异常" : result.abnormalDescription(),
+                                ? item.itemName() + "维保异常" : result.abnormalDescription(),
                         current.userId()
                 );
             }
         }
     }
 
-    private InspectionDtos.TaskDetail taskDetail(long tenantId, InspectionDtos.TaskRow task) {
-        List<InspectionDtos.TaskItemRow> items = mapper.findTaskItems(tenantId, task.id())
+    private MaintenanceDtos.TaskDetail taskDetail(long tenantId, MaintenanceDtos.TaskRow task) {
+        List<MaintenanceDtos.TaskItemRow> items = mapper.findTaskItems(tenantId, task.id())
                 .stream()
                 .map(item -> withResult(tenantId, item))
                 .toList();
-        return new InspectionDtos.TaskDetail(
+        return new MaintenanceDtos.TaskDetail(
                 task,
                 items,
                 mapper.findTaskEvents(tenantId, task.id()),
-                mapper.findTaskAbnormalities(tenantId, task.id())
+                mapper.findTaskAbnormalities(tenantId, task.id()),
+                mapper.findTaskCollaborators(tenantId, task.id()),
+                mapper.findTaskPauses(tenantId, task.id()),
+                mapper.findTaskMaterials(tenantId, task.id())
         );
     }
 
-    private InspectionDtos.TaskItemRow withResult(
+    private MaintenanceDtos.TaskItemRow withResult(
             long tenantId,
-            InspectionMapper.TaskItemData item
+            MaintenanceMapper.TaskItemData item
     ) {
-        InspectionDtos.ResultRow result = mapper.findResult(tenantId, item.id());
+        MaintenanceDtos.ResultRow result = mapper.findResult(tenantId, item.id());
         if (result != null) {
-            result = new InspectionDtos.ResultRow(
+            result = new MaintenanceDtos.ResultRow(
                     result.id(), result.resultStatus(), result.resultCode(),
                     result.numericValue(), result.textValue(), result.selectedValue(),
                     result.selectedValuesJson(), result.abnormalFlag(),
@@ -683,29 +914,33 @@ public class InspectionTaskService {
                     mapper.findResultAttachmentIds(tenantId, result.id())
             );
         }
-        return new InspectionDtos.TaskItemRow(
+        return new MaintenanceDtos.TaskItemRow(
                 item.id(), item.taskId(), item.sourceItemId(), item.itemCode(),
-                item.itemName(), item.itemCategory(), item.inspectionPart(),
-                item.inspectionContent(), item.inspectionMethod(), item.inspectionTool(),
-                item.inspectionStandard(), item.standardValue(), item.minimumValue(),
+                item.itemName(), item.itemCategory(), item.maintenancePart(),
+                item.maintenanceContent(), item.maintenanceMethod(), item.maintenanceTool(),
+                item.maintenanceStandard(), item.standardValue(), item.minimumValue(),
                 item.maximumValue(), item.unit(), item.resultType(), item.resultOptionsJson(),
-                item.requiredFlag(), item.photoRequiredFlag(), item.numericRequiredFlag(),
-                item.skipAllowedFlag(), item.abnormalSeverity(), item.abnormalAdvice(),
+                item.requiredFlag(), item.photoRequiredFlag(), item.attachmentRequiredFlag(),
+                item.numericRequiredFlag(), item.skipAllowedFlag(),
+                item.stopRequiredFlag(), item.abnormalSeverity(), item.abnormalAdvice(),
                 item.standardMinutes(), item.safetyNotes(), item.sortOrder(), result
         );
     }
 
-    private LocalDate nextOccurrence(InspectionMapper.GenerationPlan plan, LocalDate current) {
+    private LocalDate nextOccurrence(MaintenanceMapper.GenerationPlan plan, LocalDate current) {
         return switch (plan.cycleType()) {
-            case "DAILY", "INTERVAL_DAYS" -> current.plusDays(plan.cycleInterval());
+            case "DAILY" -> current.plusDays(plan.cycleInterval());
             case "WEEKLY" -> nextMatchingDay(
                     current, plan.weekDays(), true, plan.cycleInterval()
             );
             case "MONTHLY" -> nextMatchingDay(
                     current, plan.monthDays(), false, plan.cycleInterval()
             );
+            case "QUARTERLY" -> current.plusMonths(3L * plan.cycleInterval());
+            case "HALF_YEARLY" -> current.plusMonths(6L * plan.cycleInterval());
+            case "YEARLY" -> current.plusYears(plan.cycleInterval());
             default -> throw new BusinessException(
-                    "INSPECTION_PLAN_CYCLE_INVALID", "点检计划周期不正确"
+                    "MAINTENANCE_PLAN_CYCLE_INVALID", "维保计划周期不正确"
             );
         };
     }
@@ -734,41 +969,80 @@ public class InspectionTaskService {
             candidate = candidate.plusDays(1);
         }
         throw new BusinessException(
-                "INSPECTION_PLAN_SCHEDULE_INVALID", "无法计算下一次点检日期"
+                "MAINTENANCE_PLAN_SCHEDULE_INVALID", "无法计算下一次维保日期"
         );
     }
 
-    private void assertCanExecute(CurrentUser current, InspectionDtos.TaskRow task) {
+    private void assertCanExecute(CurrentUser current, MaintenanceDtos.TaskRow task) {
         if (task.assigneeUserId() != null
                 && task.assigneeUserId() != current.userId()
-                && !current.permissions().contains("inspection:task:assign")) {
+                && mapper.countTaskCollaborator(
+                current.tenantId(), task.id(), current.userId()
+        ) == 0
+                && !current.permissions().contains("maintenance:task:assign")) {
             throw new BusinessException(
-                    "INSPECTION_TASK_ASSIGNEE_ONLY", "只能由任务执行人录入结果",
+                    "MAINTENANCE_TASK_ASSIGNEE_ONLY", "只能由任务执行人录入结果",
                     HttpStatus.FORBIDDEN
             );
         }
     }
 
-    private InspectionDtos.TaskRow requireTask(long tenantId, long id, DataPermission scope) {
-        InspectionDtos.TaskRow task = mapper.findTask(tenantId, id, scope);
+    private void restoreEquipmentStatus(
+            CurrentUser current,
+            MaintenanceDtos.TaskRow task
+    ) {
+        if (!Boolean.TRUE.equals(task.stopRequiredFlag())
+                || !parameterService.getBoolean(
+                current.tenantId(), "maintenance.restore-equipment-status", true
+        )) {
+            return;
+        }
+        MaintenanceMapper.EquipmentRuntime runtime =
+                mapper.findEquipmentRuntime(current.tenantId(), task.equipmentId());
+        if (runtime == null || !"MAINTENANCE".equals(runtime.statusCode())) {
+            return;
+        }
+        String target = clean(task.restoreStatusCode()) == null
+                ? "IDLE" : task.restoreStatusCode();
+        equipmentService.changeStatusFromBusiness(
+                task.equipmentId(),
+                new EquipmentDtos.ChangeStatusRequest(
+                        target,
+                        "维保任务 " + task.taskCode() + " 结束，恢复设备状态",
+                        "MAINTENANCE",
+                        runtime.statusVersion()
+                )
+        );
+    }
+
+    private BusinessException invalidTransition(String from, String to) {
+        return new BusinessException(
+                "MAINTENANCE_TASK_TRANSITION_INVALID",
+                "不允许从 " + from + " 切换到 " + to,
+                HttpStatus.CONFLICT
+        );
+    }
+
+    private MaintenanceDtos.TaskRow requireTask(long tenantId, long id, DataPermission scope) {
+        MaintenanceDtos.TaskRow task = mapper.findTask(tenantId, id, scope);
         if (task == null) {
             throw new BusinessException(
-                    "INSPECTION_TASK_NOT_FOUND", "点检任务不存在或无权访问",
+                    "MAINTENANCE_TASK_NOT_FOUND", "维保任务不存在或无权访问",
                     HttpStatus.NOT_FOUND
             );
         }
         return task;
     }
 
-    private InspectionDtos.AbnormalRow requireAbnormal(
+    private MaintenanceDtos.AbnormalRow requireAbnormal(
             long tenantId,
             long id,
             DataPermission scope
     ) {
-        InspectionDtos.AbnormalRow abnormal = mapper.findAbnormal(tenantId, id, scope);
+        MaintenanceDtos.AbnormalRow abnormal = mapper.findAbnormal(tenantId, id, scope);
         if (abnormal == null) {
             throw new BusinessException(
-                    "INSPECTION_ABNORMAL_NOT_FOUND", "点检异常不存在或无权访问",
+                    "MAINTENANCE_ABNORMAL_NOT_FOUND", "维保异常不存在或无权访问",
                     HttpStatus.NOT_FOUND
             );
         }
@@ -777,13 +1051,13 @@ public class InspectionTaskService {
 
     private int parseLookahead(long tenantId) {
         String value = parameterService.getString(
-                tenantId, "inspection.generation.lookahead-days", "7"
+                tenantId, "maintenance.generation.lookahead-days", "7"
         );
         try {
             return Math.max(0, Math.min(90, Integer.parseInt(value)));
         } catch (NumberFormatException exception) {
             throw new BusinessException(
-                    "INSPECTION_LOOKAHEAD_INVALID", "点检任务提前生成天数配置无效"
+                    "MAINTENANCE_LOOKAHEAD_INVALID", "维保任务提前生成天数配置无效"
             );
         }
     }
@@ -793,7 +1067,7 @@ public class InspectionTaskService {
             return objectMapper.writeValueAsString(value == null ? List.of() : value);
         } catch (JsonProcessingException exception) {
             throw new BusinessException(
-                    "INSPECTION_JSON_INVALID", "点检结果序列化失败",
+                    "MAINTENANCE_JSON_INVALID", "维保结果序列化失败",
                     HttpStatus.INTERNAL_SERVER_ERROR
             );
         }

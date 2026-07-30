@@ -356,8 +356,38 @@ public class EquipmentService {
     @Transactional
     public void changeStatus(long id, EquipmentDtos.ChangeStatusRequest request) {
         var current = SecurityUtils.currentUser();
+        changeStatus(
+                id, request, current, dataPermissionService.current()
+        );
+    }
+
+    /**
+     * 供点检、维保等已完成自身任务数据权限校验的领域服务调用。
+     * 该入口不暴露为控制器接口，仍执行设备状态机、来源类型和乐观锁校验。
+     */
+    @Transactional
+    public void changeStatusFromBusiness(
+            long id,
+            EquipmentDtos.ChangeStatusRequest request
+    ) {
+        var current = SecurityUtils.currentUser();
+        String source = upper(request.sourceType());
+        if (!Set.of("INSPECTION", "MAINTENANCE", "IOT", "SYSTEM").contains(source)) {
+            throw new BusinessException(
+                    "EQUIPMENT_STATUS_SOURCE_INVALID", "业务状态联动来源不正确"
+            );
+        }
+        changeStatus(id, request, current, DataPermission.all(current.userId()));
+    }
+
+    private void changeStatus(
+            long id,
+            EquipmentDtos.ChangeStatusRequest request,
+            com.leantpm.security.CurrentUser current,
+            DataPermission scope
+    ) {
         EquipmentDtos.EquipmentRow equipment =
-                requireAccessible(current.tenantId(), id, dataPermissionService.current());
+                requireAccessible(current.tenantId(), id, scope);
         String next = upper(request.statusCode());
         if (equipment.status() != 1 && !"NOT_ENABLED".equals(next)) {
             throw new BusinessException(
