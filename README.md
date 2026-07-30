@@ -18,7 +18,7 @@ LeanTPM
 - Maven 3.9+
 - Node.js 20.19+ 或 22.12+
 - MySQL 8.0+
-- Redis 7.x（第一阶段配置预留，当前核心登录链路不强依赖）
+- Redis 7.x（认证会话、令牌撤销、在线用户和登录失败限制必须使用）
 
 ## 快速启动
 
@@ -36,6 +36,8 @@ LeanTPM
    $env:LEANTPM_DB_PASSWORD = '你的数据库密码'
    $env:LEANTPM_JWT_SECRET = '至少32位的随机字符串'
    $env:LEANTPM_BOOTSTRAP_ADMIN_PASSWORD = '首次管理员密码'
+   $env:LEANTPM_REDIS_HOST = '127.0.0.1'
+   $env:LEANTPM_REDIS_PORT = '6379'
    ```
 
 3. 启动后端：
@@ -54,6 +56,8 @@ LeanTPM
    ```
 
 前端默认地址为 `http://localhost:5173`，后端接口为 `http://localhost:8080/api/v1`，接口文档为 `http://localhost:8080/swagger-ui.html`。
+
+Redis 不可用时，健康检查会显示异常，登录及受保护接口返回 `503 REDIS_UNAVAILABLE`，系统不会回退到不可撤销的无状态令牌。
 
 如果 8080 已被其他程序占用，可同时设置：
 

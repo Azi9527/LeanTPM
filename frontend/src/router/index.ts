@@ -75,6 +75,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '编号规则', permission: 'system:number-rule:view' },
       },
       {
+        path: 'system/online-users',
+        name: 'SystemOnlineUsers',
+        component: () => import('@/views/system/online-users/OnlineUserView.vue'),
+        meta: { title: '在线用户', permission: 'system:online-user:view' },
+      },
+      {
         path: 'coming-soon/:module',
         name: 'ComingSoon',
         component: () => import('@/views/common/ComingSoonView.vue'),

@@ -17,6 +17,7 @@ import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 @Service
 public class JwtTokenService {
@@ -32,21 +33,48 @@ public class JwtTokenService {
         this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
 
-    public TokenPair issue(CurrentUser user) {
+    public IssuedTokenPair issue(CurrentUser user) {
+        String sessionId = user.sessionId() == null || user.sessionId().isBlank()
+                ? UUID.randomUUID().toString()
+                : user.sessionId();
+        return issue(user, sessionId);
+    }
+
+    public IssuedTokenPair issue(CurrentUser user, String sessionId) {
         Instant now = Instant.now();
         Instant accessExpiresAt = now.plus(properties.getAccessTokenMinutes(), ChronoUnit.MINUTES);
         Instant refreshExpiresAt = now.plus(properties.getRefreshTokenDays(), ChronoUnit.DAYS);
-        String accessToken = buildToken(user, "access", now, accessExpiresAt);
-        String refreshToken = buildToken(user, "refresh", now, refreshExpiresAt);
-        return new TokenPair(accessToken, refreshToken, accessExpiresAt, refreshExpiresAt);
+        String accessTokenId = UUID.randomUUID().toString();
+        String refreshTokenId = UUID.randomUUID().toString();
+        String accessToken = buildToken(
+                user, sessionId, accessTokenId, "access", now, accessExpiresAt
+        );
+        String refreshToken = buildToken(
+                user, sessionId, refreshTokenId, "refresh", now, refreshExpiresAt
+        );
+        return new IssuedTokenPair(
+                new TokenPair(accessToken, refreshToken, accessExpiresAt, refreshExpiresAt),
+                sessionId,
+                accessTokenId,
+                refreshTokenId
+        );
     }
 
-    private String buildToken(CurrentUser user, String tokenType, Instant issuedAt, Instant expiresAt) {
+    private String buildToken(
+            CurrentUser user,
+            String sessionId,
+            String tokenId,
+            String tokenType,
+            Instant issuedAt,
+            Instant expiresAt
+    ) {
         return Jwts.builder()
+                .id(tokenId)
                 .subject(user.username())
                 .claim("uid", user.userId())
                 .claim("tid", user.tenantId())
                 .claim("name", user.realName())
+                .claim("sid", sessionId)
                 .claim("mustChangePassword", user.mustChangePassword())
                 .claim("roles", user.roles())
                 .claim("permissions", user.permissions())
@@ -78,7 +106,8 @@ public class JwtTokenService {
                 claims.get("name", String.class),
                 Boolean.TRUE.equals(claims.get("mustChangePassword", Boolean.class)),
                 stringSet(claims.get("roles")),
-                stringSet(claims.get("permissions"))
+                stringSet(claims.get("permissions")),
+                claims.get("sid", String.class)
         );
     }
 

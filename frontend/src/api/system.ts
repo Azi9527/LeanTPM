@@ -126,6 +126,19 @@ export interface GeneratedNumber {
   sequence: number
 }
 
+export interface OnlineSessionRow {
+  sessionId: string
+  userId: number
+  username: string
+  realName: string
+  loginIp: string
+  userAgent: string
+  loginTime: string
+  lastActiveTime: string
+  expiresAt: string
+  currentSession: boolean
+}
+
 export interface PageQuery {
   keyword?: string
   status?: number
@@ -188,4 +201,8 @@ export const systemApi = {
     http.post<ApiResponse<GeneratedNumber>>(
       `/system/number-rules/${encodeURIComponent(ruleCode)}/generate`,
     ),
+
+  onlineUsers: () => getData<OnlineSessionRow[]>('/system/online-users'),
+  kickoutOnlineUser: (sessionId: string) =>
+    http.delete(`/system/online-users/${encodeURIComponent(sessionId)}`),
 }

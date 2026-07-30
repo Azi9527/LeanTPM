@@ -45,12 +45,16 @@ public class AuthController {
     }
 
     @PutMapping("/password")
-    public ApiResponse<TokenPair> changePassword(@Valid @RequestBody ChangePasswordRequest request) {
-        return ApiResponse.success(authService.changePassword(request));
+    public ApiResponse<TokenPair> changePassword(
+            @Valid @RequestBody ChangePasswordRequest request,
+            HttpServletRequest servletRequest
+    ) {
+        return ApiResponse.success(authService.changePassword(request, servletRequest));
     }
 
     @PostMapping("/logout")
     public ApiResponse<Void> logout() {
+        authService.logout();
         return ApiResponse.success();
     }
 }

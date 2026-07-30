@@ -21,13 +21,17 @@ class JwtTokenServiceTest {
                 "设备管理员",
                 false,
                 Set.of("EQUIPMENT_MANAGER"),
-                Set.of("equipment:asset:view", "equipment:asset:update")
+                Set.of("equipment:asset:view", "equipment:asset:update"),
+                null
         );
 
-        var pair = service.issue(expected);
+        var issued = service.issue(expected);
+        var pair = issued.tokens();
         CurrentUser actual = service.toCurrentUser(service.parse(pair.accessToken(), "access"));
 
-        assertThat(actual).isEqualTo(expected);
+        assertThat(actual).isEqualTo(expected.withSessionId(issued.sessionId()));
+        assertThat(service.parse(pair.accessToken(), "access").getId()).isEqualTo(issued.accessTokenId());
+        assertThat(service.parse(pair.refreshToken(), "refresh").getId()).isEqualTo(issued.refreshTokenId());
         assertThat(pair.accessExpiresAt()).isBefore(pair.refreshExpiresAt());
     }
 
@@ -35,9 +39,9 @@ class JwtTokenServiceTest {
     void shouldRejectTokenOfWrongType() {
         JwtTokenService service = new JwtTokenService(properties());
         CurrentUser user = new CurrentUser(
-                1L, 1L, "admin", "管理员", true, Set.of("SUPER_ADMIN"), Set.of("system:view")
+                1L, 1L, "admin", "管理员", true, Set.of("SUPER_ADMIN"), Set.of("system:view"), null
         );
-        var pair = service.issue(user);
+        var pair = service.issue(user).tokens();
 
         assertThatThrownBy(() -> service.parse(pair.refreshToken(), "access"))
                 .isInstanceOf(BusinessException.class)

@@ -9,6 +9,12 @@ public record CurrentUser(
         String realName,
         boolean mustChangePassword,
         Set<String> roles,
-        Set<String> permissions
+        Set<String> permissions,
+        String sessionId
 ) {
+    public CurrentUser withSessionId(String value) {
+        return new CurrentUser(
+                userId, tenantId, username, realName, mustChangePassword, roles, permissions, value
+        );
+    }
 }

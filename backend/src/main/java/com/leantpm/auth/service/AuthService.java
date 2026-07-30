@@ -9,9 +9,9 @@ import com.leantpm.auth.dto.UserProfile;
 import com.leantpm.auth.mapper.AuthMapper;
 import com.leantpm.common.exception.BusinessException;
 import com.leantpm.security.CurrentUser;
-import com.leantpm.security.JwtProperties;
 import com.leantpm.security.JwtTokenService;
 import com.leantpm.security.SecurityUtils;
+import com.leantpm.security.session.RedisAuthSessionService;
 import io.jsonwebtoken.Claims;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
@@ -19,7 +19,6 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
 import java.util.Set;
 
 @Service
@@ -29,35 +28,24 @@ public class AuthService {
     private final AuthMapper authMapper;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenService tokenService;
-    private final JwtProperties jwtProperties;
+    private final RedisAuthSessionService sessionService;
 
     public AuthService(
             AuthMapper authMapper,
             PasswordEncoder passwordEncoder,
             JwtTokenService tokenService,
-            JwtProperties jwtProperties
+            RedisAuthSessionService sessionService
     ) {
         this.authMapper = authMapper;
         this.passwordEncoder = passwordEncoder;
         this.tokenService = tokenService;
-        this.jwtProperties = jwtProperties;
+        this.sessionService = sessionService;
     }
 
     @Transactional
     public LoginResponse login(LoginRequest request, HttpServletRequest servletRequest) {
         String username = request.username().trim();
-        int recentFailures = authMapper.countRecentFailures(
-                DEFAULT_TENANT_ID,
-                username,
-                LocalDateTime.now().minusMinutes(jwtProperties.getFailureWindowMinutes())
-        );
-        if (recentFailures >= jwtProperties.getMaxLoginFailures()) {
-            throw new BusinessException(
-                    "LOGIN_TEMPORARILY_LOCKED",
-                    "登录失败次数过多，请稍后再试",
-                    HttpStatus.TOO_MANY_REQUESTS
-            );
-        }
+        sessionService.assertLoginAllowed(DEFAULT_TENANT_ID, username);
 
         UserAccount user = authMapper.findByUsername(DEFAULT_TENANT_ID, username);
         if (user == null || user.getStatus() == null || user.getStatus() != 1
@@ -71,9 +59,11 @@ public class AuthService {
                     false,
                     "用户名、密码错误或账号已停用"
             );
+            sessionService.recordLoginFailure(DEFAULT_TENANT_ID, username);
             throw new BusinessException("LOGIN_FAILED", "用户名或密码错误", HttpStatus.UNAUTHORIZED);
         }
 
+        sessionService.clearLoginFailures(user.getTenantId(), username);
         authMapper.updateLastLogin(user.getTenantId(), user.getId());
         authMapper.insertLoginLog(
                 user.getTenantId(),
@@ -85,7 +75,14 @@ public class AuthService {
                 null
         );
         CurrentUser currentUser = loadCurrentUser(user);
-        return new LoginResponse(tokenService.issue(currentUser), toProfile(currentUser));
+        var issued = tokenService.issue(currentUser);
+        sessionService.register(
+                currentUser,
+                issued,
+                clientIp(servletRequest),
+                safeUserAgent(servletRequest)
+        );
+        return new LoginResponse(issued.tokens(), toProfile(currentUser));
     }
 
     @Transactional(readOnly = true)
@@ -94,7 +91,14 @@ public class AuthService {
         long tenantId = claims.get("tid", Number.class).longValue();
         long userId = claims.get("uid", Number.class).longValue();
         UserAccount account = requireActiveUser(tenantId, userId);
-        return tokenService.issue(loadCurrentUser(account));
+        String sessionId = claims.get("sid", String.class);
+        if (sessionId == null || sessionId.isBlank()) {
+            throw new BusinessException("INVALID_REFRESH_TOKEN", "刷新令牌缺少会话标识", HttpStatus.UNAUTHORIZED);
+        }
+        CurrentUser currentUser = loadCurrentUser(account).withSessionId(sessionId);
+        var issued = tokenService.issue(currentUser, sessionId);
+        sessionService.rotate(claims, issued);
+        return issued.tokens();
     }
 
     @Transactional(readOnly = true)
@@ -103,7 +107,7 @@ public class AuthService {
     }
 
     @Transactional
-    public TokenPair changePassword(ChangePasswordRequest request) {
+    public TokenPair changePassword(ChangePasswordRequest request, HttpServletRequest servletRequest) {
         CurrentUser current = SecurityUtils.currentUser();
         UserAccount account = requireActiveUser(current.tenantId(), current.userId());
         if (!passwordEncoder.matches(request.currentPassword(), account.getPasswordHash())) {
@@ -118,7 +122,20 @@ public class AuthService {
                 passwordEncoder.encode(request.newPassword())
         );
         UserAccount refreshed = requireActiveUser(current.tenantId(), current.userId());
-        return tokenService.issue(loadCurrentUser(refreshed));
+        sessionService.revokeAllUserSessions(current.tenantId(), current.userId());
+        CurrentUser refreshedUser = loadCurrentUser(refreshed);
+        var issued = tokenService.issue(refreshedUser);
+        sessionService.register(
+                refreshedUser,
+                issued,
+                clientIp(servletRequest),
+                safeUserAgent(servletRequest)
+        );
+        return issued.tokens();
+    }
+
+    public void logout() {
+        sessionService.revoke(SecurityUtils.currentUser().sessionId());
     }
 
     private UserAccount requireActiveUser(long tenantId, long userId) {
@@ -139,7 +156,8 @@ public class AuthService {
                 user.getRealName(),
                 Boolean.TRUE.equals(user.getMustChangePassword()),
                 roles,
-                permissions
+                permissions,
+                null
         );
     }
 

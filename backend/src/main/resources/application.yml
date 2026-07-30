@@ -18,6 +18,7 @@ spring:
       host: ${LEANTPM_REDIS_HOST:127.0.0.1}
       port: ${LEANTPM_REDIS_PORT:6379}
       password: ${LEANTPM_REDIS_PASSWORD:}
+      database: ${LEANTPM_REDIS_DATABASE:0}
       timeout: 2s
   servlet:
     multipart:
@@ -54,7 +55,7 @@ management:
         include: health,info
   health:
     redis:
-      enabled: ${LEANTPM_REDIS_HEALTH_ENABLED:false}
+      enabled: ${LEANTPM_REDIS_HEALTH_ENABLED:true}
 
 leantpm:
   security:
