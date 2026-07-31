@@ -88,7 +88,7 @@ class OeeMySqlIntegrationTest {
                 "oee_admin_it",
                 "OEE集成管理员",
                 true,
-                Set.of("SUPER_ADMIN"),
+                Set.of("ADMIN"),
                 Set.of(
                         "oee:record:view",
                         "oee:record:manage",
@@ -469,7 +469,7 @@ class OeeMySqlIntegrationTest {
                 "oee_admin_it",
                 "OEE集成管理员",
                 true,
-                Set.of("SUPER_ADMIN"),
+                Set.of("ADMIN"),
                 permissions,
                 "oee-it-session"
         );

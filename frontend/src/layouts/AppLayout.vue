@@ -177,7 +177,7 @@ function navigate(index: string) {
         </el-form-item>
         <el-form-item label="新密码">
           <el-input v-model="passwordForm.newPassword" type="password" show-password autocomplete="new-password" />
-          <span class="form-hint">至少 10 位，包含字母、数字和特殊字符</span>
+          <span class="form-hint">至少 6 位</span>
         </el-form-item>
         <el-form-item label="确认新密码">
           <el-input v-model="passwordForm.confirmPassword" type="password" show-password autocomplete="new-password" />

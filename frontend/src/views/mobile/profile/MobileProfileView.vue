@@ -23,8 +23,8 @@ const serverUrl = ref(serverBaseUrl())
 const forceChange = computed(() => auth.user?.mustChangePassword || route.query.changePassword === '1')
 
 async function changePassword() {
-  if (!password.currentPassword || password.newPassword.length < 8) {
-    ElMessage.warning('请填写当前密码，新密码至少 8 位')
+  if (!password.currentPassword || password.newPassword.length < 6) {
+    ElMessage.warning('请填写当前密码，新密码至少 6 位')
     return
   }
   if (password.newPassword !== password.confirmPassword) {
@@ -99,7 +99,7 @@ async function signOut() {
     <section class="settings-card">
       <h2>修改密码</h2>
       <el-input v-model="password.currentPassword" type="password" show-password size="large" placeholder="当前密码" />
-      <el-input v-model="password.newPassword" type="password" show-password size="large" placeholder="新密码（至少 8 位）" />
+      <el-input v-model="password.newPassword" type="password" show-password size="large" placeholder="新密码（至少 6 位）" />
       <el-input v-model="password.confirmPassword" type="password" show-password size="large" placeholder="确认新密码" />
       <el-button type="primary" size="large" :loading="changing" @click="changePassword">确认修改</el-button>
     </section>

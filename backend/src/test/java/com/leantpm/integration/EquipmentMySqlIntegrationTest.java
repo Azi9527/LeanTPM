@@ -65,7 +65,7 @@ class EquipmentMySqlIntegrationTest {
                 "equipment_it",
                 "设备集成测试",
                 false,
-                Set.of("SUPER_ADMIN"),
+                Set.of("ADMIN"),
                 Set.of(
                         "equipment:ledger:view",
                         "equipment:ledger:create",

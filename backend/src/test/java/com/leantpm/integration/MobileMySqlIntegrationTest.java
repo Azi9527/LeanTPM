@@ -114,7 +114,7 @@ class MobileMySqlIntegrationTest {
                 "mobile_it",
                 "移动端集成测试",
                 false,
-                Set.of("SUPER_ADMIN"),
+                Set.of("ADMIN"),
                 Set.of(
                         "mobile:access",
                         "mobile:workbench:view",

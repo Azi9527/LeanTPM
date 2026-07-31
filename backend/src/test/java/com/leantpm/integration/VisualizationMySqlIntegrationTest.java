@@ -63,7 +63,7 @@ class VisualizationMySqlIntegrationTest {
                 "visualization_it",
                 "可视化集成测试",
                 false,
-                Set.of("SUPER_ADMIN"),
+                Set.of("ADMIN"),
                 Set.of(
                         "visualization:cockpit:view",
                         "visualization:3d:view",

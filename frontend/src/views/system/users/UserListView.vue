@@ -37,7 +37,7 @@ const rules: FormRules = {
     {
       validator: (_rule, value, callback) => {
         if (!editing.value && !value) callback(new Error('请输入初始密码'))
-        else if (value && value.length < 10) callback(new Error('密码至少 10 位'))
+        else if (value && value.length < 6) callback(new Error('密码至少 6 位'))
         else callback()
       },
       trigger: 'blur',
@@ -189,9 +189,9 @@ async function resetPassword(row: UserRow) {
       '重置密码',
       {
         inputType: 'password',
-        inputPlaceholder: '至少 10 位，包含字母、数字和特殊字符',
+        inputPlaceholder: '至少 6 位',
         inputValidator: (value) =>
-          /^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z\d]).{10,}$/.test(value) || '密码强度不符合要求',
+          value.length >= 6 || '密码至少 6 位',
         confirmButtonText: '确认重置',
         cancelButtonText: '取消',
       },
@@ -305,7 +305,7 @@ const pageSummary = computed(() => `共 ${total.value} 个用户`)
         </el-form-item>
         <el-form-item v-if="!editing" label="初始密码" prop="initialPassword" class="full-width">
           <el-input v-model="form.initialPassword" type="password" show-password />
-          <span class="field-hint">至少 10 位，包含字母、数字和特殊字符</span>
+          <span class="field-hint">至少 6 位</span>
         </el-form-item>
       </el-form>
       <template #footer>

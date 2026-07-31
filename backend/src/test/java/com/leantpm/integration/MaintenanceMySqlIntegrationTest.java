@@ -45,7 +45,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Transactional
 class MaintenanceMySqlIntegrationTest {
     private static final long ADMIN_ID = 9201L;
-    private static final long MAINTAINER_ID = 9202L;
+    private static final long OPERATOR_ID = 9202L;
     private static final long COLLABORATOR_ID = 9203L;
 
     @Autowired
@@ -63,8 +63,8 @@ class MaintenanceMySqlIntegrationTest {
     @BeforeEach
     void prepareUsers() {
         insertUser(ADMIN_ID, "maintenance_admin_it", "维保集成管理员", 4L, 1L);
-        insertUser(MAINTAINER_ID, "maintenance_executor_it", "维保执行人", 4L, 4L);
-        insertUser(COLLABORATOR_ID, "maintenance_collab_it", "维保协同人", 5L, 4L);
+        insertUser(OPERATOR_ID, "maintenance_executor_it", "维保执行人", 4L, 3L);
+        insertUser(COLLABORATOR_ID, "maintenance_collab_it", "维保协同人", 5L, 3L);
         authenticateAdmin();
     }
 
@@ -323,7 +323,7 @@ class MaintenanceMySqlIntegrationTest {
                 3,
                 7,
                 null,
-                MAINTAINER_ID,
+                OPERATOR_ID,
                 "MAINTENANCE-TEAM",
                 true,
                 true,
@@ -428,7 +428,7 @@ class MaintenanceMySqlIntegrationTest {
                 ADMIN_ID,
                 "maintenance_admin_it",
                 "维保集成管理员",
-                Set.of("SUPER_ADMIN"),
+                Set.of("ADMIN"),
                 Set.of(
                         "maintenance:item:view",
                         "maintenance:item:manage",
@@ -452,7 +452,7 @@ class MaintenanceMySqlIntegrationTest {
                 COLLABORATOR_ID,
                 "maintenance_collab_it",
                 "维保协同人",
-                Set.of("MAINTAINER"),
+                Set.of("OPERATOR"),
                 Set.of(
                         "maintenance:my-task:view",
                         "maintenance:task:view",

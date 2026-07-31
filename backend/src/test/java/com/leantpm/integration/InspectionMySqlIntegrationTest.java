@@ -103,7 +103,7 @@ class InspectionMySqlIntegrationTest {
                 "inspection_it",
                 "点检集成测试",
                 false,
-                Set.of("SUPER_ADMIN"),
+                Set.of("ADMIN"),
                 Set.of(
                         "inspection:item:view",
                         "inspection:scheme:view",

@@ -20,7 +20,7 @@ class JwtTokenServiceTest {
                 "operator",
                 "设备管理员",
                 false,
-                Set.of("EQUIPMENT_MANAGER"),
+                Set.of("PLANNER"),
                 Set.of("equipment:asset:view", "equipment:asset:update"),
                 null
         );
@@ -39,7 +39,7 @@ class JwtTokenServiceTest {
     void shouldRejectTokenOfWrongType() {
         JwtTokenService service = new JwtTokenService(properties());
         CurrentUser user = new CurrentUser(
-                1L, 1L, "admin", "管理员", true, Set.of("SUPER_ADMIN"), Set.of("system:view"), null
+                1L, 1L, "admin", "管理员", true, Set.of("ADMIN"), Set.of("system:view"), null
         );
         var pair = service.issue(user).tokens();
 

@@ -43,11 +43,7 @@ public final class SystemDtos {
             Boolean mobileEnabled,
             @NotEmpty List<Long> roleIds,
             @NotBlank
-            @Size(min = 10, max = 128)
-            @Pattern(
-                    regexp = "^(?=.*[A-Za-z])(?=.*\\d)(?=.*[^A-Za-z\\d]).+$",
-                    message = "必须同时包含字母、数字和特殊字符"
-            )
+            @Size(min = 6, max = 128)
             String initialPassword
     ) {
     }
@@ -69,11 +65,7 @@ public final class SystemDtos {
 
     public record ResetPasswordRequest(
             @NotBlank
-            @Size(min = 10, max = 128)
-            @Pattern(
-                    regexp = "^(?=.*[A-Za-z])(?=.*\\d)(?=.*[^A-Za-z\\d]).+$",
-                    message = "必须同时包含字母、数字和特殊字符"
-            )
+            @Size(min = 6, max = 128)
             String newPassword
     ) {
     }

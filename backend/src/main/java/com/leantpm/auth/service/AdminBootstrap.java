@@ -38,8 +38,8 @@ public class AdminBootstrap implements ApplicationRunner {
             log.warn("系统暂无用户，未设置 LEANTPM_BOOTSTRAP_ADMIN_PASSWORD，已跳过管理员初始化");
             return;
         }
-        if (adminPassword.length() < 10) {
-            throw new IllegalStateException("LEANTPM_BOOTSTRAP_ADMIN_PASSWORD 长度不能少于 10 位");
+        if (adminPassword.length() < 6) {
+            throw new IllegalStateException("LEANTPM_BOOTSTRAP_ADMIN_PASSWORD 长度不能少于 6 位");
         }
         authMapper.insertBootstrapAdmin(
                 AuthService.DEFAULT_TENANT_ID,

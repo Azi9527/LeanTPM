@@ -5,6 +5,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -36,7 +37,7 @@ class MySqlMigrationIntegrationTest {
     @Test
     void appliesEveryMigrationAndFoundationTable() throws Exception {
         assertThat(number("SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1"))
-                .isEqualTo(14);
+                .isEqualTo(15);
         assertThat(number("""
                 SELECT COUNT(*)
                 FROM information_schema.tables
@@ -301,11 +302,71 @@ class MySqlMigrationIntegrationTest {
                   ON relation.tenant_id = role.tenant_id
                  AND relation.role_id = role.id
                 WHERE role.tenant_id = 1
-                  AND role.role_code IN (
-                    'SUPER_ADMIN', 'EQUIPMENT_MANAGER', 'INSPECTOR', 'MAINTAINER'
-                  )
+                  AND role.role_code IN ('ADMIN', 'PLANNER', 'OPERATOR')
                   AND relation.menu_id BETWEEN 60 AND 65
-                """)).isEqualTo(24);
+                """)).isEqualTo(18);
+    }
+
+    @Test
+    void seedsThreeBusinessRolesAndDemoUsers() throws Exception {
+        assertThat(number("""
+                SELECT COUNT(*)
+                FROM system_role
+                WHERE tenant_id = 1
+                  AND role_code IN ('ADMIN', 'PLANNER', 'OPERATOR')
+                  AND status = 1
+                  AND deleted = 0
+                """)).isEqualTo(3);
+        assertThat(number("""
+                SELECT COUNT(*)
+                FROM system_role
+                WHERE tenant_id = 1 AND deleted = 0
+                """)).isEqualTo(3);
+        assertThat(number("""
+                SELECT COUNT(*)
+                FROM system_user
+                WHERE tenant_id = 1
+                  AND username IN (
+                    'planner', 'operator01', 'operator02', 'operator03',
+                    'operator04', 'operator05'
+                  )
+                  AND status = 1
+                  AND mobile_enabled = 1
+                  AND must_change_password = 0
+                  AND deleted = 0
+                """)).isEqualTo(6);
+        assertThat(number("""
+                SELECT COUNT(*)
+                FROM system_user user
+                JOIN system_user_role relation
+                  ON relation.tenant_id = user.tenant_id
+                 AND relation.user_id = user.id
+                 AND relation.deleted = 0
+                JOIN system_role role
+                  ON role.tenant_id = relation.tenant_id
+                 AND role.id = relation.role_id
+                 AND role.deleted = 0
+                WHERE user.tenant_id = 1
+                  AND (
+                    (user.username = 'planner' AND role.role_code = 'PLANNER')
+                    OR (
+                      user.username IN (
+                        'operator01', 'operator02', 'operator03',
+                        'operator04', 'operator05'
+                      )
+                      AND role.role_code = 'OPERATOR'
+                    )
+                  )
+                """)).isEqualTo(6);
+        assertThat(new BCryptPasswordEncoder(12).matches(
+                "888888",
+                text("""
+                        SELECT password_hash
+                        FROM system_user
+                        WHERE tenant_id = 1 AND username = 'planner' AND deleted = 0
+                        LIMIT 1
+                        """)
+        )).isTrue();
     }
 
     private long number(String sql) throws Exception {
@@ -314,6 +375,15 @@ class MySqlMigrationIntegrationTest {
              ResultSet result = statement.executeQuery(sql)) {
             result.next();
             return result.getLong(1);
+        }
+    }
+
+    private String text(String sql) throws Exception {
+        try (Connection connection = connection();
+             Statement statement = connection.createStatement();
+             ResultSet result = statement.executeQuery(sql)) {
+            result.next();
+            return result.getString(1);
         }
     }
 
