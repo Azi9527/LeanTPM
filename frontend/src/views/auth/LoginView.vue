@@ -1,7 +1,12 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { nextTick, onMounted, reactive, ref, unref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
+import {
+  ElMessage,
+  type FormInstance,
+  type FormRules,
+  type InputInstance,
+} from 'element-plus'
 import { captcha as fetchCaptcha, type CaptchaChallenge } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 import { errorMessage } from '@/utils/http'
@@ -11,6 +16,8 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const formRef = ref<FormInstance>()
+const usernameInputRef = ref<InputInstance>()
+const passwordInputRef = ref<InputInstance>()
 const loading = ref(false)
 const captchaLoading = ref(false)
 const challenge = ref<CaptchaChallenge>({ enabled: true })
@@ -44,7 +51,11 @@ async function loadCaptcha() {
 }
 
 async function submit() {
-  await formRef.value?.validate()
+  if (loading.value) return
+  await nextTick()
+  syncCredentialInputs()
+  const valid = await formRef.value?.validate().then(() => true).catch(() => false)
+  if (!valid) return
   loading.value = true
   try {
     await auth.signIn(
@@ -65,6 +76,13 @@ async function submit() {
   } finally {
     loading.value = false
   }
+}
+
+function syncCredentialInputs() {
+  const username = unref(usernameInputRef.value?.input)?.value ?? ''
+  const password = unref(passwordInputRef.value?.input)?.value ?? ''
+  if (username !== form.username) form.username = username
+  if (password !== form.password) form.password = password
 }
 
 onMounted(loadCaptcha)
@@ -97,12 +115,13 @@ onMounted(loadCaptcha)
         <p class="login-description">使用企业分配的账号进入设备管理平台</p>
         <el-form ref="formRef" :model="form" :rules="rules" label-position="top" @submit.prevent="submit">
           <el-form-item label="账号" prop="username">
-            <el-input v-model="form.username" size="large" placeholder="请输入账号" autocomplete="username">
+            <el-input ref="usernameInputRef" v-model="form.username" size="large" placeholder="请输入账号" autocomplete="username">
               <template #prefix><el-icon><User /></el-icon></template>
             </el-input>
           </el-form-item>
           <el-form-item label="密码" prop="password">
             <el-input
+              ref="passwordInputRef"
               v-model="form.password"
               size="large"
               type="password"

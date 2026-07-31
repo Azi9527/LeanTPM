@@ -12,6 +12,10 @@ M6 已完成统一响应式移动端、设备扫码入口、点检/维保现场�
 `15173`。Debug 构建允许局域网 HTTP 与 Capacitor 混合内容，Release
 构建仍默认禁止 HTTP，生产环境必须使用 HTTPS。
 
+Android 登录输入使用系统 WebView 的标准 `InputConnection`，不启用
+Capacitor 的简化键盘捕获；提交前还会从原生输入框同步账号和密码，
+兼容系统自动填充、密码管理器以及部分厂商输入法不触发前端事件的情况。
+
 ## 2. 数据库与后端
 
 新增不可变迁移 `V13__mobile_workbench.sql`：
@@ -95,8 +99,8 @@ adb shell am start -n com.leantpm.mobile/.MainActivity
 | 前端生产构建 | 通过 |
 | npm 审计 | 0 个已知漏洞 |
 | Android Debug 构建 | `BUILD SUCCESSFUL` |
-| APK 大小 | 40,003,181 字节 |
-| APK SHA-256 | `07F601434EB0C77069E44FB01474F72220AA663A59C5F5CD467803A74C96D32E` |
+| APK 大小 | 40,472,004 字节 |
+| APK SHA-256 | `AA31C7AF0741EDF8B551E52E955E0D10B0B3437CB9D926FFDF67C95E40C21127` |
 | APK 签名 | v2 调试签名校验通过 |
 | APK 清单 | `com.leantpm.mobile`，versionName 1.0.0，minSdk 26，targetSdk 36 |
 
