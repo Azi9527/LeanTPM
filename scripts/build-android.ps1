@@ -49,11 +49,24 @@ if ($Configuration -eq 'Release') {
 }
 
 Push-Location $frontendRoot
+$previousAllowHttp = $env:LEANTPM_ANDROID_ALLOW_HTTP
 try {
+    if ($Configuration -eq 'Debug') {
+        $env:LEANTPM_ANDROID_ALLOW_HTTP = 'true'
+    }
+    else {
+        Remove-Item Env:LEANTPM_ANDROID_ALLOW_HTTP -ErrorAction SilentlyContinue
+    }
     & npm.cmd run mobile:sync
     if ($LASTEXITCODE -ne 0) { throw 'Capacitor sync failed' }
 }
 finally {
+    if ($null -eq $previousAllowHttp) {
+        Remove-Item Env:LEANTPM_ANDROID_ALLOW_HTTP -ErrorAction SilentlyContinue
+    }
+    else {
+        $env:LEANTPM_ANDROID_ALLOW_HTTP = $previousAllowHttp
+    }
     Pop-Location
 }
 

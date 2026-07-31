@@ -6,6 +6,12 @@ M6 已完成统一响应式移动端、设备扫码入口、点检/维保现场�
 
 当前 V1.0.0 调试 APK 位于本机 `runtime/deliverables/LeanTPM-V1.0.0-debug.apk`。`runtime` 不进入 Git；任意开发机可通过 `scripts/build-android.ps1` 重新生成。
 
+调试 APK 在同一局域网联调时，服务地址填写后端地址，例如
+`http://192.168.31.91:18080`；应用会自动补全 `/api/v1`。不能填写
+`127.0.0.1`（它在手机上代表手机自身），也不能填写前端开发端口
+`15173`。Debug 构建允许局域网 HTTP 与 Capacitor 混合内容，Release
+构建仍默认禁止 HTTP，生产环境必须使用 HTTPS。
+
 ## 2. 数据库与后端
 
 新增不可变迁移 `V13__mobile_workbench.sql`：
@@ -89,8 +95,8 @@ adb shell am start -n com.leantpm.mobile/.MainActivity
 | 前端生产构建 | 通过 |
 | npm 审计 | 0 个已知漏洞 |
 | Android Debug 构建 | `BUILD SUCCESSFUL` |
-| APK 大小 | 40,002,963 字节 |
-| APK SHA-256 | `A37036F416F1436224E32B3BABE0323B480D5C6880D3894835B3B214E75D0481` |
+| APK 大小 | 40,003,181 字节 |
+| APK SHA-256 | `07F601434EB0C77069E44FB01474F72220AA663A59C5F5CD467803A74C96D32E` |
 | APK 签名 | v2 调试签名校验通过 |
 | APK 清单 | `com.leantpm.mobile`，versionName 1.0.0，minSdk 26，targetSdk 36 |
 

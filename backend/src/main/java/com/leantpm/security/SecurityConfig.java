@@ -101,7 +101,8 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource(
             @Value("${leantpm.security.cors-allowed-origins:"
-                    + "http://localhost:5173,http://127.0.0.1:5173}")
+                    + "http://localhost:5173,http://127.0.0.1:5173,"
+                    + "https://localhost,capacitor://localhost}")
             List<String> allowedOrigins
     ) {
         CorsConfiguration configuration = new CorsConfiguration();

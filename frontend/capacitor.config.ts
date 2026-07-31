@@ -1,5 +1,7 @@
 import type { CapacitorConfig } from '@capacitor/cli'
 
+const allowDebugLanHttp = process.env.LEANTPM_ANDROID_ALLOW_HTTP === 'true'
+
 const config: CapacitorConfig = {
   appId: 'com.leantpm.mobile',
   appName: 'LeanTPM',
@@ -8,7 +10,7 @@ const config: CapacitorConfig = {
     androidScheme: 'https',
   },
   android: {
-    allowMixedContent: false,
+    allowMixedContent: allowDebugLanHttp,
     captureInput: true,
     webContentsDebuggingEnabled: false,
   },
