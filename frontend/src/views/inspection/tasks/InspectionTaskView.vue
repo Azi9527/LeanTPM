@@ -4,7 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { pinyin } from 'pinyin-pro'
 import { inspectionApi, type SchemeRow, type TaskDetail, type TaskRow, type TaskStatus } from '@/api/inspection'
 import { equipmentApi, type EquipmentRow } from '@/api/equipment'
-import { masterDataApi, type ReferenceUser } from '@/api/masterData'
+import { masterDataApi, type OrganizationRow, type ReferenceUser } from '@/api/masterData'
 import { useAuthStore } from '@/stores/auth'
 import { errorMessage } from '@/utils/http'
 
@@ -24,6 +24,7 @@ const assignTarget = ref<TaskRow | null>(null)
 const equipment = ref<EquipmentRow[]>([])
 const schemes = ref<SchemeRow[]>([])
 const users = ref<ReferenceUser[]>([])
+const teams = ref<OrganizationRow[]>([])
 const userKeyword = ref('')
 
 const createForm = reactive({
@@ -83,14 +84,18 @@ async function load() {
 
 async function loadReferences() {
   try {
-    const [equipmentPage, schemePage, userRows] = await Promise.all([
+    const [equipmentPage, schemePage, userRows, organizationRows] = await Promise.all([
       equipmentApi.page({ status: 1, page: 1, pageSize: 200 }),
       inspectionApi.schemes({ status: 1, page: 1, pageSize: 200 }),
       masterDataApi.referenceUsers(),
+      masterDataApi.organizations(),
     ])
     equipment.value = equipmentPage.records
     schemes.value = schemePage.records.filter((row) => row.currentVersionStatus === 'PUBLISHED')
     users.value = userRows
+    teams.value = organizationRows.filter(
+      (row) => row.organizationType === 'TEAM' && row.status === 1,
+    )
   } catch (error) {
     ElMessage.error(errorMessage(error, '加载任务引用数据失败'))
   }
@@ -302,6 +307,21 @@ async function close(row: TaskRow, targetStatus: 'CANCELLED' | 'VOIDED') {
             </el-option>
           </el-select>
         </el-form-item>
+        <el-form-item label="班组（选填）">
+          <el-select
+            v-model="createForm.teamCode"
+            filterable
+            clearable
+            placeholder="选择班组"
+          >
+            <el-option
+              v-for="team in teams"
+              :key="team.id"
+              :label="`${team.organizationName}（${team.organizationCode}）`"
+              :value="team.organizationCode"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item label="补录"><el-switch v-model="createForm.backfill" /></el-form-item>
         <el-form-item label="备注" class="full"><el-input v-model="createForm.remark" type="textarea" /></el-form-item>
       </el-form>
@@ -339,7 +359,22 @@ async function close(row: TaskRow, targetStatus: 'CANCELLED' | 'VOIDED') {
           </el-select>
           <div class="field-hint">最多选择 20 人；第一位作为主执行人，所有人员均可在“我的点检”中处理任务。</div>
         </el-form-item>
-        <el-form-item label="班组编码（选填）"><el-input v-model="assignForm.teamCode" maxlength="64" /></el-form-item>
+        <el-form-item label="班组（选填）">
+          <el-select
+            v-model="assignForm.teamCode"
+            filterable
+            clearable
+            placeholder="选择班组"
+          >
+            <el-option
+              v-for="team in teams"
+              :key="team.id"
+              :label="`${team.organizationName}（${team.organizationCode}）`"
+              :value="team.organizationCode"
+            />
+          </el-select>
+          <div class="field-hint">班组来自“基础数据 → 组织管理”中的班组类型组织。</div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="assignVisible = false">取消</el-button>

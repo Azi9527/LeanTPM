@@ -37,7 +37,7 @@ class MySqlMigrationIntegrationTest {
     @Test
     void appliesEveryMigrationAndFoundationTable() throws Exception {
         assertThat(number("SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1"))
-                .isEqualTo(15);
+                .isEqualTo(16);
         assertThat(number("""
                 SELECT COUNT(*)
                 FROM information_schema.tables
@@ -113,7 +113,7 @@ class MySqlMigrationIntegrationTest {
                     JOIN organization_tree parent ON child.parent_id = parent.id
                 )
                 SELECT COUNT(*) FROM organization_tree
-                """)).isEqualTo(3);
+                """)).isEqualTo(7);
     }
 
     @Test
@@ -367,6 +367,37 @@ class MySqlMigrationIntegrationTest {
                         LIMIT 1
                         """)
         )).isTrue();
+    }
+
+    @Test
+    void seedsProductionTeamsAndAssignsDemoOperators() throws Exception {
+        assertThat(number("""
+                SELECT COUNT(*)
+                FROM organization
+                WHERE tenant_id = 1
+                  AND organization_type = 'TEAM'
+                  AND organization_code IN (
+                    'TEAM-A-1', 'TEAM-A-2', 'TEAM-B-1', 'TEAM-B-2',
+                    'TEAM-C-1', 'TEAM-C-2', 'TEAM-D-1', 'TEAM-D-2'
+                  )
+                  AND status = 1
+                  AND deleted = 0
+                """)).isEqualTo(8);
+        assertThat(number("""
+                SELECT COUNT(*)
+                FROM system_user user
+                JOIN organization team
+                  ON team.tenant_id = user.tenant_id
+                 AND team.id = user.organization_id
+                 AND team.organization_type = 'TEAM'
+                 AND team.deleted = 0
+                WHERE user.tenant_id = 1
+                  AND user.username IN (
+                    'operator01', 'operator02', 'operator03',
+                    'operator04', 'operator05'
+                  )
+                  AND user.deleted = 0
+                """)).isEqualTo(5);
     }
 
     private long number(String sql) throws Exception {
