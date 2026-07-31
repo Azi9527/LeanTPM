@@ -1,12 +1,7 @@
 <script setup lang="ts">
-import { nextTick, onMounted, reactive, ref, unref } from 'vue'
+import { nextTick, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import {
-  ElMessage,
-  type FormInstance,
-  type FormRules,
-  type InputInstance,
-} from 'element-plus'
+import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { captcha as fetchCaptcha, type CaptchaChallenge } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 import { errorMessage } from '@/utils/http'
@@ -16,8 +11,7 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const formRef = ref<FormInstance>()
-const usernameInputRef = ref<InputInstance>()
-const passwordInputRef = ref<InputInstance>()
+const loginBoxRef = ref<HTMLElement>()
 const loading = ref(false)
 const captchaLoading = ref(false)
 const challenge = ref<CaptchaChallenge>({ enabled: true })
@@ -79,10 +73,21 @@ async function submit() {
 }
 
 function syncCredentialInputs() {
-  const username = unref(usernameInputRef.value?.input)?.value ?? ''
-  const password = unref(passwordInputRef.value?.input)?.value ?? ''
+  const username = loginBoxRef.value
+    ?.querySelector<HTMLInputElement>('input[name="username"]')
+    ?.value ?? ''
+  const password = loginBoxRef.value
+    ?.querySelector<HTMLInputElement>('input[name="password"]')
+    ?.value ?? ''
   if (username !== form.username) form.username = username
   if (password !== form.password) form.password = password
+}
+
+function syncCredentialInputEvent(event: Event) {
+  const input = event.target
+  if (!(input instanceof HTMLInputElement)) return
+  if (input.name === 'username') form.username = input.value
+  if (input.name === 'password') form.password = input.value
 }
 
 onMounted(loadCaptcha)
@@ -109,20 +114,20 @@ onMounted(loadCaptcha)
 
     <section class="login-panel">
       <div class="mobile-brand"><span>LT</span><strong>LeanTPM</strong></div>
-      <div class="login-box">
+      <div ref="loginBoxRef" class="login-box" @input.capture="syncCredentialInputEvent">
         <p class="login-eyebrow">欢迎回来</p>
         <h2>登录 LeanTPM</h2>
         <p class="login-description">使用企业分配的账号进入设备管理平台</p>
         <el-form ref="formRef" :model="form" :rules="rules" label-position="top" @submit.prevent="submit">
           <el-form-item label="账号" prop="username">
-            <el-input ref="usernameInputRef" v-model="form.username" size="large" placeholder="请输入账号" autocomplete="username">
+            <el-input v-model="form.username" name="username" size="large" placeholder="请输入账号" autocomplete="username">
               <template #prefix><el-icon><User /></el-icon></template>
             </el-input>
           </el-form-item>
           <el-form-item label="密码" prop="password">
             <el-input
-              ref="passwordInputRef"
               v-model="form.password"
+              name="password"
               size="large"
               type="password"
               placeholder="请输入密码"

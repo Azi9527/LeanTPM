@@ -4,7 +4,7 @@
 
 M6 已完成统一响应式移动端、设备扫码入口、点检/维保现场执行、加密离线草稿和 Capacitor Android 容器。正式 MySQL 已迁移至 V13，隔离库集成测试、前端构建和 Android APK 构建均通过。
 
-当前 V1.0.0 调试 APK 位于本机 `runtime/deliverables/LeanTPM-V1.0.0-debug.apk`。`runtime` 不进入 Git；任意开发机可通过 `scripts/build-android.ps1` 重新生成。
+当前 V1.0.1 调试 APK 位于本机 `runtime/deliverables/LeanTPM-V1.0.1-debug.apk`。`runtime` 不进入 Git；任意开发机可通过 `scripts/build-android.ps1` 重新生成。
 
 调试 APK 在同一局域网联调时，服务地址填写后端地址，例如
 `http://192.168.31.91:18080`；应用会自动补全 `/api/v1`。不能填写
@@ -82,7 +82,7 @@ $env:LEANTPM_ANDROID_KEY_PASSWORD = '由密钥管理系统提供'
 
 ```powershell
 adb devices -l
-adb install -r .\runtime\deliverables\LeanTPM-V1.0.0-debug.apk
+adb install -r .\runtime\deliverables\LeanTPM-V1.0.1-debug.apk
 adb shell am start -n com.leantpm.mobile/.MainActivity
 ```
 
@@ -99,10 +99,10 @@ adb shell am start -n com.leantpm.mobile/.MainActivity
 | 前端生产构建 | 通过 |
 | npm 审计 | 0 个已知漏洞 |
 | Android Debug 构建 | `BUILD SUCCESSFUL` |
-| APK 大小 | 40,472,004 字节 |
-| APK SHA-256 | `AA31C7AF0741EDF8B551E52E955E0D10B0B3437CB9D926FFDF67C95E40C21127` |
+| APK 大小 | 40,003,199 字节 |
+| APK SHA-256 | `6AA63530DBFADE9DD55ED395C3CB100166F150FFF572DD9C0288F5A26FFF6A51` |
 | APK 签名 | v2 调试签名校验通过 |
-| APK 清单 | `com.leantpm.mobile`，versionName 1.0.0，minSdk 26，targetSdk 36 |
+| APK 清单 | `com.leantpm.mobile`，versionCode 2，versionName 1.0.1，minSdk 26，targetSdk 36 |
 
 真机首次安装反馈原生 WebView 白屏后，已修正 `SecureVault` 自定义插件注册顺序：插件在 `BridgeActivity` 创建 WebView 前注册；前端启动异常同时增加可见错误页，避免无信息白屏。修复版重新完成 Web 资源同步、Android Debug 构建、单元测试和 v2 签名校验。
 
