@@ -12,6 +12,7 @@ import com.leantpm.security.CurrentUser;
 import com.leantpm.security.SecurityUtils;
 import com.leantpm.security.datascope.DataPermission;
 import com.leantpm.security.datascope.DataPermissionService;
+import com.leantpm.system.attachment.AttachmentService;
 import com.leantpm.system.audit.ChangeLogService;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -39,6 +40,7 @@ public class InspectionTaskService {
     private final ChangeLogService changeLogService;
     private final ObjectMapper objectMapper;
     private final EquipmentService equipmentService;
+    private final AttachmentService attachmentService;
 
     public InspectionTaskService(
             InspectionMapper mapper,
@@ -47,7 +49,8 @@ public class InspectionTaskService {
             DataPermissionService dataPermissionService,
             ChangeLogService changeLogService,
             ObjectMapper objectMapper,
-            EquipmentService equipmentService
+            EquipmentService equipmentService,
+            AttachmentService attachmentService
     ) {
         this.mapper = mapper;
         this.numberRuleService = numberRuleService;
@@ -56,6 +59,7 @@ public class InspectionTaskService {
         this.changeLogService = changeLogService;
         this.objectMapper = objectMapper;
         this.equipmentService = equipmentService;
+        this.attachmentService = attachmentService;
     }
 
     @Transactional(readOnly = true)
@@ -92,6 +96,56 @@ public class InspectionTaskService {
                 current.tenantId(), id, dataPermissionService.current()
         );
         return taskDetail(current.tenantId(), task);
+    }
+
+    @Transactional(readOnly = true)
+    public List<InspectionDtos.InspectionAttachmentRow> taskAttachments(long id) {
+        var current = SecurityUtils.currentUser();
+        requireTask(current.tenantId(), id, dataPermissionService.current());
+        return mapper.findTaskAttachments(current.tenantId(), id);
+    }
+
+    @Transactional(readOnly = true)
+    public AttachmentService.DownloadedAttachment taskAttachmentContent(
+            long taskId,
+            long attachmentId
+    ) {
+        var current = SecurityUtils.currentUser();
+        requireTask(current.tenantId(), taskId, dataPermissionService.current());
+        if (mapper.countTaskAttachment(current.tenantId(), taskId, attachmentId) == 0) {
+            throw new BusinessException(
+                    "INSPECTION_ATTACHMENT_NOT_FOUND",
+                    "点检任务附件不存在或无权访问",
+                    HttpStatus.NOT_FOUND
+            );
+        }
+        return attachmentService.load(attachmentId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<InspectionDtos.InspectionAttachmentRow> abnormalAttachments(long id) {
+        var current = SecurityUtils.currentUser();
+        requireAbnormal(current.tenantId(), id, dataPermissionService.current());
+        return mapper.findAbnormalAttachments(current.tenantId(), id);
+    }
+
+    @Transactional(readOnly = true)
+    public AttachmentService.DownloadedAttachment abnormalAttachmentContent(
+            long abnormalId,
+            long attachmentId
+    ) {
+        var current = SecurityUtils.currentUser();
+        requireAbnormal(current.tenantId(), abnormalId, dataPermissionService.current());
+        if (mapper.countAbnormalAttachment(
+                current.tenantId(), abnormalId, attachmentId
+        ) == 0) {
+            throw new BusinessException(
+                    "INSPECTION_ATTACHMENT_NOT_FOUND",
+                    "点检异常附件不存在或无权访问",
+                    HttpStatus.NOT_FOUND
+            );
+        }
+        return attachmentService.load(attachmentId);
     }
 
     @Transactional

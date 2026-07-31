@@ -369,6 +369,20 @@ public final class InspectionDtos {
     ) {
     }
 
+    public record InspectionAttachmentRow(
+            long id,
+            Long taskResultId,
+            Long taskItemId,
+            String itemName,
+            String originalName,
+            String contentType,
+            String extension,
+            long fileSize,
+            String attachmentType,
+            LocalDateTime createdTime
+    ) {
+    }
+
     public record TaskDetail(
             TaskRow task,
             List<TaskItemRow> items,

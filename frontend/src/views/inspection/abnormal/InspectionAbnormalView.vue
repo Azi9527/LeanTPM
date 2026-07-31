@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { inspectionApi, type AbnormalRow } from '@/api/inspection'
+import {
+  inspectionApi,
+  type AbnormalRow,
+  type InspectionAttachmentRow,
+} from '@/api/inspection'
+import InspectionAttachmentList from '@/components/InspectionAttachmentList.vue'
 import { masterDataApi, type ReferenceUser } from '@/api/masterData'
 import { useAuthStore } from '@/stores/auth'
 import { errorMessage } from '@/utils/http'
@@ -15,6 +20,9 @@ const keyword = ref('')
 const status = ref<string>()
 const users = ref<ReferenceUser[]>([])
 const dialogVisible = ref(false)
+const detailVisible = ref(false)
+const attachmentLoading = ref(false)
+const attachments = ref<InspectionAttachmentRow[]>([])
 const selected = ref<AbnormalRow | null>(null)
 const form = reactive({
   responsibleUserId: undefined as number | undefined,
@@ -64,7 +72,25 @@ async function loadUsers() {
   try { users.value = await masterDataApi.referenceUsers() } catch { users.value = [] }
 }
 
-function openHandle(row: AbnormalRow) {
+async function loadAttachments(row: AbnormalRow) {
+  attachmentLoading.value = true
+  attachments.value = []
+  try {
+    attachments.value = await inspectionApi.abnormalAttachments(row.id)
+  } catch (error) {
+    ElMessage.warning(errorMessage(error, '异常附件加载失败'))
+  } finally {
+    attachmentLoading.value = false
+  }
+}
+
+async function openDetail(row: AbnormalRow) {
+  selected.value = row
+  detailVisible.value = true
+  await loadAttachments(row)
+}
+
+async function openHandle(row: AbnormalRow) {
   selected.value = row
   Object.assign(form, {
     responsibleUserId: row.responsibleUserId,
@@ -75,6 +101,7 @@ function openHandle(row: AbnormalRow) {
     targetStatus: row.abnormalStatus === 'OPEN' ? 'PROCESSING' : 'PENDING_VERIFY',
   })
   dialogVisible.value = true
+  await loadAttachments(row)
 }
 
 async function saveHandle() {
@@ -113,6 +140,11 @@ async function verify(row: AbnormalRow, passed: boolean) {
     ElMessage.error(errorMessage(error))
   }
 }
+
+async function loadAttachmentContent(attachmentId: number) {
+  if (!selected.value) throw new Error('尚未选择点检异常')
+  return inspectionApi.abnormalAttachmentContent(selected.value.id, attachmentId)
+}
 </script>
 
 <template>
@@ -133,8 +165,9 @@ async function verify(row: AbnormalRow, passed: boolean) {
         <el-table-column prop="responsibleUserName" label="责任人" width="110"><template #default="{ row }">{{ row.responsibleUserName || '待分派' }}</template></el-table-column>
         <el-table-column prop="dueTime" label="期限" min-width="170" />
         <el-table-column label="状态" width="100"><template #default="{ row }"><el-tag :type="statusMeta[row.abnormalStatus].type">{{ statusMeta[row.abnormalStatus].label }}</el-tag></template></el-table-column>
-        <el-table-column label="操作" width="170" fixed="right">
+        <el-table-column label="操作" width="210" fixed="right">
           <template #default="{ row }">
+            <el-button link type="primary" @click="openDetail(row)">查看</el-button>
             <el-button v-if="auth.can('inspection:abnormal:handle') && ['OPEN','PROCESSING'].includes(row.abnormalStatus)" link type="primary" @click="openHandle(row)">处理</el-button>
             <template v-if="auth.can('inspection:abnormal:verify') && row.abnormalStatus === 'PENDING_VERIFY'">
               <el-button link type="success" @click="verify(row, true)">通过</el-button>
@@ -146,8 +179,38 @@ async function verify(row: AbnormalRow, passed: boolean) {
       <el-pagination v-model:current-page="page" :page-size="20" :total="total" layout="total, prev, pager, next" @change="load" />
     </section>
 
+    <el-dialog v-model="detailVisible" :title="`异常详情 · ${selected?.abnormalCode || ''}`" width="min(780px, 96vw)">
+      <template v-if="selected">
+        <el-descriptions :column="2" border>
+          <el-descriptions-item label="设备">{{ selected.equipmentName }}</el-descriptions-item>
+          <el-descriptions-item label="点检项目">{{ selected.itemName || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="异常标题">{{ selected.abnormalTitle }}</el-descriptions-item>
+          <el-descriptions-item label="严重程度">{{ severityMeta[selected.severity].label }}</el-descriptions-item>
+          <el-descriptions-item label="异常现象" :span="2">{{ selected.abnormalDescription }}</el-descriptions-item>
+          <el-descriptions-item label="临时措施" :span="2">{{ selected.temporaryAction || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="最终结果" :span="2">{{ selected.finalResult || '-' }}</el-descriptions-item>
+        </el-descriptions>
+        <section v-loading="attachmentLoading" class="abnormal-attachments">
+          <h3>现场附件</h3>
+          <InspectionAttachmentList
+            :attachments="attachments"
+            :load-content="loadAttachmentContent"
+            empty-text="该异常没有上传附件"
+          />
+        </section>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="dialogVisible" :title="`处理异常 · ${selected?.abnormalCode || ''}`" width="min(720px, 96vw)">
       <el-alert v-if="selected" :title="`${selected.equipmentName} · ${selected.abnormalTitle}`" :description="selected.abnormalDescription" type="error" :closable="false" />
+      <section v-loading="attachmentLoading" class="abnormal-attachments">
+        <h3>现场附件</h3>
+        <InspectionAttachmentList
+          :attachments="attachments"
+          :load-content="loadAttachmentContent"
+          empty-text="该异常没有上传附件"
+        />
+      </section>
       <el-form label-position="top" class="form-grid">
         <el-form-item label="责任人"><el-select v-model="form.responsibleUserId" clearable filterable><el-option v-for="user in users" :key="user.id" :label="user.realName" :value="user.id" /></el-select></el-form-item>
         <el-form-item label="完成期限"><el-date-picker v-model="form.dueTime" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" /></el-form-item>
@@ -163,6 +226,8 @@ async function verify(row: AbnormalRow, passed: boolean) {
 
 <style scoped>
 .muted { color: var(--el-text-color-secondary); font-size: 12px; margin-top: 4px; }
+.abnormal-attachments { display: grid; gap: 10px; margin-top: 18px; }
+.abnormal-attachments h3 { margin: 0; font-size: 15px; }
 .form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-top: 18px; }
 .full { grid-column: 1 / -1; }
 @media (max-width: 640px) { .form-grid { grid-template-columns: 1fr; } .full { grid-column: auto; } }

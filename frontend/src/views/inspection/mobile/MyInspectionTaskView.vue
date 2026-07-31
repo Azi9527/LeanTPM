@@ -3,8 +3,16 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { UploadRequestOptions } from 'element-plus'
 import { useRoute } from 'vue-router'
-import { inspectionApi, type TaskDetail, type TaskItemRow, type TaskRow, type TaskStatus } from '@/api/inspection'
+import {
+  inspectionApi,
+  type InspectionAttachmentRow,
+  type TaskDetail,
+  type TaskItemRow,
+  type TaskRow,
+  type TaskStatus,
+} from '@/api/inspection'
 import { systemApi } from '@/api/system'
+import InspectionAttachmentList from '@/components/InspectionAttachmentList.vue'
 import {
   loadMobileDraft,
   newIdempotencyKey,
@@ -43,12 +51,14 @@ const uploadingItemId = ref<number>()
 const rows = ref<TaskRow[]>([])
 const activeStatus = ref<TaskStatus | ''>('')
 const detail = ref<TaskDetail | null>(null)
+const taskAttachments = ref<InspectionAttachmentRow[]>([])
 const executionVisible = ref(false)
 const executionRemark = ref('')
 const drafts = reactive<Record<number, ResultDraft>>({})
 const localSavedAt = ref('')
 const pendingSubmit = ref(false)
 const idempotencyKey = ref('')
+const localAttachmentBlobs = new Map<number, Blob>()
 let autosaveTimer: ReturnType<typeof setTimeout> | undefined
 let restoring = false
 let routeTaskOpened = false
@@ -94,7 +104,14 @@ async function load() {
 async function openTask(row: Pick<TaskRow, 'id'>) {
   try {
     restoring = true
+    taskAttachments.value = []
+    localAttachmentBlobs.clear()
     detail.value = await inspectionApi.task(row.id)
+    try {
+      taskAttachments.value = await inspectionApi.taskAttachments(row.id)
+    } catch (error) {
+      ElMessage.warning(errorMessage(error, '附件列表加载失败'))
+    }
     executionRemark.value = detail.value.task.executionRemark || ''
     for (const item of detail.value.items) {
       const result = item.result
@@ -223,7 +240,14 @@ async function save(submit: boolean) {
     pendingSubmit.value = false
     localSavedAt.value = ''
     await mobile.refreshDraftCount()
-    detail.value = await inspectionApi.task(detail.value.task.id)
+    const savedTaskId = detail.value.task.id
+    detail.value = await inspectionApi.task(savedTaskId)
+    try {
+      taskAttachments.value = await inspectionApi.taskAttachments(savedTaskId)
+    } catch (error) {
+      ElMessage.warning(errorMessage(error, '附件列表刷新失败'))
+    }
+    localAttachmentBlobs.clear()
     if (submit) executionVisible.value = false
     await load()
   } catch (error) {
@@ -251,7 +275,19 @@ async function upload(itemId: number, file: File) {
     const form = new FormData()
     form.append('file', file)
     const response = await systemApi.uploadAttachment(form)
-    drafts[itemId].attachmentIds.push(response.data.data.id)
+    const attachment = response.data.data
+    drafts[itemId].attachmentIds.push(attachment.id)
+    localAttachmentBlobs.set(attachment.id, file)
+    taskAttachments.value.push({
+      id: attachment.id,
+      taskItemId: itemId,
+      originalName: attachment.originalName,
+      contentType: attachment.contentType,
+      extension: attachment.extension,
+      fileSize: attachment.fileSize,
+      attachmentType: 'RESULT_PHOTO',
+      createdTime: attachment.createdTime,
+    })
     ElMessage.success('现场附件已上传')
   } catch (error) {
     ElMessage.error(errorMessage(error, '附件上传失败'))
@@ -288,6 +324,17 @@ function resultOptions(item: TaskItemRow): string[] {
 function parseSelected(value?: string): string[] {
   if (!value) return []
   try { return JSON.parse(value) as string[] } catch { return [] }
+}
+
+function attachmentsForItem(itemId: number) {
+  return taskAttachments.value.filter((attachment) => attachment.taskItemId === itemId)
+}
+
+async function loadAttachmentContent(attachmentId: number) {
+  const local = localAttachmentBlobs.get(attachmentId)
+  if (local) return local
+  if (!detail.value) throw new Error('点检任务尚未打开')
+  return inspectionApi.taskAttachmentContent(detail.value.task.id, attachmentId)
 }
 
 function dueClass(row: TaskRow) {
@@ -353,6 +400,13 @@ function dueClass(row: TaskRow) {
                 </el-button>
                 <span v-if="drafts[item.id].attachmentIds.length">已上传 {{ drafts[item.id].attachmentIds.length }} 个</span>
               </div>
+              <div v-if="attachmentsForItem(item.id).length" class="item-attachments">
+                <div class="attachment-title">现场附件（{{ attachmentsForItem(item.id).length }}）</div>
+                <InspectionAttachmentList
+                  :attachments="attachmentsForItem(item.id)"
+                  :load-content="loadAttachmentContent"
+                />
+              </div>
               <el-input v-if="drafts[item.id].abnormal" v-model="drafts[item.id].abnormalDescription" :disabled="!executable" type="textarea" placeholder="请描述异常现象" />
               <el-input v-if="drafts[item.id].skipped" v-model="drafts[item.id].skipReason" :disabled="!executable" placeholder="请填写跳过原因" />
             </template>
@@ -386,6 +440,8 @@ function dueClass(row: TaskRow) {
 .inspection-content h3, .inspection-content p { margin: 0; }
 .standard { padding: 12px; border-radius: 8px; background: var(--el-fill-color-light); }
 .result-controls { justify-content: flex-start; flex-wrap: wrap; }
+.item-attachments { display: grid; gap: 8px; padding: 12px; border-radius: 8px; background: var(--el-fill-color-extra-light); }
+.attachment-title { color: var(--el-text-color-regular); font-size: 13px; font-weight: 600; }
 .sticky-actions { position: sticky; bottom: 0; justify-content: flex-end; padding: 16px 0; background: var(--el-bg-color); z-index: 2; }
 .local-draft-state { display: flex; align-items: center; gap: 7px; margin-top: 14px; color: #53717c; font-size: 12px; }
 @media (max-width: 600px) {

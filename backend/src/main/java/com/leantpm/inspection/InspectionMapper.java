@@ -377,6 +377,28 @@ public interface InspectionMapper {
             @Param("taskResultId") long taskResultId
     );
 
+    List<InspectionDtos.InspectionAttachmentRow> findTaskAttachments(
+            @Param("tenantId") long tenantId,
+            @Param("taskId") long taskId
+    );
+
+    List<InspectionDtos.InspectionAttachmentRow> findAbnormalAttachments(
+            @Param("tenantId") long tenantId,
+            @Param("abnormalId") long abnormalId
+    );
+
+    int countTaskAttachment(
+            @Param("tenantId") long tenantId,
+            @Param("taskId") long taskId,
+            @Param("attachmentId") long attachmentId
+    );
+
+    int countAbnormalAttachment(
+            @Param("tenantId") long tenantId,
+            @Param("abnormalId") long abnormalId,
+            @Param("attachmentId") long attachmentId
+    );
+
     int countAvailableAttachment(
             @Param("tenantId") long tenantId,
             @Param("attachmentId") long attachmentId

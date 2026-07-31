@@ -240,6 +240,19 @@ export interface TaskEventRow {
   eventTime: string
 }
 
+export interface InspectionAttachmentRow {
+  id: number
+  taskResultId?: number
+  taskItemId?: number
+  itemName?: string
+  originalName: string
+  contentType?: string
+  extension: string
+  fileSize: number
+  attachmentType: string
+  createdTime: string
+}
+
 export interface AbnormalRow {
   id: number
   abnormalCode: string
@@ -333,6 +346,15 @@ export const inspectionApi = {
   tasks: (params: object) =>
     getData<PageResult<TaskRow>>('/inspection/tasks', params),
   task: (id: number) => getData<TaskDetail>(`/inspection/tasks/${id}`),
+  taskAttachments: (id: number) =>
+    getData<InspectionAttachmentRow[]>(`/inspection/tasks/${id}/attachments`),
+  taskAttachmentContent: async (taskId: number, attachmentId: number) => {
+    const response = await http.get<Blob>(
+      `/inspection/tasks/${taskId}/attachments/${attachmentId}/content`,
+      { responseType: 'blob' },
+    )
+    return response.data
+  },
   createTask: (data: object) => http.post('/inspection/tasks', data),
   assignTask: (id: number, data: object) =>
     http.put(`/inspection/tasks/${id}/assignment`, data),
@@ -349,6 +371,15 @@ export const inspectionApi = {
 
   abnormalities: (params: object) =>
     getData<PageResult<AbnormalRow>>('/inspection/abnormalities', params),
+  abnormalAttachments: (id: number) =>
+    getData<InspectionAttachmentRow[]>(`/inspection/abnormalities/${id}/attachments`),
+  abnormalAttachmentContent: async (abnormalId: number, attachmentId: number) => {
+    const response = await http.get<Blob>(
+      `/inspection/abnormalities/${abnormalId}/attachments/${attachmentId}/content`,
+      { responseType: 'blob' },
+    )
+    return response.data
+  },
   handleAbnormal: (id: number, data: object) =>
     http.put(`/inspection/abnormalities/${id}`, data),
   verifyAbnormal: (id: number, data: object) =>

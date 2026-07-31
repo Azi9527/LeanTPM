@@ -7,6 +7,11 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Pattern;
+import org.springframework.core.io.Resource;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -20,6 +25,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 
 @Validated
@@ -205,6 +212,25 @@ public class InspectionController {
         return ApiResponse.success(taskService.detail(id));
     }
 
+    @GetMapping("/tasks/{id}/attachments")
+    @PreAuthorize("hasAnyAuthority('inspection:task:view','inspection:my-task:view')")
+    public ApiResponse<List<InspectionDtos.InspectionAttachmentRow>> taskAttachments(
+            @PathVariable long id
+    ) {
+        return ApiResponse.success(taskService.taskAttachments(id));
+    }
+
+    @GetMapping("/tasks/{taskId}/attachments/{attachmentId}/content")
+    @PreAuthorize("hasAnyAuthority('inspection:task:view','inspection:my-task:view')")
+    public ResponseEntity<Resource> taskAttachmentContent(
+            @PathVariable long taskId,
+            @PathVariable long attachmentId
+    ) {
+        return attachmentResponse(
+                taskService.taskAttachmentContent(taskId, attachmentId)
+        );
+    }
+
     @PostMapping("/tasks")
     @Idempotent
     @PreAuthorize("hasAuthority('inspection:task:create')")
@@ -285,6 +311,25 @@ public class InspectionController {
         ));
     }
 
+    @GetMapping("/abnormalities/{id}/attachments")
+    @PreAuthorize("hasAuthority('inspection:abnormal:view')")
+    public ApiResponse<List<InspectionDtos.InspectionAttachmentRow>> abnormalAttachments(
+            @PathVariable long id
+    ) {
+        return ApiResponse.success(taskService.abnormalAttachments(id));
+    }
+
+    @GetMapping("/abnormalities/{abnormalId}/attachments/{attachmentId}/content")
+    @PreAuthorize("hasAuthority('inspection:abnormal:view')")
+    public ResponseEntity<Resource> abnormalAttachmentContent(
+            @PathVariable long abnormalId,
+            @PathVariable long attachmentId
+    ) {
+        return attachmentResponse(
+                taskService.abnormalAttachmentContent(abnormalId, attachmentId)
+        );
+    }
+
     @PutMapping("/abnormalities/{id}")
     @Idempotent
     @PreAuthorize("hasAuthority('inspection:abnormal:handle')")
@@ -311,5 +356,24 @@ public class InspectionController {
     @PreAuthorize("hasAuthority('inspection:statistics:view')")
     public ApiResponse<InspectionDtos.Statistics> statistics() {
         return ApiResponse.success(taskService.statistics());
+    }
+
+    private ResponseEntity<Resource> attachmentResponse(
+            com.leantpm.system.attachment.AttachmentService.DownloadedAttachment download
+    ) {
+        String contentType = download.record().contentType() == null
+                ? MediaType.APPLICATION_OCTET_STREAM_VALUE
+                : download.record().contentType();
+        boolean image = contentType.toLowerCase().startsWith("image/");
+        ContentDisposition disposition = (image
+                ? ContentDisposition.inline()
+                : ContentDisposition.attachment())
+                .filename(download.record().originalName(), StandardCharsets.UTF_8)
+                .build();
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(contentType))
+                .contentLength(download.record().fileSize())
+                .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
+                .body(download.resource());
     }
 }
