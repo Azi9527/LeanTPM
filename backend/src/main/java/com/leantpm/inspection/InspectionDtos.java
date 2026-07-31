@@ -259,7 +259,7 @@ public final class InspectionDtos {
             @NotNull LocalDate plannedDate,
             LocalDateTime plannedStartTime,
             @NotNull LocalDateTime dueTime,
-            Long assigneeUserId,
+            @Size(max = 20) List<@Min(1) Long> assigneeUserIds,
             @Size(max = 64) String teamCode,
             @NotNull Boolean backfill,
             @Size(max = 1000) String remark
@@ -288,6 +288,7 @@ public final class InspectionDtos {
             LocalDateTime dueTime,
             Long assigneeUserId,
             String assigneeName,
+            String assigneeUserIdsCsv,
             String teamCode,
             String taskStatus,
             String sourceType,
@@ -392,7 +393,7 @@ public final class InspectionDtos {
     }
 
     public record AssignTaskRequest(
-            @NotNull @Min(1) Long assigneeUserId,
+            @NotEmpty @Size(max = 20) List<@Min(1) Long> assigneeUserIds,
             @Size(max = 64) String teamCode,
             @NotNull Integer version
     ) {

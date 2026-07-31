@@ -24,8 +24,19 @@
                             FROM inspection_task scoped_inspection
                             WHERE scoped_inspection.tenant_id = e.tenant_id
                               AND scoped_inspection.equipment_id = e.id
-                              AND scoped_inspection.assignee_user_id = #{scope.userId}
                               AND scoped_inspection.deleted = 0
+                              AND (
+                                  scoped_inspection.assignee_user_id = #{scope.userId}
+                                  OR EXISTS (
+                                      SELECT 1
+                                      FROM inspection_task_assignee scoped_assignee
+                                      WHERE scoped_assignee.tenant_id =
+                                            scoped_inspection.tenant_id
+                                        AND scoped_assignee.task_id =
+                                            scoped_inspection.id
+                                        AND scoped_assignee.user_id = #{scope.userId}
+                                  )
+                              )
                         )
                         OR EXISTS (
                             SELECT 1
@@ -89,10 +100,19 @@
                    task_status = 'COMPLETED'
                    AND DATE(completed_time) = CURRENT_DATE()
                ), 0) AS completed_today
-        FROM inspection_task
-        WHERE tenant_id = #{tenantId}
-          AND assignee_user_id = #{userId}
-          AND deleted = 0
+        FROM inspection_task task
+        WHERE task.tenant_id = #{tenantId}
+          AND task.deleted = 0
+          AND (
+              task.assignee_user_id = #{userId}
+              OR EXISTS (
+                  SELECT 1
+                  FROM inspection_task_assignee assignee
+                  WHERE assignee.tenant_id = task.tenant_id
+                    AND assignee.task_id = task.id
+                    AND assignee.user_id = #{userId}
+              )
+          )
     </select>
 
     <select id="maintenanceCount"
@@ -145,8 +165,17 @@
              AND e.id = task.equipment_id
              AND e.deleted = 0
             WHERE task.tenant_id = #{tenantId}
-              AND task.assignee_user_id = #{userId}
               AND task.deleted = 0
+              AND (
+                  task.assignee_user_id = #{userId}
+                  OR EXISTS (
+                      SELECT 1
+                      FROM inspection_task_assignee assignee
+                      WHERE assignee.tenant_id = task.tenant_id
+                        AND assignee.task_id = task.id
+                        AND assignee.user_id = #{userId}
+                  )
+              )
               AND (
                   task.task_status = 'OVERDUE'
                   OR (
@@ -203,9 +232,18 @@
              AND e.id = abnormal.equipment_id
              AND e.deleted = 0
             WHERE abnormal.tenant_id = #{tenantId}
-              AND task.assignee_user_id = #{userId}
               AND abnormal.abnormal_status != 'CLOSED'
               AND abnormal.deleted = 0
+              AND (
+                  task.assignee_user_id = #{userId}
+                  OR EXISTS (
+                      SELECT 1
+                      FROM inspection_task_assignee assignee
+                      WHERE assignee.tenant_id = task.tenant_id
+                        AND assignee.task_id = task.id
+                        AND assignee.user_id = #{userId}
+                  )
+              )
             UNION ALL
             SELECT 'MAINTENANCE_ABNORMAL',
                    abnormal.severity,
@@ -296,9 +334,18 @@
             FROM inspection_task task
             WHERE task.tenant_id = #{tenantId}
               AND task.equipment_id = #{equipmentId}
-              AND task.assignee_user_id = #{userId}
               AND task.task_status NOT IN ('COMPLETED', 'CANCELLED', 'VOIDED')
               AND task.deleted = 0
+              AND (
+                  task.assignee_user_id = #{userId}
+                  OR EXISTS (
+                      SELECT 1
+                      FROM inspection_task_assignee assignee
+                      WHERE assignee.tenant_id = task.tenant_id
+                        AND assignee.task_id = task.id
+                        AND assignee.user_id = #{userId}
+                  )
+              )
             UNION ALL
             SELECT task.id,
                    task.task_code,

@@ -165,6 +165,7 @@ export interface TaskRow {
   dueTime: string
   assigneeUserId?: number
   assigneeName?: string
+  assigneeUserIdsCsv?: string
   teamCode?: string
   taskStatus: TaskStatus
   sourceType: 'PLAN' | 'MANUAL' | 'BACKFILL'

@@ -45,6 +45,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class InspectionMySqlIntegrationTest {
     private static final long USER_ID = 9101L;
     private static final long OPERATOR_ID = 9102L;
+    private static final long COLLABORATOR_ID = 9103L;
 
     @Autowired
     private EquipmentService equipmentService;
@@ -81,6 +82,17 @@ class InspectionMySqlIntegrationTest {
                 "INSERT INTO system_user_role (tenant_id, user_id, role_id) VALUES (1, ?, 3)",
                 OPERATOR_ID
         );
+        jdbc.update("""
+                INSERT INTO system_user
+                    (id, tenant_id, username, password_hash, real_name,
+                     organization_id, status, must_change_password)
+                VALUES (?, 1, 'inspection_collaborator_it', 'not-used',
+                        '点检协同人集成测试', 5, 1, 0)
+                """, COLLABORATOR_ID);
+        jdbc.update(
+                "INSERT INTO system_user_role (tenant_id, user_id, role_id) VALUES (1, ?, 3)",
+                COLLABORATOR_ID
+        );
         authenticateAdmin();
     }
 
@@ -116,11 +128,23 @@ class InspectionMySqlIntegrationTest {
     }
 
     private void authenticateOperator() {
+        authenticateFieldUser(
+                OPERATOR_ID, "inspection_operator_it", "点检执行人集成测试"
+        );
+    }
+
+    private void authenticateCollaborator() {
+        authenticateFieldUser(
+                COLLABORATOR_ID, "inspection_collaborator_it", "点检协同人集成测试"
+        );
+    }
+
+    private void authenticateFieldUser(long id, String username, String realName) {
         CurrentUser user = new CurrentUser(
-                OPERATOR_ID,
+                id,
                 1L,
-                "inspection_operator_it",
-                "点检执行人集成测试",
+                username,
+                realName,
                 false,
                 Set.of("OPERATOR"),
                 Set.of(
@@ -219,6 +243,28 @@ class InspectionMySqlIntegrationTest {
                 taskService.generate(1L, USER_ID, LocalDate.now());
         assertThat(generated.generatedTasks()).isEqualTo(1);
         assertThat(generated.taskCodes()).hasSize(1);
+
+        InspectionDtos.TaskRow generatedTask = taskService.tasks(
+                generated.taskCodes().getFirst(), null, null, false, 1, 20
+        ).records().getFirst();
+        taskService.assign(
+                generatedTask.id(),
+                new InspectionDtos.AssignTaskRequest(
+                        List.of(OPERATOR_ID, COLLABORATOR_ID),
+                        null,
+                        generatedTask.version()
+                )
+        );
+        InspectionDtos.TaskRow assignedTask = taskService.detail(generatedTask.id()).task();
+        assertThat(assignedTask.assigneeName())
+                .isEqualTo("点检执行人集成测试、点检协同人集成测试");
+        assertThat(assignedTask.assigneeUserIdsCsv())
+                .isEqualTo(OPERATOR_ID + "," + COLLABORATOR_ID);
+
+        authenticateCollaborator();
+        assertThat(taskService.tasks(
+                generated.taskCodes().getFirst(), null, null, true, 1, 20
+        ).records()).singleElement();
 
         authenticateOperator();
         InspectionDtos.TaskRow task = taskService.tasks(

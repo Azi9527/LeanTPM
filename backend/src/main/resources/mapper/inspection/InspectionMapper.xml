@@ -627,7 +627,7 @@
              #{scheme.schemeCode}, #{scheme.schemeName}, #{version.versionNumber},
              #{scheme.inspectionType}, #{equipment.id}, #{equipment.organizationId},
              #{equipment.locationId}, #{request.plannedDate}, #{request.plannedStartTime},
-             #{request.dueTime}, #{request.assigneeUserId}, #{request.teamCode},
+             #{request.dueTime}, #{primaryAssigneeUserId}, #{request.teamCode},
              CASE WHEN #{request.backfill} THEN 'BACKFILL' ELSE 'MANUAL' END,
              #{request.backfill}, #{version.reviewRequiredFlag}, #{request.remark},
              #{operatorId}, #{operatorId})
@@ -663,7 +663,15 @@
         task.tenant_id = #{tenantId} AND task.deleted = 0
         AND (
           <include refid="equipmentScope"/>
-          OR (#{scope.selfData} = 1 AND task.assignee_user_id = #{scope.userId})
+          OR (#{scope.selfData} = 1 AND (
+              task.assignee_user_id = #{scope.userId}
+              OR EXISTS (
+                  SELECT 1 FROM inspection_task_assignee scoped_assignee
+                  WHERE scoped_assignee.tenant_id = task.tenant_id
+                    AND scoped_assignee.task_id = task.id
+                    AND scoped_assignee.user_id = #{scope.userId}
+              )
+          ))
         )
         <if test="keyword != null and keyword != ''">
             AND (task.task_code LIKE CONCAT('%', #{keyword}, '%')
@@ -673,7 +681,17 @@
         </if>
         <if test="taskStatus != null and taskStatus != ''">AND task.task_status = #{taskStatus}</if>
         <if test="plannedDate != null">AND task.planned_date = #{plannedDate}</if>
-        <if test="mineOnly">AND task.assignee_user_id = #{scope.userId}</if>
+        <if test="mineOnly">
+            AND (
+                task.assignee_user_id = #{scope.userId}
+                OR EXISTS (
+                    SELECT 1 FROM inspection_task_assignee mine_assignee
+                    WHERE mine_assignee.tenant_id = task.tenant_id
+                      AND mine_assignee.task_id = task.id
+                      AND mine_assignee.user_id = #{scope.userId}
+                )
+            )
+        </if>
     </sql>
 
     <sql id="taskColumns">
@@ -683,7 +701,30 @@
         task.organization_id, organization.organization_name,
         task.location_id, location.location_name, task.planned_date,
         task.planned_start_time, task.due_time, task.assignee_user_id,
-        assignee.real_name AS assignee_name, task.team_code, task.task_status,
+        COALESCE(
+            (
+                SELECT GROUP_CONCAT(user.real_name ORDER BY relation.sort_order, relation.id
+                                    SEPARATOR '、')
+                FROM inspection_task_assignee relation
+                JOIN system_user user
+                  ON user.tenant_id = relation.tenant_id
+                 AND user.id = relation.user_id
+                 AND user.deleted = 0
+                WHERE relation.tenant_id = task.tenant_id
+                  AND relation.task_id = task.id
+            ),
+            assignee.real_name
+        ) AS assignee_name,
+        COALESCE(
+            (
+                SELECT GROUP_CONCAT(relation.user_id ORDER BY relation.sort_order, relation.id)
+                FROM inspection_task_assignee relation
+                WHERE relation.tenant_id = task.tenant_id
+                  AND relation.task_id = task.id
+            ),
+            CAST(task.assignee_user_id AS CHAR)
+        ) AS assignee_user_ids_csv,
+        task.team_code, task.task_status,
         task.source_type, task.backfill_flag, task.review_required_flag,
         task.started_time, task.submitted_time, task.completed_time,
         reviewer.real_name AS reviewer_name, task.review_comment, task.execution_remark,
@@ -734,7 +775,15 @@
           AND task.deleted = 0
           AND (
             <include refid="equipmentScope"/>
-            OR (#{scope.selfData} = 1 AND task.assignee_user_id = #{scope.userId})
+            OR (#{scope.selfData} = 1 AND (
+                task.assignee_user_id = #{scope.userId}
+                OR EXISTS (
+                    SELECT 1 FROM inspection_task_assignee scoped_assignee
+                    WHERE scoped_assignee.tenant_id = task.tenant_id
+                      AND scoped_assignee.task_id = task.id
+                      AND scoped_assignee.user_id = #{scope.userId}
+                )
+            ))
           )
         LIMIT 1
     </select>
@@ -957,12 +1006,34 @@
 
     <update id="assignTask">
         UPDATE inspection_task
-        SET assignee_user_id = #{request.assigneeUserId}, team_code = #{request.teamCode},
+        SET assignee_user_id = #{primaryAssigneeUserId}, team_code = #{teamCode},
             updated_by = #{operatorId}, version = version + 1
         WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0
-          AND version = #{request.version}
+          AND version = #{version}
           AND task_status IN ('PENDING','IN_PROGRESS','OVERDUE')
     </update>
+
+    <delete id="deleteTaskAssignees">
+        DELETE FROM inspection_task_assignee
+        WHERE tenant_id = #{tenantId} AND task_id = #{taskId}
+    </delete>
+
+    <insert id="insertTaskAssignee">
+        INSERT INTO inspection_task_assignee
+            (tenant_id, task_id, user_id, primary_flag, sort_order, created_by)
+        VALUES
+            (#{tenantId}, #{taskId}, #{userId}, #{primary}, #{sortOrder}, #{operatorId})
+    </insert>
+
+    <select id="countTaskAssignees" resultType="int">
+        SELECT COUNT(*) FROM inspection_task_assignee
+        WHERE tenant_id = #{tenantId} AND task_id = #{taskId}
+    </select>
+
+    <select id="countTaskAssignee" resultType="int">
+        SELECT COUNT(*) FROM inspection_task_assignee
+        WHERE tenant_id = #{tenantId} AND task_id = #{taskId} AND user_id = #{userId}
+    </select>
 
     <update id="reviewTask">
         UPDATE inspection_task

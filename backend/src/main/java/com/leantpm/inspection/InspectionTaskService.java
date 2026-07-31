@@ -210,6 +210,12 @@ public class InspectionTaskService {
                             mapper.copyTaskItems(
                                     tenantId, taskId, plan.schemeVersionId()
                             );
+                            if (plan.assigneeUserId() != null) {
+                                mapper.insertTaskAssignee(
+                                        tenantId, taskId, plan.assigneeUserId(),
+                                        true, 0, operatorId
+                                );
+                            }
                             mapper.insertTaskEvent(
                                     tenantId, taskId, "GENERATED", null, "PENDING",
                                     "计划自动生成", operatorId
@@ -277,17 +283,16 @@ public class InspectionTaskService {
                     HttpStatus.NOT_FOUND
             );
         }
-        if (request.assigneeUserId() != null
-                && mapper.countActiveUser(current.tenantId(), request.assigneeUserId()) == 0) {
-            throw new BusinessException(
-                    "USER_NOT_FOUND", "执行人不存在或已停用", HttpStatus.NOT_FOUND
-            );
-        }
+        List<Long> assigneeUserIds = normalizeAssigneeUserIds(request.assigneeUserIds());
+        validateAssigneeUsers(current.tenantId(), assigneeUserIds);
+        Long primaryAssigneeUserId = assigneeUserIds.isEmpty()
+                ? null : assigneeUserIds.getFirst();
         String code = numberRuleService.generate(
                 current.tenantId(), current.userId(), "INSPECTION_TASK"
         ).businessNumber();
         mapper.insertManualTask(
-                current.tenantId(), code, scheme, version, equipment, request, current.userId()
+                current.tenantId(), code, scheme, version, equipment, request,
+                primaryAssigneeUserId, current.userId()
         );
         Long taskId = mapper.findTaskIdByCode(current.tenantId(), code);
         if (taskId == null) {
@@ -296,6 +301,9 @@ public class InspectionTaskService {
                     HttpStatus.INTERNAL_SERVER_ERROR
             );
         }
+        replaceTaskAssignees(
+                current.tenantId(), taskId, assigneeUserIds, current.userId()
+        );
         mapper.copyTaskItems(current.tenantId(), taskId, version.id());
         mapper.insertTaskEvent(
                 current.tenantId(), taskId, "CREATED", null, "PENDING",
@@ -314,21 +322,32 @@ public class InspectionTaskService {
         InspectionDtos.TaskRow before = requireTask(
                 current.tenantId(), id, dataPermissionService.current()
         );
-        if (mapper.countActiveUser(current.tenantId(), request.assigneeUserId()) == 0) {
+        List<Long> assigneeUserIds =
+                normalizeAssigneeUserIds(request.assigneeUserIds());
+        if (assigneeUserIds.isEmpty()) {
             throw new BusinessException(
-                    "USER_NOT_FOUND", "执行人不存在或已停用", HttpStatus.NOT_FOUND
+                    "INSPECTION_ASSIGNEE_REQUIRED", "请至少选择一名执行人"
             );
         }
-        if (mapper.assignTask(current.tenantId(), id, request, current.userId()) == 0) {
+        validateAssigneeUsers(current.tenantId(), assigneeUserIds);
+        if (mapper.assignTask(
+                current.tenantId(), id, assigneeUserIds.getFirst(),
+                clean(request.teamCode()), request.version(), current.userId()
+        ) == 0) {
             throw optimisticConflict();
         }
+        replaceTaskAssignees(
+                current.tenantId(), id, assigneeUserIds, current.userId()
+        );
+        InspectionDtos.TaskRow updated = mapper.findTask(
+                current.tenantId(), id, DataPermission.all(current.userId())
+        );
         mapper.insertTaskEvent(
                 current.tenantId(), id, "ASSIGNED", before.taskStatus(), before.taskStatus(),
-                "任务已派给用户 " + request.assigneeUserId(), current.userId()
+                "任务已派给：" + updated.assigneeName(), current.userId()
         );
         changeLogService.record(
-                "INSPECTION_TASK", id, "ASSIGN", before,
-                mapper.findTask(current.tenantId(), id, DataPermission.all(current.userId()))
+                "INSPECTION_TASK", id, "ASSIGN", before, updated
         );
     }
 
@@ -793,12 +812,52 @@ public class InspectionTaskService {
     }
 
     private void assertCanExecute(CurrentUser current, InspectionDtos.TaskRow task) {
-        if (task.assigneeUserId() != null
-                && task.assigneeUserId() != current.userId()
+        int assigneeCount = mapper.countTaskAssignees(current.tenantId(), task.id());
+        boolean assigned = assigneeCount > 0
+                ? mapper.countTaskAssignee(
+                        current.tenantId(), task.id(), current.userId()
+                ) > 0
+                : task.assigneeUserId() != null
+                        && task.assigneeUserId() == current.userId();
+        if ((assigneeCount > 0 || task.assigneeUserId() != null)
+                && !assigned
                 && !current.permissions().contains("inspection:task:assign")) {
             throw new BusinessException(
                     "INSPECTION_TASK_ASSIGNEE_ONLY", "只能由任务执行人录入结果",
                     HttpStatus.FORBIDDEN
+            );
+        }
+    }
+
+    private List<Long> normalizeAssigneeUserIds(List<Long> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return List.of();
+        }
+        return userIds.stream().distinct().toList();
+    }
+
+    private void validateAssigneeUsers(long tenantId, List<Long> userIds) {
+        for (Long userId : userIds) {
+            if (mapper.countActiveUser(tenantId, userId) == 0) {
+                throw new BusinessException(
+                        "USER_NOT_FOUND",
+                        "执行人不存在或已停用：" + userId,
+                        HttpStatus.NOT_FOUND
+                );
+            }
+        }
+    }
+
+    private void replaceTaskAssignees(
+            long tenantId,
+            long taskId,
+            List<Long> userIds,
+            long operatorId
+    ) {
+        mapper.deleteTaskAssignees(tenantId, taskId);
+        for (int index = 0; index < userIds.size(); index++) {
+            mapper.insertTaskAssignee(
+                    tenantId, taskId, userIds.get(index), index == 0, index, operatorId
             );
         }
     }

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { pinyin } from 'pinyin-pro'
 import { inspectionApi, type SchemeRow, type TaskDetail, type TaskRow, type TaskStatus } from '@/api/inspection'
 import { equipmentApi, type EquipmentRow } from '@/api/equipment'
 import { masterDataApi, type ReferenceUser } from '@/api/masterData'
@@ -16,10 +17,14 @@ const keyword = ref('')
 const status = ref<TaskStatus>()
 const detailVisible = ref(false)
 const createVisible = ref(false)
+const assignVisible = ref(false)
+const assigning = ref(false)
 const detail = ref<TaskDetail | null>(null)
+const assignTarget = ref<TaskRow | null>(null)
 const equipment = ref<EquipmentRow[]>([])
 const schemes = ref<SchemeRow[]>([])
 const users = ref<ReferenceUser[]>([])
+const userKeyword = ref('')
 
 const createForm = reactive({
   equipmentId: undefined as number | undefined,
@@ -27,10 +32,21 @@ const createForm = reactive({
   plannedDate: new Date().toISOString().slice(0, 10),
   plannedStartTime: '',
   dueTime: '',
-  assigneeUserId: undefined as number | undefined,
+  assigneeUserIds: [] as number[],
   teamCode: '',
   backfill: false,
   remark: '',
+})
+
+const assignForm = reactive({
+  assigneeUserIds: [] as number[],
+  teamCode: '',
+})
+
+const filteredUsers = computed(() => {
+  const keyword = normalizeSearch(userKeyword.value)
+  if (!keyword) return users.value
+  return users.value.filter((user) => userSearchText(user).includes(keyword))
 })
 
 const statusMeta: Record<TaskStatus, { label: string; type: '' | 'success' | 'warning' | 'danger' | 'info' }> = {
@@ -81,13 +97,14 @@ async function loadReferences() {
 }
 
 function openCreate() {
+  userKeyword.value = ''
   Object.assign(createForm, {
     equipmentId: undefined,
     schemeVersionId: undefined,
     plannedDate: new Date().toISOString().slice(0, 10),
     plannedStartTime: '',
     dueTime: '',
-    assigneeUserId: undefined,
+    assigneeUserIds: [],
     teamCode: '',
     backfill: false,
     remark: '',
@@ -104,7 +121,6 @@ async function createTask() {
     await inspectionApi.createTask({
       ...createForm,
       plannedStartTime: createForm.plannedStartTime || null,
-      assigneeUserId: createForm.assigneeUserId || null,
     })
     createVisible.value = false
     ElMessage.success('手工点检任务已创建')
@@ -123,23 +139,69 @@ async function showDetail(row: TaskRow) {
   }
 }
 
-async function assign(row: TaskRow) {
-  const value = await ElMessageBox.prompt('请输入执行人用户 ID', '任务派工', {
-    inputValue: row.assigneeUserId?.toString() || '',
-    inputPattern: /^\d+$/,
-    inputErrorMessage: '请输入有效用户 ID',
-  })
+function openAssign(row: TaskRow) {
+  assignTarget.value = row
+  assignForm.assigneeUserIds = parseAssigneeIds(row)
+  assignForm.teamCode = row.teamCode || ''
+  userKeyword.value = ''
+  assignVisible.value = true
+}
+
+async function saveAssignment() {
+  if (!assignTarget.value) return
+  if (!assignForm.assigneeUserIds.length) {
+    ElMessage.warning('请至少选择一名执行人')
+    return
+  }
+  assigning.value = true
   try {
-    await inspectionApi.assignTask(row.id, {
-      assigneeUserId: Number(value.value),
-      teamCode: row.teamCode || null,
-      version: row.version,
+    await inspectionApi.assignTask(assignTarget.value.id, {
+      assigneeUserIds: assignForm.assigneeUserIds,
+      teamCode: assignForm.teamCode || null,
+      version: assignTarget.value.version,
     })
-    ElMessage.success('任务已派工')
+    assignVisible.value = false
+    ElMessage.success(`任务已派工给 ${assignForm.assigneeUserIds.length} 人`)
     await load()
   } catch (error) {
     ElMessage.error(errorMessage(error))
+  } finally {
+    assigning.value = false
   }
+}
+
+function searchUsers(query: string) {
+  userKeyword.value = query
+}
+
+function normalizeSearch(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, '')
+}
+
+function userSearchText(user: ReferenceUser) {
+  const name = user.realName || ''
+  const fullPinyin = pinyin(name, { toneType: 'none', type: 'array' }).join('')
+  const initials = pinyin(name, {
+    pattern: 'first',
+    toneType: 'none',
+    type: 'array',
+  }).join('')
+  return normalizeSearch([
+    name,
+    user.username,
+    user.organizationName || '',
+    fullPinyin,
+    initials,
+  ].join(' '))
+}
+
+function parseAssigneeIds(row: TaskRow) {
+  const ids = row.assigneeUserIdsCsv
+    ?.split(',')
+    .map((value) => Number(value))
+    .filter((value) => Number.isSafeInteger(value) && value > 0)
+  if (ids?.length) return ids
+  return row.assigneeUserId ? [row.assigneeUserId] : []
 }
 
 async function review(row: TaskRow, approved: boolean) {
@@ -190,13 +252,13 @@ async function close(row: TaskRow, targetStatus: 'CANCELLED' | 'VOIDED') {
         <el-table-column label="设备" min-width="190"><template #default="{ row }"><strong>{{ row.equipmentName }}</strong><div class="muted mono">{{ row.equipmentCode }}</div></template></el-table-column>
         <el-table-column prop="plannedDate" label="计划日期" width="115" />
         <el-table-column prop="dueTime" label="截止时间" min-width="175" />
-        <el-table-column prop="assigneeName" label="执行人" width="110"><template #default="{ row }">{{ row.assigneeName || '待派工' }}</template></el-table-column>
+        <el-table-column prop="assigneeName" label="执行人" min-width="150"><template #default="{ row }">{{ row.assigneeName || '待派工' }}</template></el-table-column>
         <el-table-column label="进度" width="110"><template #default="{ row }">{{ row.completedItemCount }}/{{ row.itemCount }}<el-badge v-if="row.abnormalItemCount" :value="row.abnormalItemCount" type="danger" /></template></el-table-column>
         <el-table-column label="状态" width="100"><template #default="{ row }"><el-tag :type="statusMeta[row.taskStatus as TaskStatus].type">{{ statusMeta[row.taskStatus as TaskStatus].label }}</el-tag></template></el-table-column>
         <el-table-column label="操作" width="260" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="showDetail(row)">详情</el-button>
-            <el-button v-if="auth.can('inspection:task:assign') && ['PENDING','IN_PROGRESS','OVERDUE'].includes(row.taskStatus)" link type="primary" @click="assign(row)">派工</el-button>
+            <el-button v-if="auth.can('inspection:task:assign') && ['PENDING','IN_PROGRESS','OVERDUE'].includes(row.taskStatus)" link type="primary" @click="openAssign(row)">派工</el-button>
             <template v-if="auth.can('inspection:task:review') && row.taskStatus === 'PENDING_REVIEW'">
               <el-button link type="success" @click="review(row, true)">通过</el-button>
               <el-button link type="warning" @click="review(row, false)">驳回</el-button>
@@ -218,11 +280,71 @@ async function close(row: TaskRow, targetStatus: 'CANCELLED' | 'VOIDED') {
         <el-form-item label="计划日期"><el-date-picker v-model="createForm.plannedDate" type="date" value-format="YYYY-MM-DD" /></el-form-item>
         <el-form-item label="计划开始"><el-date-picker v-model="createForm.plannedStartTime" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" clearable /></el-form-item>
         <el-form-item label="截止时间"><el-date-picker v-model="createForm.dueTime" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" /></el-form-item>
-        <el-form-item label="执行人"><el-select v-model="createForm.assigneeUserId" clearable filterable><el-option v-for="user in users" :key="user.id" :label="user.realName" :value="user.id" /></el-select></el-form-item>
+        <el-form-item label="执行人（可多选）">
+          <el-select
+            v-model="createForm.assigneeUserIds"
+            multiple
+            :multiple-limit="20"
+            filterable
+            collapse-tags
+            collapse-tags-tooltip
+            clearable
+            :filter-method="searchUsers"
+            placeholder="姓名、账号、全拼或拼音首字母"
+          >
+            <el-option
+              v-for="user in filteredUsers"
+              :key="user.id"
+              :label="`${user.realName}（${user.username}）`"
+              :value="user.id"
+            >
+              <div class="user-option"><strong>{{ user.realName }}</strong><span>{{ user.username }} · {{ user.organizationName || '未分配组织' }}</span></div>
+            </el-option>
+          </el-select>
+        </el-form-item>
         <el-form-item label="补录"><el-switch v-model="createForm.backfill" /></el-form-item>
         <el-form-item label="备注" class="full"><el-input v-model="createForm.remark" type="textarea" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="createVisible = false">取消</el-button><el-button type="primary" @click="createTask">创建</el-button></template>
+    </el-dialog>
+
+    <el-dialog v-model="assignVisible" :title="`任务派工 · ${assignTarget?.taskCode || ''}`" width="min(620px, 96vw)">
+      <el-alert
+        v-if="assignTarget"
+        :title="`${assignTarget.equipmentName} · ${assignTarget.schemeNameSnapshot}`"
+        type="info"
+        :closable="false"
+      />
+      <el-form label-position="top" class="assign-form">
+        <el-form-item label="执行人员">
+          <el-select
+            v-model="assignForm.assigneeUserIds"
+            multiple
+            :multiple-limit="20"
+            filterable
+            collapse-tags
+            collapse-tags-tooltip
+            :max-collapse-tags="4"
+            :filter-method="searchUsers"
+            placeholder="输入姓名、账号、全拼或拼音首字母"
+          >
+            <el-option
+              v-for="user in filteredUsers"
+              :key="user.id"
+              :label="`${user.realName}（${user.username}）`"
+              :value="user.id"
+            >
+              <div class="user-option"><strong>{{ user.realName }}</strong><span>{{ user.username }} · {{ user.organizationName || '未分配组织' }}</span></div>
+            </el-option>
+          </el-select>
+          <div class="field-hint">最多选择 20 人；第一位作为主执行人，所有人员均可在“我的点检”中处理任务。</div>
+        </el-form-item>
+        <el-form-item label="班组编码（选填）"><el-input v-model="assignForm.teamCode" maxlength="64" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="assignVisible = false">取消</el-button>
+        <el-button type="primary" :loading="assigning" @click="saveAssignment">确认派工（{{ assignForm.assigneeUserIds.length }} 人）</el-button>
+      </template>
     </el-dialog>
 
     <el-drawer v-model="detailVisible" :title="detail?.task.taskCode" size="min(860px, 97vw)">
@@ -246,5 +368,9 @@ async function close(row: TaskRow, targetStatus: 'CANCELLED' | 'VOIDED') {
 .muted { color: var(--el-text-color-secondary); font-size: 12px; margin-top: 4px; }
 .form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 16px; }
 .full { grid-column: 1 / -1; }
+.assign-form { margin-top: 18px; }
+.user-option { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.user-option span, .field-hint { color: var(--el-text-color-secondary); font-size: 12px; }
+.field-hint { margin-top: 7px; line-height: 1.5; }
 @media (max-width: 640px) { .form-grid { grid-template-columns: 1fr; } .full { grid-column: auto; } }
 </style>

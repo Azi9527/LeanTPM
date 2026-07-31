@@ -294,6 +294,7 @@ public interface InspectionMapper {
             @Param("version") InspectionDtos.SchemeVersionRow version,
             @Param("equipment") EquipmentSnapshot equipment,
             @Param("request") InspectionDtos.ManualTaskRequest request,
+            @Param("primaryAssigneeUserId") Long primaryAssigneeUserId,
             @Param("operatorId") long operatorId
     );
 
@@ -427,8 +428,35 @@ public interface InspectionMapper {
     int assignTask(
             @Param("tenantId") long tenantId,
             @Param("id") long id,
-            @Param("request") InspectionDtos.AssignTaskRequest request,
+            @Param("primaryAssigneeUserId") long primaryAssigneeUserId,
+            @Param("teamCode") String teamCode,
+            @Param("version") int version,
             @Param("operatorId") long operatorId
+    );
+
+    int deleteTaskAssignees(
+            @Param("tenantId") long tenantId,
+            @Param("taskId") long taskId
+    );
+
+    int insertTaskAssignee(
+            @Param("tenantId") long tenantId,
+            @Param("taskId") long taskId,
+            @Param("userId") long userId,
+            @Param("primary") boolean primary,
+            @Param("sortOrder") int sortOrder,
+            @Param("operatorId") long operatorId
+    );
+
+    int countTaskAssignees(
+            @Param("tenantId") long tenantId,
+            @Param("taskId") long taskId
+    );
+
+    int countTaskAssignee(
+            @Param("tenantId") long tenantId,
+            @Param("taskId") long taskId,
+            @Param("userId") long userId
     );
 
     int reviewTask(
