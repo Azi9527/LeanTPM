@@ -673,15 +673,72 @@
               )
           ))
         )
-        <if test="keyword != null and keyword != ''">
-            AND (task.task_code LIKE CONCAT('%', #{keyword}, '%')
-                 OR task.scheme_name_snapshot LIKE CONCAT('%', #{keyword}, '%')
-                 OR e.equipment_code LIKE CONCAT('%', #{keyword}, '%')
-                 OR e.equipment_name LIKE CONCAT('%', #{keyword}, '%'))
+        <if test="query.keyword != null and query.keyword != ''">
+            AND (task.task_code LIKE CONCAT('%', #{query.keyword}, '%')
+                 OR task.scheme_name_snapshot LIKE CONCAT('%', #{query.keyword}, '%')
+                 OR e.equipment_code LIKE CONCAT('%', #{query.keyword}, '%')
+                 OR e.equipment_name LIKE CONCAT('%', #{query.keyword}, '%'))
         </if>
-        <if test="taskStatus != null and taskStatus != ''">AND task.task_status = #{taskStatus}</if>
-        <if test="plannedDate != null">AND task.planned_date = #{plannedDate}</if>
-        <if test="mineOnly">
+        <if test="query.taskStatus != null and query.taskStatus != ''">
+            AND task.task_status = #{query.taskStatus}
+        </if>
+        <if test="query.plannedDate != null">AND task.planned_date = #{query.plannedDate}</if>
+        <if test="query.startDate != null">
+            <choose>
+                <when test="query.timeField == 'STARTED_TIME'">
+                    AND task.started_time &gt;= #{query.startDate}
+                </when>
+                <when test="query.timeField == 'SUBMITTED_TIME'">
+                    AND task.submitted_time &gt;= #{query.startDate}
+                </when>
+                <when test="query.timeField == 'COMPLETED_TIME'">
+                    AND task.completed_time &gt;= #{query.startDate}
+                </when>
+                <otherwise>AND task.planned_date &gt;= #{query.startDate}</otherwise>
+            </choose>
+        </if>
+        <if test="query.endDate != null">
+            <choose>
+                <when test="query.timeField == 'STARTED_TIME'">
+                    AND task.started_time &lt; DATE_ADD(#{query.endDate}, INTERVAL 1 DAY)
+                </when>
+                <when test="query.timeField == 'SUBMITTED_TIME'">
+                    AND task.submitted_time &lt; DATE_ADD(#{query.endDate}, INTERVAL 1 DAY)
+                </when>
+                <when test="query.timeField == 'COMPLETED_TIME'">
+                    AND task.completed_time &lt; DATE_ADD(#{query.endDate}, INTERVAL 1 DAY)
+                </when>
+                <otherwise>AND task.planned_date &lt;= #{query.endDate}</otherwise>
+            </choose>
+        </if>
+        <if test="query.organizationId != null">
+            AND task.organization_id = #{query.organizationId}
+        </if>
+        <if test="query.teamCode != null and query.teamCode != ''">
+            AND task.team_code = #{query.teamCode}
+        </if>
+        <if test="query.assigneeUserId != null">
+            AND (
+                task.assignee_user_id = #{query.assigneeUserId}
+                OR EXISTS (
+                    SELECT 1 FROM inspection_task_assignee filtered_assignee
+                    WHERE filtered_assignee.tenant_id = task.tenant_id
+                      AND filtered_assignee.task_id = task.id
+                      AND filtered_assignee.user_id = #{query.assigneeUserId}
+                )
+            )
+        </if>
+        <if test="query.equipmentId != null">AND task.equipment_id = #{query.equipmentId}</if>
+        <if test="query.schemeId != null">AND task.scheme_id = #{query.schemeId}</if>
+        <if test="query.abnormalOnly">
+            AND EXISTS (
+                SELECT 1 FROM inspection_task_result abnormal_result
+                WHERE abnormal_result.tenant_id = task.tenant_id
+                  AND abnormal_result.task_id = task.id
+                  AND abnormal_result.abnormal_flag = 1
+            )
+        </if>
+        <if test="query.mineOnly">
             AND (
                 task.assignee_user_id = #{scope.userId}
                 OR EXISTS (
@@ -765,6 +822,46 @@
         SELECT COUNT(*) FROM inspection_task task
         <include refid="taskJoins"/>
         WHERE <include refid="taskFilters"/>
+    </select>
+
+    <select id="findTaskResultExportRows"
+            resultType="com.leantpm.inspection.InspectionDtos$TaskResultExportRow">
+        SELECT task.task_code, task.planned_date, task.due_time, task.completed_time,
+               task.task_status, e.equipment_code, e.equipment_name,
+               organization.organization_name, location.location_name, task.team_code,
+               COALESCE(
+                   (
+                       SELECT GROUP_CONCAT(export_user.real_name
+                                           ORDER BY export_relation.sort_order, export_relation.id
+                                           SEPARATOR '、')
+                       FROM inspection_task_assignee export_relation
+                       JOIN system_user export_user
+                         ON export_user.tenant_id = export_relation.tenant_id
+                        AND export_user.id = export_relation.user_id
+                        AND export_user.deleted = 0
+                       WHERE export_relation.tenant_id = task.tenant_id
+                         AND export_relation.task_id = task.id
+                   ),
+                   assignee.real_name
+               ) AS assignee_name,
+               task.scheme_name_snapshot AS scheme_name,
+               item.item_code, item.item_name, item.inspection_part,
+               item.inspection_standard, item.unit, result.result_status,
+               result.result_code, result.numeric_value, result.text_value,
+               result.selected_value, CAST(result.selected_values AS CHAR) AS selected_values_json,
+               result.abnormal_flag, result.abnormal_description,
+               executor.real_name AS executed_by_name, result.executed_time
+        FROM inspection_task task
+        <include refid="taskJoins"/>
+        JOIN inspection_task_item item
+          ON item.tenant_id = task.tenant_id AND item.task_id = task.id
+        LEFT JOIN inspection_task_result result
+          ON result.tenant_id = item.tenant_id AND result.task_item_id = item.id
+        LEFT JOIN system_user executor
+          ON executor.tenant_id = result.tenant_id AND executor.id = result.executed_by
+        WHERE <include refid="taskFilters"/>
+        ORDER BY task.planned_date DESC, task.id DESC, item.sort_order, item.id
+        LIMIT #{limit}
     </select>
 
     <select id="findTask" resultType="com.leantpm.inspection.InspectionDtos$TaskRow">

@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { pinyin } from 'pinyin-pro'
-import { inspectionApi, type SchemeRow, type TaskDetail, type TaskRow, type TaskStatus } from '@/api/inspection'
+import { inspectionApi, type SchemeRow, type TaskDetail, type TaskQuery, type TaskRow, type TaskStatus } from '@/api/inspection'
 import { equipmentApi, type EquipmentRow } from '@/api/equipment'
 import { masterDataApi, type OrganizationRow, type ReferenceUser } from '@/api/masterData'
 import { useAuthStore } from '@/stores/auth'
@@ -19,13 +19,26 @@ const detailVisible = ref(false)
 const createVisible = ref(false)
 const assignVisible = ref(false)
 const assigning = ref(false)
+const exporting = ref(false)
 const detail = ref<TaskDetail | null>(null)
 const assignTarget = ref<TaskRow | null>(null)
 const equipment = ref<EquipmentRow[]>([])
 const schemes = ref<SchemeRow[]>([])
 const users = ref<ReferenceUser[]>([])
 const teams = ref<OrganizationRow[]>([])
+const organizations = ref<OrganizationRow[]>([])
 const userKeyword = ref('')
+
+const filters = reactive({
+  timeField: 'PLANNED_DATE' as NonNullable<TaskQuery['timeField']>,
+  dateRange: [] as string[],
+  organizationId: undefined as number | undefined,
+  teamCode: '',
+  assigneeUserId: undefined as number | undefined,
+  equipmentId: undefined as number | undefined,
+  schemeId: undefined as number | undefined,
+  abnormalOnly: false,
+})
 
 const createForm = reactive({
   equipmentId: undefined as number | undefined,
@@ -67,12 +80,7 @@ onMounted(async () => {
 async function load() {
   loading.value = true
   try {
-    const result = await inspectionApi.tasks({
-      keyword: keyword.value || undefined,
-      taskStatus: status.value,
-      page: page.value,
-      pageSize: 20,
-    })
+    const result = await inspectionApi.tasks(taskQuery(true))
     rows.value = result.records
     total.value = result.total
   } catch (error) {
@@ -80,6 +88,53 @@ async function load() {
   } finally {
     loading.value = false
   }
+}
+
+function taskQuery(includePage: boolean): TaskQuery {
+  return {
+    keyword: keyword.value || undefined,
+    taskStatus: status.value,
+    timeField: filters.timeField,
+    startDate: filters.dateRange[0] || undefined,
+    endDate: filters.dateRange[1] || undefined,
+    organizationId: filters.organizationId,
+    teamCode: filters.teamCode || undefined,
+    assigneeUserId: filters.assigneeUserId,
+    equipmentId: filters.equipmentId,
+    schemeId: filters.schemeId,
+    abnormalOnly: filters.abnormalOnly || undefined,
+    page: includePage ? page.value : undefined,
+    pageSize: includePage ? 20 : undefined,
+  }
+}
+
+async function exportResults() {
+  exporting.value = true
+  try {
+    await inspectionApi.exportResults(taskQuery(false))
+    ElMessage.success('点检结果已导出')
+  } catch (error) {
+    ElMessage.error(errorMessage(error, '点检结果导出失败'))
+  } finally {
+    exporting.value = false
+  }
+}
+
+function resetFilters() {
+  keyword.value = ''
+  status.value = undefined
+  Object.assign(filters, {
+    timeField: 'PLANNED_DATE',
+    dateRange: [],
+    organizationId: undefined,
+    teamCode: '',
+    assigneeUserId: undefined,
+    equipmentId: undefined,
+    schemeId: undefined,
+    abnormalOnly: false,
+  })
+  page.value = 1
+  load()
 }
 
 async function loadReferences() {
@@ -93,7 +148,8 @@ async function loadReferences() {
     equipment.value = equipmentPage.records
     schemes.value = schemePage.records.filter((row) => row.currentVersionStatus === 'PUBLISHED')
     users.value = userRows
-    teams.value = organizationRows.filter(
+    organizations.value = organizationRows.filter((row) => row.status === 1)
+    teams.value = organizations.value.filter(
       (row) => row.organizationType === 'TEAM' && row.status === 1,
     )
   } catch (error) {
@@ -248,7 +304,39 @@ async function close(row: TaskRow, targetStatus: 'CANCELLED' | 'VOIDED') {
     <section class="surface-card query-bar">
       <el-input v-model="keyword" clearable placeholder="任务、方案或设备" @keyup.enter="page = 1; load()" />
       <el-select v-model="status" clearable placeholder="任务状态"><el-option v-for="(meta, value) in statusMeta" :key="value" :label="meta.label" :value="value" /></el-select>
+      <el-select v-model="filters.timeField" placeholder="时间口径">
+        <el-option label="计划日期" value="PLANNED_DATE" />
+        <el-option label="开始时间" value="STARTED_TIME" />
+        <el-option label="提交时间" value="SUBMITTED_TIME" />
+        <el-option label="完成时间" value="COMPLETED_TIME" />
+      </el-select>
+      <el-date-picker
+        v-model="filters.dateRange"
+        type="daterange"
+        value-format="YYYY-MM-DD"
+        start-placeholder="开始日期"
+        end-placeholder="结束日期"
+        range-separator="至"
+      />
+      <el-select v-model="filters.organizationId" clearable filterable placeholder="组织">
+        <el-option v-for="row in organizations" :key="row.id" :label="row.organizationName" :value="row.id" />
+      </el-select>
+      <el-select v-model="filters.teamCode" clearable filterable placeholder="班组">
+        <el-option v-for="row in teams" :key="row.id" :label="row.organizationName" :value="row.organizationCode" />
+      </el-select>
+      <el-select v-model="filters.assigneeUserId" clearable filterable placeholder="执行人">
+        <el-option v-for="user in users" :key="user.id" :label="`${user.realName}（${user.username}）`" :value="user.id" />
+      </el-select>
+      <el-select v-model="filters.equipmentId" clearable filterable placeholder="设备">
+        <el-option v-for="row in equipment" :key="row.id" :label="`${row.equipmentCode} · ${row.equipmentName}`" :value="row.id" />
+      </el-select>
+      <el-select v-model="filters.schemeId" clearable filterable placeholder="点检方案">
+        <el-option v-for="row in schemes" :key="row.id" :label="row.schemeName" :value="row.id" />
+      </el-select>
+      <el-checkbox v-model="filters.abnormalOnly">仅异常</el-checkbox>
       <el-button type="primary" @click="page = 1; load()">查询</el-button>
+      <el-button @click="resetFilters">重置</el-button>
+      <el-button v-if="auth.can('inspection:task:export')" :loading="exporting" @click="exportResults">导出结果</el-button>
     </section>
     <section class="surface-card table-card" v-loading="loading">
       <div class="table-toolbar"><span class="table-title">点检任务台账</span><span>共 {{ total }} 条</span></div>

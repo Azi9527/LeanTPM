@@ -307,6 +307,24 @@ export interface GenerationResult {
   taskCodes: string[]
 }
 
+export interface TaskQuery {
+  keyword?: string
+  taskStatus?: TaskStatus
+  plannedDate?: string
+  timeField?: 'PLANNED_DATE' | 'STARTED_TIME' | 'SUBMITTED_TIME' | 'COMPLETED_TIME'
+  startDate?: string
+  endDate?: string
+  organizationId?: number
+  teamCode?: string
+  assigneeUserId?: number
+  equipmentId?: number
+  schemeId?: number
+  abnormalOnly?: boolean
+  mineOnly?: boolean
+  page?: number
+  pageSize?: number
+}
+
 async function getData<T>(url: string, params?: object): Promise<T> {
   const response = await http.get<ApiResponse<T>>(url, { params })
   return response.data.data
@@ -344,8 +362,20 @@ export const inspectionApi = {
     return response.data.data
   },
 
-  tasks: (params: object) =>
+  tasks: (params: TaskQuery) =>
     getData<PageResult<TaskRow>>('/inspection/tasks', params),
+  exportResults: async (params: TaskQuery) => {
+    const response = await http.get<Blob>('/inspection/results/export', {
+      params,
+      responseType: 'blob',
+    })
+    const url = URL.createObjectURL(response.data)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = 'LeanTPM-点检结果.xlsx'
+    anchor.click()
+    URL.revokeObjectURL(url)
+  },
   task: (id: number) => getData<TaskDetail>(`/inspection/tasks/${id}`),
   taskAttachments: (id: number) =>
     getData<InspectionAttachmentRow[]>(`/inspection/tasks/${id}/attachments`),

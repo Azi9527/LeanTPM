@@ -307,10 +307,7 @@ public interface InspectionMapper {
     List<InspectionDtos.TaskRow> findTasks(
             @Param("tenantId") long tenantId,
             @Param("scope") DataPermission scope,
-            @Param("keyword") String keyword,
-            @Param("taskStatus") String taskStatus,
-            @Param("plannedDate") LocalDate plannedDate,
-            @Param("mineOnly") boolean mineOnly,
+            @Param("query") InspectionDtos.TaskQuery query,
             @Param("offset") int offset,
             @Param("pageSize") int pageSize
     );
@@ -318,10 +315,14 @@ public interface InspectionMapper {
     long countTasks(
             @Param("tenantId") long tenantId,
             @Param("scope") DataPermission scope,
-            @Param("keyword") String keyword,
-            @Param("taskStatus") String taskStatus,
-            @Param("plannedDate") LocalDate plannedDate,
-            @Param("mineOnly") boolean mineOnly
+            @Param("query") InspectionDtos.TaskQuery query
+    );
+
+    List<InspectionDtos.TaskResultExportRow> findTaskResultExportRows(
+            @Param("tenantId") long tenantId,
+            @Param("scope") DataPermission scope,
+            @Param("query") InspectionDtos.TaskQuery query,
+            @Param("limit") int limit
     );
 
     InspectionDtos.TaskRow findTask(

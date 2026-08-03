@@ -307,6 +307,54 @@ public final class InspectionDtos {
     ) {
     }
 
+    public record TaskQuery(
+            String keyword,
+            String taskStatus,
+            LocalDate plannedDate,
+            String timeField,
+            LocalDate startDate,
+            LocalDate endDate,
+            Long organizationId,
+            String teamCode,
+            Long assigneeUserId,
+            Long equipmentId,
+            Long schemeId,
+            boolean abnormalOnly,
+            boolean mineOnly
+    ) {
+    }
+
+    public record TaskResultExportRow(
+            String taskCode,
+            LocalDate plannedDate,
+            LocalDateTime dueTime,
+            LocalDateTime completedTime,
+            String taskStatus,
+            String equipmentCode,
+            String equipmentName,
+            String organizationName,
+            String locationName,
+            String teamCode,
+            String assigneeName,
+            String schemeName,
+            String itemCode,
+            String itemName,
+            String inspectionPart,
+            String inspectionStandard,
+            String unit,
+            String resultStatus,
+            String resultCode,
+            BigDecimal numericValue,
+            String textValue,
+            String selectedValue,
+            String selectedValuesJson,
+            Boolean abnormalFlag,
+            String abnormalDescription,
+            String executedByName,
+            LocalDateTime executedTime
+    ) {
+    }
+
     public record TaskItemRow(
             long id,
             long taskId,

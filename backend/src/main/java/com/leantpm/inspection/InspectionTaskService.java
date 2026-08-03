@@ -14,10 +14,21 @@ import com.leantpm.security.datascope.DataPermission;
 import com.leantpm.security.datascope.DataPermissionService;
 import com.leantpm.system.attachment.AttachmentService;
 import com.leantpm.system.audit.ChangeLogService;
+import org.apache.poi.ss.usermodel.BorderStyle;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellStyle;
+import org.apache.poi.ss.usermodel.FillPatternType;
+import org.apache.poi.ss.usermodel.Font;
+import org.apache.poi.ss.usermodel.IndexedColors;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
@@ -30,8 +41,12 @@ import java.util.Set;
 
 @Service
 public class InspectionTaskService {
+    private static final int EXPORT_TASK_LIMIT = 5_000;
+    private static final int EXPORT_RESULT_LIMIT = 100_000;
     private static final Set<String> EDITABLE_STATUSES =
             Set.of("PENDING", "IN_PROGRESS", "OVERDUE");
+    private static final Set<String> TIME_FIELDS =
+            Set.of("PLANNED_DATE", "STARTED_TIME", "SUBMITTED_TIME", "COMPLETED_TIME");
 
     private final InspectionMapper mapper;
     private final NumberRuleService numberRuleService;
@@ -71,22 +86,59 @@ public class InspectionTaskService {
             int page,
             int pageSize
     ) {
+        return tasks(new InspectionDtos.TaskQuery(
+                keyword, taskStatus, plannedDate, "PLANNED_DATE", null, null,
+                null, null, null, null, null, false, mineOnly
+        ), page, pageSize);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResult<InspectionDtos.TaskRow> tasks(
+            InspectionDtos.TaskQuery requestedQuery,
+            int page,
+            int pageSize
+    ) {
         var current = SecurityUtils.currentUser();
         DataPermission scope = dataPermissionService.current();
         int offset = (page - 1) * pageSize;
-        String normalizedStatus = upper(taskStatus);
+        InspectionDtos.TaskQuery query = normalizeTaskQuery(requestedQuery);
         return PageResult.of(
                 mapper.findTasks(
-                        current.tenantId(), scope, clean(keyword), normalizedStatus,
-                        plannedDate, mineOnly, offset, pageSize
+                        current.tenantId(), scope, query, offset, pageSize
                 ),
                 mapper.countTasks(
-                        current.tenantId(), scope, clean(keyword), normalizedStatus,
-                        plannedDate, mineOnly
+                        current.tenantId(), scope, query
                 ),
                 page,
                 pageSize
         );
+    }
+
+    @Transactional(readOnly = true)
+    public byte[] exportResults(InspectionDtos.TaskQuery requestedQuery) {
+        var current = SecurityUtils.currentUser();
+        DataPermission scope = dataPermissionService.current();
+        InspectionDtos.TaskQuery query = normalizeTaskQuery(requestedQuery);
+        long taskCount = mapper.countTasks(current.tenantId(), scope, query);
+        if (taskCount > EXPORT_TASK_LIMIT) {
+            throw new BusinessException(
+                    "INSPECTION_EXPORT_TOO_LARGE",
+                    "点检任务超过 " + EXPORT_TASK_LIMIT + " 条，请缩小筛选范围"
+            );
+        }
+        List<InspectionDtos.TaskRow> tasks = mapper.findTasks(
+                current.tenantId(), scope, query, 0, EXPORT_TASK_LIMIT
+        );
+        List<InspectionDtos.TaskResultExportRow> results = mapper.findTaskResultExportRows(
+                current.tenantId(), scope, query, EXPORT_RESULT_LIMIT + 1
+        );
+        if (results.size() > EXPORT_RESULT_LIMIT) {
+            throw new BusinessException(
+                    "INSPECTION_EXPORT_DETAIL_TOO_LARGE",
+                    "点检明细达到 " + EXPORT_RESULT_LIMIT + " 条，请缩小筛选范围"
+            );
+        }
+        return exportWorkbook(tasks, results);
     }
 
     @Transactional(readOnly = true)
@@ -886,6 +938,211 @@ public class InspectionTaskService {
             );
         }
         return abnormal;
+    }
+
+    private InspectionDtos.TaskQuery normalizeTaskQuery(
+            InspectionDtos.TaskQuery query
+    ) {
+        InspectionDtos.TaskQuery source = query == null
+                ? new InspectionDtos.TaskQuery(
+                        null, null, null, "PLANNED_DATE", null, null,
+                        null, null, null, null, null, false, false
+                ) : query;
+        String timeField = upper(source.timeField());
+        if (timeField == null) {
+            timeField = "PLANNED_DATE";
+        }
+        if (!TIME_FIELDS.contains(timeField)) {
+            throw new BusinessException(
+                    "INSPECTION_TIME_FIELD_INVALID", "点检时间查询口径不正确"
+            );
+        }
+        if (source.startDate() != null && source.endDate() != null
+                && source.startDate().isAfter(source.endDate())) {
+            throw new BusinessException(
+                    "INSPECTION_DATE_RANGE_INVALID", "开始日期不能晚于结束日期"
+            );
+        }
+        return new InspectionDtos.TaskQuery(
+                clean(source.keyword()), upper(source.taskStatus()), source.plannedDate(),
+                timeField, source.startDate(), source.endDate(), source.organizationId(),
+                clean(source.teamCode()), source.assigneeUserId(), source.equipmentId(),
+                source.schemeId(), source.abnormalOnly(), source.mineOnly()
+        );
+    }
+
+    private byte[] exportWorkbook(
+            List<InspectionDtos.TaskRow> tasks,
+            List<InspectionDtos.TaskResultExportRow> results
+    ) {
+        try (var workbook = new XSSFWorkbook(); var output = new ByteArrayOutputStream()) {
+            CellStyle header = headerStyle(workbook);
+            CellStyle dateTime = workbook.createCellStyle();
+            dateTime.setDataFormat(workbook.getCreationHelper()
+                    .createDataFormat().getFormat("yyyy-mm-dd hh:mm:ss"));
+            CellStyle dateOnly = workbook.createCellStyle();
+            dateOnly.setDataFormat(workbook.getCreationHelper()
+                    .createDataFormat().getFormat("yyyy-mm-dd"));
+
+            Sheet summary = workbook.createSheet("任务汇总");
+            String[] summaryHeaders = {
+                    "任务编号", "计划日期", "截止时间", "完成时间", "状态",
+                    "设备编号", "设备名称", "组织", "位置", "班组", "执行人",
+                    "点检方案", "项目数", "已完成", "异常数"
+            };
+            writeHeader(summary, summaryHeaders, header);
+            int rowIndex = 1;
+            for (InspectionDtos.TaskRow task : tasks) {
+                Row row = summary.createRow(rowIndex++);
+                int column = 0;
+                text(row, column++, task.taskCode());
+                date(row, column++, task.plannedDate(), dateOnly);
+                date(row, column++, task.dueTime(), dateTime);
+                date(row, column++, task.completedTime(), dateTime);
+                text(row, column++, task.taskStatus());
+                text(row, column++, task.equipmentCode());
+                text(row, column++, task.equipmentName());
+                text(row, column++, task.organizationName());
+                text(row, column++, task.locationName());
+                text(row, column++, task.teamCode());
+                text(row, column++, task.assigneeName());
+                text(row, column++, task.schemeNameSnapshot());
+                number(row, column++, task.itemCount());
+                number(row, column++, task.completedItemCount());
+                number(row, column, task.abnormalItemCount());
+            }
+            finishSheet(summary, summaryHeaders.length);
+
+            Sheet detail = workbook.createSheet("逐项结果");
+            String[] detailHeaders = {
+                    "任务编号", "计划日期", "截止时间", "完成时间", "任务状态",
+                    "设备编号", "设备名称", "组织", "位置", "班组", "执行人",
+                    "点检方案", "项目编码", "项目名称", "部位", "点检标准", "单位",
+                    "结果状态", "结果编码", "数值结果", "文本结果", "选择结果",
+                    "多选结果", "是否异常", "异常说明", "实际执行人", "执行时间"
+            };
+            writeHeader(detail, detailHeaders, header);
+            rowIndex = 1;
+            for (InspectionDtos.TaskResultExportRow result : results) {
+                Row row = detail.createRow(rowIndex++);
+                int column = 0;
+                text(row, column++, result.taskCode());
+                date(row, column++, result.plannedDate(), dateOnly);
+                date(row, column++, result.dueTime(), dateTime);
+                date(row, column++, result.completedTime(), dateTime);
+                text(row, column++, result.taskStatus());
+                text(row, column++, result.equipmentCode());
+                text(row, column++, result.equipmentName());
+                text(row, column++, result.organizationName());
+                text(row, column++, result.locationName());
+                text(row, column++, result.teamCode());
+                text(row, column++, result.assigneeName());
+                text(row, column++, result.schemeName());
+                text(row, column++, result.itemCode());
+                text(row, column++, result.itemName());
+                text(row, column++, result.inspectionPart());
+                text(row, column++, result.inspectionStandard());
+                text(row, column++, result.unit());
+                text(row, column++, result.resultStatus());
+                text(row, column++, result.resultCode());
+                decimal(row, column++, result.numericValue());
+                text(row, column++, result.textValue());
+                text(row, column++, result.selectedValue());
+                text(row, column++, result.selectedValuesJson());
+                text(row, column++, Boolean.TRUE.equals(result.abnormalFlag()) ? "是" : "否");
+                text(row, column++, result.abnormalDescription());
+                text(row, column++, result.executedByName());
+                date(row, column, result.executedTime(), dateTime);
+            }
+            finishSheet(detail, detailHeaders.length);
+            workbook.write(output);
+            return output.toByteArray();
+        } catch (IOException exception) {
+            throw new BusinessException(
+                    "INSPECTION_EXPORT_FAILED", "点检结果导出失败",
+                    HttpStatus.INTERNAL_SERVER_ERROR
+            );
+        }
+    }
+
+    private CellStyle headerStyle(XSSFWorkbook workbook) {
+        CellStyle style = workbook.createCellStyle();
+        style.setFillForegroundColor(IndexedColors.DARK_TEAL.getIndex());
+        style.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+        style.setBorderBottom(BorderStyle.THIN);
+        Font font = workbook.createFont();
+        font.setBold(true);
+        font.setColor(IndexedColors.WHITE.getIndex());
+        style.setFont(font);
+        return style;
+    }
+
+    private void writeHeader(Sheet sheet, String[] headers, CellStyle style) {
+        Row row = sheet.createRow(0);
+        for (int index = 0; index < headers.length; index++) {
+            Cell cell = row.createCell(index);
+            cell.setCellValue(headers[index]);
+            cell.setCellStyle(style);
+        }
+    }
+
+    private void finishSheet(Sheet sheet, int columns) {
+        sheet.createFreezePane(0, 1);
+        sheet.setAutoFilter(new org.apache.poi.ss.util.CellRangeAddress(
+                0, Math.max(0, sheet.getLastRowNum()), 0, columns - 1
+        ));
+        for (int index = 0; index < columns; index++) {
+            if (sheet.getLastRowNum() <= 5_000) {
+                sheet.autoSizeColumn(index);
+                sheet.setColumnWidth(
+                        index, Math.min(sheet.getColumnWidth(index) + 512, 12_000)
+                );
+            } else {
+                sheet.setColumnWidth(index, 5_000);
+            }
+        }
+    }
+
+    private void text(Row row, int column, String value) {
+        row.createCell(column).setCellValue(safeExcel(value));
+    }
+
+    private void number(Row row, int column, Number value) {
+        if (value != null) {
+            row.createCell(column).setCellValue(value.doubleValue());
+        }
+    }
+
+    private void decimal(Row row, int column, BigDecimal value) {
+        if (value != null) {
+            row.createCell(column).setCellValue(value.doubleValue());
+        }
+    }
+
+    private void date(Row row, int column, Object value, CellStyle style) {
+        if (value == null) {
+            return;
+        }
+        Cell cell = row.createCell(column);
+        if (value instanceof LocalDate localDate) {
+            cell.setCellValue(localDate);
+            if (style != null) {
+                cell.setCellStyle(style);
+            }
+        } else if (value instanceof LocalDateTime localDateTime) {
+            cell.setCellValue(localDateTime);
+            if (style != null) {
+                cell.setCellStyle(style);
+            }
+        }
+    }
+
+    private String safeExcel(String value) {
+        String cleaned = value == null ? "" : value;
+        if (!cleaned.isEmpty() && "=+-@".indexOf(cleaned.charAt(0)) >= 0) {
+            return "'" + cleaned;
+        }
+        return cleaned;
     }
 
     private int parseLookahead(long tenantId) {

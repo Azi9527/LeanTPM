@@ -197,13 +197,62 @@ public class InspectionController {
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String taskStatus,
             @RequestParam(required = false) LocalDate plannedDate,
+            @RequestParam(defaultValue = "PLANNED_DATE") String timeField,
+            @RequestParam(required = false) LocalDate startDate,
+            @RequestParam(required = false) LocalDate endDate,
+            @RequestParam(required = false) Long organizationId,
+            @RequestParam(required = false) String teamCode,
+            @RequestParam(required = false) Long assigneeUserId,
+            @RequestParam(required = false) Long equipmentId,
+            @RequestParam(required = false) Long schemeId,
+            @RequestParam(defaultValue = "false") boolean abnormalOnly,
             @RequestParam(defaultValue = "false") boolean mineOnly,
             @RequestParam(defaultValue = "1") @Min(1) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(200) int pageSize
     ) {
-        return ApiResponse.success(taskService.tasks(
-                keyword, taskStatus, plannedDate, mineOnly, page, pageSize
+        return ApiResponse.success(taskService.tasks(new InspectionDtos.TaskQuery(
+                keyword, taskStatus, plannedDate, timeField, startDate, endDate,
+                organizationId, teamCode, assigneeUserId, equipmentId, schemeId,
+                abnormalOnly, mineOnly
+        ), page, pageSize));
+    }
+
+    @GetMapping("/results/export")
+    @PreAuthorize("hasAuthority('inspection:task:export')")
+    public ResponseEntity<byte[]> exportResults(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String taskStatus,
+            @RequestParam(defaultValue = "PLANNED_DATE") String timeField,
+            @RequestParam(required = false) LocalDate startDate,
+            @RequestParam(required = false) LocalDate endDate,
+            @RequestParam(required = false) Long organizationId,
+            @RequestParam(required = false) String teamCode,
+            @RequestParam(required = false) Long assigneeUserId,
+            @RequestParam(required = false) Long equipmentId,
+            @RequestParam(required = false) Long schemeId,
+            @RequestParam(defaultValue = "false") boolean abnormalOnly,
+            @RequestParam(defaultValue = "false") boolean mineOnly
+    ) {
+        byte[] workbook = taskService.exportResults(new InspectionDtos.TaskQuery(
+                keyword, taskStatus, null, timeField, startDate, endDate,
+                organizationId, teamCode, assigneeUserId, equipmentId, schemeId,
+                abnormalOnly, mineOnly
         ));
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                ))
+                .contentLength(workbook.length)
+                .header(
+                        HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment()
+                                .filename(
+                                        "LeanTPM-inspection-results.xlsx",
+                                        StandardCharsets.UTF_8
+                                )
+                                .build().toString()
+                )
+                .body(workbook);
     }
 
     @GetMapping("/tasks/{id}")

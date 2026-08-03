@@ -6,6 +6,7 @@ import com.leantpm.inspection.InspectionCatalogService;
 import com.leantpm.inspection.InspectionDtos;
 import com.leantpm.inspection.InspectionTaskService;
 import com.leantpm.security.CurrentUser;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,6 +20,7 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.io.ByteArrayInputStream;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -349,6 +351,37 @@ class InspectionMySqlIntegrationTest {
                 Integer.class,
                 task.id()
         )).isEqualTo(3);
+
+        InspectionDtos.TaskQuery resultQuery = new InspectionDtos.TaskQuery(
+                generated.taskCodes().getFirst(),
+                "COMPLETED",
+                null,
+                "COMPLETED_TIME",
+                LocalDate.now(),
+                LocalDate.now(),
+                4L,
+                null,
+                OPERATOR_ID,
+                equipmentId,
+                schemeId,
+                true,
+                false
+        );
+        assertThat(taskService.tasks(resultQuery, 1, 20).records())
+                .singleElement()
+                .extracting(InspectionDtos.TaskRow::taskCode)
+                .isEqualTo(generated.taskCodes().getFirst());
+
+        byte[] workbookBytes = taskService.exportResults(resultQuery);
+        assertThat(workbookBytes).isNotEmpty();
+        try (var workbook = new XSSFWorkbook(new ByteArrayInputStream(workbookBytes))) {
+            assertThat(workbook.getSheet("任务汇总").getLastRowNum()).isEqualTo(1);
+            assertThat(workbook.getSheet("逐项结果").getLastRowNum()).isEqualTo(3);
+            assertThat(workbook.getSheet("逐项结果").getRow(1).getCell(0).getStringCellValue())
+                    .isEqualTo(generated.taskCodes().getFirst());
+        } catch (Exception exception) {
+            throw new AssertionError("导出的点检结果工作簿无法读取", exception);
+        }
 
         long manualEquipmentOne = createEquipment(
                 "EQ-INSPECTION-MANUAL-001",
