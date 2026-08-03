@@ -489,7 +489,12 @@ export const inspectionApi = {
     )
     return response.data
   },
-  createTask: (data: object) => http.post('/inspection/tasks', data),
+  createTask: async (data: object, idempotencyKey?: string) => {
+    const response = await http.post<ApiResponse<{ id: number }>>('/inspection/tasks', data, {
+      headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+    })
+    return response.data.data
+  },
   assignTask: (id: number, data: object) =>
     http.put(`/inspection/tasks/${id}/assignment`, data),
   saveDraft: (id: number, data: object) =>

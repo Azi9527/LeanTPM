@@ -503,8 +503,8 @@ class InspectionMySqlIntegrationTest {
 
         long calendarId = calendarService.create(
                 new InspectionCalendarDtos.SaveCalendarRequest(
-                        "Integration six-day calendar",
-                        "6,1,2,2,3,4,5",
+                        "Integration all-days calendar",
+                        "7,6,1,2,2,3,4,5",
                         false,
                         1,
                         "Integration calendar",
@@ -512,7 +512,7 @@ class InspectionMySqlIntegrationTest {
                 )
         );
         InspectionCalendarDtos.CalendarDetail created = calendarService.detail(calendarId);
-        assertThat(created.calendar().workDays()).isEqualTo("1,2,3,4,5,6");
+        assertThat(created.calendar().workDays()).isEqualTo("1,2,3,4,5,6,7");
 
         long exceptionId = calendarService.createException(
                 calendarId,
@@ -578,6 +578,66 @@ class InspectionMySqlIntegrationTest {
             assertThat(plan.generationLeadMinutes()).isEqualTo(180);
             assertThat(plan.workCalendarId()).isEqualTo(calendarId);
         });
+
+        LocalDateTime generationThreshold = LocalDate.now().atTime(4, 30);
+        assertThat(taskService.generateReady(
+                1L, USER_ID, generationThreshold.minusSeconds(1)
+        ).generatedTasks()).isZero();
+        InspectionDtos.GenerationResult generated = taskService.generateReady(
+                1L, USER_ID, generationThreshold
+        );
+        assertThat(generated.generatedTasks()).isEqualTo(1);
+        assertThat(taskService.generateReady(
+                1L, USER_ID, generationThreshold
+        ).generatedTasks()).isZero();
+
+        calendarService.createException(
+                calendarId,
+                new InspectionCalendarDtos.SaveExceptionRequest(
+                        "Planned rest day",
+                        LocalDate.now().plusDays(1),
+                        LocalDate.now().plusDays(1),
+                        "RESTDAY",
+                        999,
+                        1,
+                        "Automatic tasks must be skipped",
+                        null
+                )
+        );
+        InspectionDtos.GenerationResult restDay = taskService.generateReady(
+                1L, USER_ID, generationThreshold.plusDays(1)
+        );
+        assertThat(restDay.generatedTasks()).isZero();
+        assertThat(restDay.skippedOccurrences()).isEqualTo(1);
+        assertThat(catalogService.plans(
+                "EQ-INSPECTION-CALENDAR-001", "ACTIVE", 1, 20
+        ).records()).singleElement().satisfies(plan ->
+                assertThat(plan.nextGenerationDate()).isEqualTo(LocalDate.now().plusDays(2))
+        );
+
+        InspectionDtos.ManualTaskRequest manualRequest =
+                new InspectionDtos.ManualTaskRequest(
+                        equipmentId,
+                        scheme.version().id(),
+                        LocalDate.now(),
+                        LocalDateTime.now().withNano(0),
+                        LocalDateTime.now().plusHours(1).withNano(0),
+                        List.of(OPERATOR_ID),
+                        null,
+                        false,
+                        "Mobile scan integration"
+                );
+        long manualTaskId = taskService.createManualTask(
+                manualRequest, "mobile-create-integration-calendar-001"
+        );
+        assertThat(taskService.createManualTask(
+                manualRequest, "mobile-create-integration-calendar-001"
+        )).isEqualTo(manualTaskId);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM inspection_task WHERE request_idempotency_key = ?",
+                Integer.class,
+                "mobile-create-integration-calendar-001"
+        )).isEqualTo(1);
     }
 
     private InspectionDtos.SaveResultRequest result(

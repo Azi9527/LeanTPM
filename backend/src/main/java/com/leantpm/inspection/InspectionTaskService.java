@@ -7,7 +7,6 @@ import com.leantpm.common.exception.BusinessException;
 import com.leantpm.equipment.EquipmentDtos;
 import com.leantpm.equipment.EquipmentService;
 import com.leantpm.foundation.service.NumberRuleService;
-import com.leantpm.foundation.service.ParameterService;
 import com.leantpm.security.CurrentUser;
 import com.leantpm.security.SecurityUtils;
 import com.leantpm.security.datascope.DataPermission;
@@ -31,10 +30,13 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -51,8 +53,8 @@ public class InspectionTaskService {
             Set.of("LOW", "MEDIUM", "HIGH", "CRITICAL");
 
     private final InspectionMapper mapper;
+    private final InspectionCalendarMapper calendarMapper;
     private final NumberRuleService numberRuleService;
-    private final ParameterService parameterService;
     private final DataPermissionService dataPermissionService;
     private final ChangeLogService changeLogService;
     private final ObjectMapper objectMapper;
@@ -61,8 +63,8 @@ public class InspectionTaskService {
 
     public InspectionTaskService(
             InspectionMapper mapper,
+            InspectionCalendarMapper calendarMapper,
             NumberRuleService numberRuleService,
-            ParameterService parameterService,
             DataPermissionService dataPermissionService,
             ChangeLogService changeLogService,
             ObjectMapper objectMapper,
@@ -70,8 +72,8 @@ public class InspectionTaskService {
             AttachmentService attachmentService
     ) {
         this.mapper = mapper;
+        this.calendarMapper = calendarMapper;
         this.numberRuleService = numberRuleService;
-        this.parameterService = parameterService;
         this.dataPermissionService = dataPermissionService;
         this.changeLogService = changeLogService;
         this.objectMapper = objectMapper;
@@ -225,8 +227,7 @@ public class InspectionTaskService {
 
     @Transactional
     public InspectionDtos.GenerationResult generateScheduled(long tenantId, long operatorId) {
-        int lookahead = parseLookahead(tenantId);
-        return generate(tenantId, operatorId, LocalDate.now().plusDays(lookahead));
+        return generateReady(tenantId, operatorId, LocalDateTime.now());
     }
 
     @Transactional
@@ -235,22 +236,52 @@ public class InspectionTaskService {
             long operatorId,
             LocalDate throughDate
     ) {
+        return generateReady(tenantId, operatorId, throughDate.atTime(23, 59, 59));
+    }
+
+    public InspectionDtos.GenerationResult generateReady(
+            long tenantId,
+            long operatorId,
+            LocalDateTime cutoff
+    ) {
         List<InspectionMapper.GenerationPlan> plans =
-                mapper.findGenerationPlans(tenantId, throughDate);
+                mapper.findGenerationPlans(tenantId, cutoff.toLocalDate().plusDays(30));
         List<String> taskCodes = new ArrayList<>();
         int generated = 0;
         int skipped = 0;
         for (InspectionMapper.GenerationPlan plan : plans) {
             LocalDate occurrence = plan.nextGenerationDate();
-            while (!occurrence.isAfter(throughDate)) {
+            while (true) {
                 if (plan.expiryDate() != null && occurrence.isAfter(plan.expiryDate())) {
                     break;
                 }
+                LocalDateTime start = occurrence.atTime(
+                        plan.scheduledTime() == null ? LocalTime.of(8, 0)
+                                : plan.scheduledTime()
+                );
+                if (start.minusMinutes(plan.generationLeadMinutes()).isAfter(cutoff)) {
+                    break;
+                }
                 if (occurrence.isBefore(plan.effectiveDate())) {
+                    LocalDate completedOccurrence = occurrence;
                     occurrence = nextOccurrence(plan, occurrence);
+                    mapper.updatePlanGeneration(
+                            tenantId, plan.id(), completedOccurrence, occurrence, operatorId
+                    );
                     continue;
                 }
-                String occurrenceKey = occurrence.toString();
+                if (!isWorkday(tenantId, plan, occurrence)
+                        || (occurrence.isBefore(cutoff.toLocalDate())
+                        && !plan.backfillAllowed())) {
+                    skipped++;
+                    LocalDate completedOccurrence = occurrence;
+                    occurrence = nextOccurrence(plan, occurrence);
+                    mapper.updatePlanGeneration(
+                            tenantId, plan.id(), completedOccurrence, occurrence, operatorId
+                    );
+                    continue;
+                }
+                String occurrenceKey = start.toString();
                 Long existing = mapper.findTaskIdByOccurrence(tenantId, plan.id(), occurrenceKey);
                 if (existing == null) {
                     InspectionMapper.EquipmentSnapshot equipment =
@@ -263,10 +294,6 @@ public class InspectionTaskService {
                         String code = numberRuleService.generate(
                                 tenantId, operatorId, "INSPECTION_TASK"
                         ).businessNumber();
-                        LocalDateTime start = occurrence.atTime(
-                                plan.scheduledTime() == null ? LocalTime.of(8, 0)
-                                        : plan.scheduledTime()
-                        );
                         LocalDateTime due = occurrence.atTime(23, 59, 59);
                         int inserted = mapper.insertTask(
                                 tenantId, code, plan, equipment, occurrence, start, due,
@@ -312,6 +339,14 @@ public class InspectionTaskService {
 
     @Transactional
     public long createManualTask(InspectionDtos.ManualTaskRequest request) {
+        return createManualTask(request, null);
+    }
+
+    @Transactional
+    public long createManualTask(
+            InspectionDtos.ManualTaskRequest request,
+            String idempotencyKey
+    ) {
         var current = SecurityUtils.currentUser();
         DataPermission scope = dataPermissionService.current();
         InspectionDtos.SchemeVersionRow version =
@@ -352,6 +387,16 @@ public class InspectionTaskService {
                     HttpStatus.NOT_FOUND
             );
         }
+        boolean applicable = mapper.findApplicableEquipment(
+                current.tenantId(), version.id(), scope
+        ).stream().anyMatch(item -> item.id() == request.equipmentId());
+        if (!applicable) {
+            throw new BusinessException(
+                    "INSPECTION_SCHEME_NOT_APPLICABLE",
+                    "所选点检方案不适用于该设备",
+                    HttpStatus.CONFLICT
+            );
+        }
         List<Long> assigneeUserIds = normalizeAssigneeUserIds(request.assigneeUserIds());
         validateAssigneeUsers(current.tenantId(), assigneeUserIds);
         Long primaryAssigneeUserId = assigneeUserIds.isEmpty()
@@ -359,10 +404,26 @@ public class InspectionTaskService {
         String code = numberRuleService.generate(
                 current.tenantId(), current.userId(), "INSPECTION_TASK"
         ).businessNumber();
-        mapper.insertManualTask(
+        String normalizedKey = clean(idempotencyKey);
+        String requestHash = requestHash(request);
+        int inserted = mapper.insertManualTask(
                 current.tenantId(), code, scheme, version, equipment, request,
-                primaryAssigneeUserId, current.userId()
+                primaryAssigneeUserId, normalizedKey, requestHash, current.userId()
         );
+        if (inserted == 0 && normalizedKey != null) {
+            InspectionMapper.ManualTaskIdentity existing =
+                    mapper.findManualTaskByIdempotencyKey(
+                            current.tenantId(), normalizedKey
+                    );
+            if (existing != null && requestHash.equals(existing.requestHash())) {
+                return existing.id();
+            }
+            throw new BusinessException(
+                    "INSPECTION_TASK_IDEMPOTENCY_CONFLICT",
+                    "同一幂等键不能用于不同的点检任务创建请求",
+                    HttpStatus.CONFLICT
+            );
+        }
         Long taskId = mapper.findTaskIdByCode(current.tenantId(), code);
         if (taskId == null) {
             throw new BusinessException(
@@ -852,6 +913,32 @@ public class InspectionTaskService {
         };
     }
 
+    private boolean isWorkday(
+            long tenantId,
+            InspectionMapper.GenerationPlan plan,
+            LocalDate date
+    ) {
+        String override = calendarMapper.findEffectiveDayType(
+                tenantId, plan.workCalendarId(), date
+        );
+        if (override != null) {
+            return "WORKDAY".equals(override);
+        }
+        return csvContains(plan.workDays(), date.getDayOfWeek().getValue());
+    }
+
+    private boolean csvContains(String csv, int value) {
+        if (csv == null || csv.isBlank()) {
+            return false;
+        }
+        for (String token : csv.split(",")) {
+            if (Integer.parseInt(token.trim()) == value) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private LocalDate nextMatchingDay(
             LocalDate current,
             String configuredDays,
@@ -1229,15 +1316,18 @@ public class InspectionTaskService {
         return cleaned;
     }
 
-    private int parseLookahead(long tenantId) {
-        String value = parameterService.getString(
-                tenantId, "inspection.generation.lookahead-days", "7"
-        );
+    private String requestHash(InspectionDtos.ManualTaskRequest request) {
         try {
-            return Math.max(0, Math.min(90, Integer.parseInt(value)));
-        } catch (NumberFormatException exception) {
+            byte[] payload = objectMapper.writeValueAsString(request)
+                    .getBytes(StandardCharsets.UTF_8);
+            return HexFormat.of().formatHex(
+                    MessageDigest.getInstance("SHA-256").digest(payload)
+            );
+        } catch (Exception exception) {
             throw new BusinessException(
-                    "INSPECTION_LOOKAHEAD_INVALID", "点检任务提前生成天数配置无效"
+                    "INSPECTION_TASK_REQUEST_HASH_FAILED",
+                    "点检任务创建请求摘要计算失败",
+                    HttpStatus.INTERNAL_SERVER_ERROR
             );
         }
     }

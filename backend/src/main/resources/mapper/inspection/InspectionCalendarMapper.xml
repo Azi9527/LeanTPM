@@ -72,6 +72,16 @@
         WHERE tenant_id = #{tenantId} AND id = #{id} AND status = 1 AND deleted = 0
     </select>
 
+    <select id="findEffectiveDayType" resultType="string">
+        SELECT day_type
+        FROM inspection_calendar_exception
+        WHERE tenant_id = #{tenantId} AND calendar_id = #{calendarId}
+          AND status = 1 AND deleted = 0
+          AND #{date} BETWEEN start_date AND end_date
+        ORDER BY priority_value DESC, updated_time DESC, id DESC
+        LIMIT 1
+    </select>
+
     <update id="updateCalendar">
         UPDATE inspection_work_calendar
         SET calendar_name = #{request.calendarName}, work_days = #{request.workDays},
@@ -113,6 +123,17 @@
         FROM inspection_calendar_exception
         WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0
         LIMIT 1
+    </select>
+
+    <select id="countConflictingExceptions" resultType="int">
+        SELECT COUNT(*)
+        FROM inspection_calendar_exception
+        WHERE tenant_id = #{tenantId} AND calendar_id = #{calendarId}
+          AND status = 1 AND deleted = 0
+          AND day_type != #{request.dayType}
+          AND start_date &lt;= #{request.endDate}
+          AND end_date &gt;= #{request.startDate}
+        <if test="excludeId != null">AND id != #{excludeId}</if>
     </select>
 
     <insert id="insertException">

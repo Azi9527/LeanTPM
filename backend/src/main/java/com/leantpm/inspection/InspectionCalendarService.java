@@ -125,6 +125,9 @@ public class InspectionCalendarService {
         requireCalendar(current.tenantId(), calendarId);
         var normalized = normalize(request);
         validateDateRange(normalized);
+        boolean conflict = mapper.countConflictingExceptions(
+                current.tenantId(), calendarId, null, normalized
+        ) > 0;
         mapper.insertException(current.tenantId(), calendarId, normalized, current.userId());
         Long id = mapper.findLatestExceptionId(
                 current.tenantId(), calendarId, current.userId()
@@ -139,6 +142,12 @@ public class InspectionCalendarService {
                 "INSPECTION_CALENDAR_EXCEPTION", id, "CREATE", null,
                 mapper.findException(current.tenantId(), id)
         );
+        if (conflict) {
+            changeLogService.record(
+                    "INSPECTION_CALENDAR_CONFLICT", id, "RULE_CONFLICT", null,
+                    normalized
+            );
+        }
         return id;
     }
 
@@ -154,6 +163,9 @@ public class InspectionCalendarService {
         requireVersion(request.version());
         var normalized = normalize(request);
         validateDateRange(normalized);
+        boolean conflict = mapper.countConflictingExceptions(
+                current.tenantId(), calendarId, id, normalized
+        ) > 0;
         if (mapper.updateException(
                 current.tenantId(), calendarId, id, normalized, current.userId()
         ) == 0) {
@@ -163,6 +175,12 @@ public class InspectionCalendarService {
                 "INSPECTION_CALENDAR_EXCEPTION", id, "UPDATE", before,
                 mapper.findException(current.tenantId(), id)
         );
+        if (conflict) {
+            changeLogService.record(
+                    "INSPECTION_CALENDAR_CONFLICT", id, "RULE_CONFLICT", before,
+                    normalized
+            );
+        }
     }
 
     @Transactional

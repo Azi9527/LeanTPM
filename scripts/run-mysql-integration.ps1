@@ -3,6 +3,7 @@ param(
     [int]$MySqlPort = 3306,
     [string]$MySqlUser = 'root',
     [string]$MySqlPassword = 'root',
+    [string]$TestPattern = '*MySqlIntegrationTest',
     [string]$MavenExecutable = $env:LEANTPM_MAVEN_EXECUTABLE
 )
 
@@ -35,7 +36,7 @@ try {
     $env:LEANTPM_TEST_DB_PASSWORD = $MySqlPassword
 
     & $MavenExecutable '-Dleantpm.build.directory=target-codex' `
-        '-Dtest=*MySqlIntegrationTest' test `
+        "-Dtest=$TestPattern" test `
         -f (Join-Path $backendRoot 'pom.xml')
     if ($LASTEXITCODE -ne 0) {
         throw 'MySQL integration tests failed'

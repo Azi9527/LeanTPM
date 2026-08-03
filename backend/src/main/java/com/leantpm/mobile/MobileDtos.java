@@ -131,9 +131,33 @@ public final class MobileDtos {
     ) {
     }
 
+    public record ApplicableInspectionScheme(
+            long schemeId,
+            long schemeVersionId,
+            String schemeCode,
+            String schemeName,
+            String inspectionType,
+            boolean backfillAllowed
+    ) {
+    }
+
+    public record AssigneeOption(
+            long userId,
+            String username,
+            String realName,
+            String teamCode
+    ) {
+    }
+
+    public record TeamOption(String teamCode, String teamName) {
+    }
+
     public record EquipmentContext(
             EquipmentBase equipment,
-            List<TaskLink> activeTasks
+            List<TaskLink> activeTasks,
+            List<ApplicableInspectionScheme> inspectionSchemes,
+            List<AssigneeOption> assignees,
+            List<TeamOption> teams
     ) {
     }
 }

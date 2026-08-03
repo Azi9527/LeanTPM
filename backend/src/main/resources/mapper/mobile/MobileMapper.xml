@@ -383,4 +383,80 @@
         ORDER BY due_time, task_id
         LIMIT 20
     </select>
+    <select id="applicableInspectionSchemes"
+            resultType="com.leantpm.mobile.MobileDtos$ApplicableInspectionScheme">
+        WITH RECURSIVE applicable_categories AS (
+            SELECT relation.scheme_version_id, category.id,
+                   relation.include_descendants_flag
+            FROM inspection_scheme_category relation
+            JOIN equipment_category category
+              ON category.tenant_id = relation.tenant_id
+             AND category.id = relation.equipment_category_id
+             AND category.status = 1 AND category.deleted = 0
+            WHERE relation.tenant_id = #{tenantId}
+            UNION ALL
+            SELECT parent.scheme_version_id, child.id,
+                   parent.include_descendants_flag
+            FROM equipment_category child
+            JOIN applicable_categories parent
+              ON child.parent_id = parent.id
+             AND parent.include_descendants_flag = 1
+            WHERE child.tenant_id = #{tenantId}
+              AND child.status = 1 AND child.deleted = 0
+        )
+        SELECT DISTINCT scheme.id AS scheme_id,
+               version.id AS scheme_version_id,
+               scheme.scheme_code,
+               scheme.scheme_name,
+               scheme.inspection_type,
+               version.backfill_allowed_flag AS backfill_allowed
+        FROM equipment e
+        JOIN inspection_scheme scheme
+          ON scheme.tenant_id = e.tenant_id
+         AND scheme.status = 1 AND scheme.deleted = 0
+        JOIN inspection_scheme_version version
+          ON version.tenant_id = scheme.tenant_id
+         AND version.id = scheme.current_version_id
+         AND version.version_status = 'PUBLISHED'
+         AND version.effective_date &lt;= CURRENT_DATE()
+         AND (version.expiry_date IS NULL OR version.expiry_date &gt;= CURRENT_DATE())
+        WHERE e.tenant_id = #{tenantId} AND e.id = #{equipmentId}
+          AND e.status = 1 AND e.deleted = 0
+          AND (
+              EXISTS (
+                  SELECT 1 FROM inspection_scheme_equipment relation
+                  WHERE relation.tenant_id = version.tenant_id
+                    AND relation.scheme_version_id = version.id
+                    AND relation.equipment_id = e.id
+              )
+              OR EXISTS (
+                  SELECT 1 FROM applicable_categories category_scope
+                  WHERE category_scope.scheme_version_id = version.id
+                    AND category_scope.id = e.category_id
+              )
+          )
+        ORDER BY scheme.scheme_name, scheme.id
+    </select>
+
+    <select id="assignees" resultType="com.leantpm.mobile.MobileDtos$AssigneeOption">
+        SELECT user.id AS user_id, user.username, user.real_name,
+               CASE WHEN organization.organization_type = 'TEAM'
+                    THEN organization.organization_code END AS team_code
+        FROM system_user user
+        LEFT JOIN organization
+          ON organization.tenant_id = user.tenant_id
+         AND organization.id = user.organization_id
+         AND organization.status = 1 AND organization.deleted = 0
+        WHERE user.tenant_id = #{tenantId} AND user.status = 1 AND user.deleted = 0
+        ORDER BY user.real_name, user.username, user.id
+        LIMIT 500
+    </select>
+
+    <select id="teams" resultType="com.leantpm.mobile.MobileDtos$TeamOption">
+        SELECT organization_code AS team_code, organization_name AS team_name
+        FROM organization
+        WHERE tenant_id = #{tenantId} AND organization_type = 'TEAM'
+          AND status = 1 AND deleted = 0
+        ORDER BY organization_name, id
+    </select>
 </mapper>

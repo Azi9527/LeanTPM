@@ -295,7 +295,14 @@ public interface InspectionMapper {
             @Param("equipment") EquipmentSnapshot equipment,
             @Param("request") InspectionDtos.ManualTaskRequest request,
             @Param("primaryAssigneeUserId") Long primaryAssigneeUserId,
+            @Param("idempotencyKey") String idempotencyKey,
+            @Param("requestHash") String requestHash,
             @Param("operatorId") long operatorId
+    );
+
+    ManualTaskIdentity findManualTaskByIdempotencyKey(
+            @Param("tenantId") long tenantId,
+            @Param("idempotencyKey") String idempotencyKey
     );
 
     int copyTaskItems(
@@ -625,6 +632,9 @@ public interface InspectionMapper {
             String weekDays,
             String monthDays,
             java.time.LocalTime scheduledTime,
+            int generationLeadMinutes,
+            long workCalendarId,
+            String workDays,
             Long assigneeUserId,
             String teamCode,
             boolean reviewRequired,
@@ -633,5 +643,8 @@ public interface InspectionMapper {
             LocalDate expiryDate,
             LocalDate nextGenerationDate
     ) {
+    }
+
+    record ManualTaskIdentity(long id, String requestHash) {
     }
 }

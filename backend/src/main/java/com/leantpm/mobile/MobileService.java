@@ -147,7 +147,12 @@ public class MobileService {
                 equipment,
                 List.copyOf(mapper.activeTasks(
                         current.tenantId(), equipment.equipmentId(), current.userId()
-                ))
+                )),
+                List.copyOf(mapper.applicableInspectionSchemes(
+                        current.tenantId(), equipment.equipmentId()
+                )),
+                List.copyOf(mapper.assignees(current.tenantId())),
+                List.copyOf(mapper.teams(current.tenantId()))
         );
     }
 

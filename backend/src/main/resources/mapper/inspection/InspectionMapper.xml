@@ -560,7 +560,9 @@
         SELECT plan.id, plan.scheme_id, plan.scheme_version_id,
                scheme.scheme_code, scheme.scheme_name, version.version_number AS scheme_version_number,
                scheme.inspection_type, plan.equipment_id, plan.cycle_type, plan.cycle_interval,
-               plan.week_days, plan.month_days, plan.scheduled_time, plan.assignee_user_id,
+               plan.week_days, plan.month_days, plan.scheduled_time,
+               plan.generation_lead_minutes, plan.work_calendar_id, calendar.work_days,
+               plan.assignee_user_id,
                plan.team_code, version.review_required_flag AS review_required,
                version.backfill_allowed_flag AS backfill_allowed, version.effective_date,
                version.expiry_date, plan.next_generation_date
@@ -574,6 +576,9 @@
         JOIN equipment e
           ON e.tenant_id = plan.tenant_id AND e.id = plan.equipment_id
          AND e.deleted = 0 AND e.status = 1
+        JOIN inspection_work_calendar calendar
+          ON calendar.tenant_id = plan.tenant_id AND calendar.id = plan.work_calendar_id
+         AND calendar.status = 1 AND calendar.deleted = 0
         WHERE plan.tenant_id = #{tenantId} AND plan.plan_status = 'ACTIVE'
           AND plan.deleted = 0 AND plan.next_generation_date &lt;= #{throughDate}
         ORDER BY plan.next_generation_date, plan.id
@@ -628,13 +633,14 @@
     </select>
 
     <insert id="insertManualTask">
-        INSERT INTO inspection_task
+        INSERT IGNORE INTO inspection_task
             (tenant_id, task_code, scheme_id, scheme_version_id,
              scheme_code_snapshot, scheme_name_snapshot, scheme_version_number,
              inspection_type, equipment_id, organization_id, location_id,
              planned_date, planned_start_time, due_time, assignee_user_id,
              team_code, source_type, backfill_flag, review_required_flag,
-             execution_remark, created_by, updated_by)
+             execution_remark, request_idempotency_key, request_hash,
+             created_by, updated_by)
         VALUES
             (#{tenantId}, #{taskCode}, #{scheme.id}, #{version.id},
              #{scheme.schemeCode}, #{scheme.schemeName}, #{version.versionNumber},
@@ -643,8 +649,19 @@
              #{request.dueTime}, #{primaryAssigneeUserId}, #{request.teamCode},
              CASE WHEN #{request.backfill} THEN 'BACKFILL' ELSE 'MANUAL' END,
              #{request.backfill}, #{version.reviewRequiredFlag}, #{request.remark},
+             #{idempotencyKey}, #{requestHash},
              #{operatorId}, #{operatorId})
     </insert>
+
+    <select id="findManualTaskByIdempotencyKey"
+            resultType="com.leantpm.inspection.InspectionMapper$ManualTaskIdentity">
+        SELECT id, request_hash
+        FROM inspection_task
+        WHERE tenant_id = #{tenantId}
+          AND request_idempotency_key = #{idempotencyKey}
+          AND deleted = 0
+        LIMIT 1
+    </select>
 
     <insert id="copyTaskItems">
         INSERT INTO inspection_task_item

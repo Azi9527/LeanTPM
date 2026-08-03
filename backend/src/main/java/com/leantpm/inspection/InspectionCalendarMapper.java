@@ -2,6 +2,7 @@ package com.leantpm.inspection;
 
 import org.apache.ibatis.annotations.Param;
 
+import java.time.LocalDate;
 import java.util.List;
 
 public interface InspectionCalendarMapper {
@@ -39,6 +40,12 @@ public interface InspectionCalendarMapper {
 
     int countActiveCalendar(@Param("tenantId") long tenantId, @Param("id") long id);
 
+    String findEffectiveDayType(
+            @Param("tenantId") long tenantId,
+            @Param("calendarId") long calendarId,
+            @Param("date") LocalDate date
+    );
+
     int updateCalendar(
             @Param("tenantId") long tenantId,
             @Param("id") long id,
@@ -63,6 +70,13 @@ public interface InspectionCalendarMapper {
     InspectionCalendarDtos.CalendarExceptionRow findException(
             @Param("tenantId") long tenantId,
             @Param("id") long id
+    );
+
+    int countConflictingExceptions(
+            @Param("tenantId") long tenantId,
+            @Param("calendarId") long calendarId,
+            @Param("excludeId") Long excludeId,
+            @Param("request") InspectionCalendarDtos.SaveExceptionRequest request
     );
 
     int insertException(

@@ -91,9 +91,33 @@ export interface MobileTaskLink {
   routePath: string
 }
 
+export interface MobileInspectionScheme {
+  schemeId: number
+  schemeVersionId: number
+  schemeCode: string
+  schemeName: string
+  inspectionType: string
+  backfillAllowed: boolean
+}
+
+export interface MobileAssigneeOption {
+  userId: number
+  username: string
+  realName: string
+  teamCode?: string
+}
+
+export interface MobileTeamOption {
+  teamCode: string
+  teamName: string
+}
+
 export interface MobileEquipmentContext {
   equipment: MobileEquipment
   activeTasks: MobileTaskLink[]
+  inspectionSchemes: MobileInspectionScheme[]
+  assignees: MobileAssigneeOption[]
+  teams: MobileTeamOption[]
 }
 
 async function getData<T>(url: string): Promise<T> {

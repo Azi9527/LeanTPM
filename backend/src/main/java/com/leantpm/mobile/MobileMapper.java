@@ -48,4 +48,13 @@ public interface MobileMapper {
             @Param("equipmentId") long equipmentId,
             @Param("userId") long userId
     );
+
+    List<MobileDtos.ApplicableInspectionScheme> applicableInspectionSchemes(
+            @Param("tenantId") long tenantId,
+            @Param("equipmentId") long equipmentId
+    );
+
+    List<MobileDtos.AssigneeOption> assignees(@Param("tenantId") long tenantId);
+
+    List<MobileDtos.TeamOption> teams(@Param("tenantId") long tenantId);
 }
