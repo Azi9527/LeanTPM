@@ -40,6 +40,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Transactional
 class EquipmentMySqlIntegrationTest {
     private static final long USER_ID = 9001L;
+    private static final long RESTRICTED_USER_ID = 9002L;
 
     @Autowired
     private EquipmentService service;
@@ -59,7 +60,21 @@ class EquipmentMySqlIntegrationTest {
                 "INSERT INTO system_user_role (tenant_id, user_id, role_id) VALUES (1, ?, 1)",
                 USER_ID
         );
-        CurrentUser user = new CurrentUser(
+        jdbc.update("""
+                INSERT INTO system_user
+                    (id, tenant_id, username, password_hash, real_name,
+                     organization_id, status, must_change_password)
+                VALUES (?, 1, 'equipment_reader_it', 'not-used', '普通设备查看人', 4, 1, 0)
+                """, RESTRICTED_USER_ID);
+        jdbc.update(
+                "INSERT INTO system_user_role (tenant_id, user_id, role_id) VALUES (1, ?, 3)",
+                RESTRICTED_USER_ID
+        );
+        authenticateAdministrator();
+    }
+
+    private void authenticateAdministrator() {
+        authenticate(new CurrentUser(
                 USER_ID,
                 1L,
                 "equipment_it",
@@ -75,7 +90,10 @@ class EquipmentMySqlIntegrationTest {
                         "equipment:barcode:manage"
                 ),
                 "equipment-it-session"
-        );
+        ));
+    }
+
+    private void authenticate(CurrentUser user) {
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(user, null, Set.of())
         );
@@ -168,6 +186,31 @@ class EquipmentMySqlIntegrationTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting("code")
                 .isEqualTo("BARCODE_NOT_FOUND");
+
+        authenticate(new CurrentUser(
+                RESTRICTED_USER_ID, 1L, "equipment_reader_it", "普通设备查看人", false,
+                Set.of("OPERATOR"),
+                Set.of("equipment:ledger:view", "equipment:status:view", "equipment:barcode:view"),
+                "equipment-reader-session"
+        ));
+        assertThat(service.page(
+                "EQ-IT-001", null, null, null, null, null, null, 1, 20
+        ).records()).singleElement()
+                .extracting(EquipmentDtos.EquipmentRow::id).isEqualTo(equipmentId);
+        assertThat(service.detail(equipmentId).equipment().id()).isEqualTo(equipmentId);
+        assertThat(service.statusHistory(equipmentId)).isNotEmpty();
+        assertThat(service.barcodes(equipmentId, true)).singleElement()
+                .extracting(EquipmentDtos.BarcodeRow::id).isEqualTo(replacement.id());
+        assertThatThrownBy(() -> service.changeStatus(
+                equipmentId,
+                new EquipmentDtos.ChangeStatusRequest(
+                        "IDLE", "越权状态变更", "MANUAL",
+                        transferred.equipment().currentStatusVersion()
+                )
+        )).isInstanceOf(BusinessException.class)
+                .extracting("code").isEqualTo("EQUIPMENT_NOT_FOUND");
+
+        authenticateAdministrator();
 
         assertThat(service.importTemplate()).isNotEmpty();
         assertThat(service.exportWorkbook(

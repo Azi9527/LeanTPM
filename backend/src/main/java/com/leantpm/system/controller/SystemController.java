@@ -135,7 +135,8 @@ public class SystemController {
     }
 
     @GetMapping("/roles")
-    @PreAuthorize("hasAuthority('system:role:view') or hasAuthority('system:data-scope:view')")
+    @PreAuthorize("hasAuthority('system:role:view') or hasAuthority('system:data-scope:view') "
+            + "or hasAuthority('system:user:view')")
     public ApiResponse<List<SystemDtos.RoleRow>> roles() {
         return ApiResponse.success(service.roles());
     }

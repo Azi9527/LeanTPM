@@ -37,7 +37,7 @@ class MySqlMigrationIntegrationTest {
     @Test
     void appliesEveryMigrationAndFoundationTable() throws Exception {
         assertThat(number("SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1"))
-                .isEqualTo(24);
+                .isEqualTo(31);
         assertThat(number("""
                 SELECT COUNT(*)
                 FROM information_schema.tables
@@ -308,15 +308,19 @@ class MySqlMigrationIntegrationTest {
                   AND deleted = 0
                 """)).isEqualTo(6);
         assertThat(number("""
-                SELECT COUNT(*)
+                SELECT COUNT(DISTINCT role.role_code)
                 FROM system_role role
                 JOIN system_role_menu relation
                   ON relation.tenant_id = role.tenant_id
                  AND relation.role_id = role.id
+                 AND relation.deleted = 0
                 WHERE role.tenant_id = 1
-                  AND role.role_code IN ('ADMIN', 'PLANNER', 'OPERATOR')
+                  AND role.role_code IN (
+                    'ADMIN', 'WORKSHOP_MANAGER', 'TEAM_LEADER', 'OPERATOR'
+                  )
+                  AND role.deleted = 0
                   AND relation.menu_id BETWEEN 60 AND 65
-                """)).isEqualTo(18);
+                """)).isEqualTo(4);
     }
 
     @Test
@@ -325,17 +329,15 @@ class MySqlMigrationIntegrationTest {
                 SELECT COUNT(*)
                 FROM system_role
                 WHERE tenant_id = 1
-                  AND role_code IN (
-                    'ADMIN', 'PLANNER', 'WORKSHOP_MANAGER', 'TEAM_LEADER', 'OPERATOR'
-                  )
+                  AND role_code IN ('ADMIN', 'WORKSHOP_MANAGER', 'TEAM_LEADER', 'OPERATOR')
                   AND status = 1
                   AND deleted = 0
-                """)).isEqualTo(5);
+                """)).isEqualTo(4);
         assertThat(number("""
                 SELECT COUNT(*)
                 FROM system_role
                 WHERE tenant_id = 1 AND deleted = 0
-                """)).isEqualTo(5);
+                """)).isEqualTo(4);
         assertThat(number("""
                 SELECT COUNT(*)
                 FROM system_user
@@ -362,7 +364,7 @@ class MySqlMigrationIntegrationTest {
                  AND role.deleted = 0
                 WHERE user.tenant_id = 1
                   AND (
-                    (user.username = 'planner' AND role.role_code = 'PLANNER')
+                    (user.username = 'planner' AND role.role_code = 'WORKSHOP_MANAGER')
                     OR (
                       user.username IN (
                         'operator01', 'operator02', 'operator03',
@@ -413,6 +415,64 @@ class MySqlMigrationIntegrationTest {
                   )
                   AND menu.deleted = 0
                 """)).isEqualTo(5);
+        assertThat(number("""
+                SELECT COUNT(*)
+                FROM system_role
+                WHERE tenant_id = 1 AND deleted = 0 AND status = 1
+                  AND role_code IN ('ADMIN', 'WORKSHOP_MANAGER', 'TEAM_LEADER', 'OPERATOR')
+                """)).isEqualTo(4);
+        assertThat(number("""
+                SELECT COUNT(*)
+                FROM system_role role
+                JOIN system_role_menu relation
+                  ON relation.tenant_id = role.tenant_id
+                 AND relation.role_id = role.id
+                 AND relation.deleted = 0
+                JOIN system_menu menu
+                  ON menu.tenant_id = relation.tenant_id
+                 AND menu.id = relation.menu_id
+                 AND menu.deleted = 0
+                WHERE role.tenant_id = 1
+                  AND role.role_code = 'TEAM_LEADER'
+                  AND menu.permission_code LIKE 'system:%'
+                """)).isZero();
+        assertThat(number("""
+                SELECT COUNT(*)
+                FROM system_role role
+                JOIN system_role_menu relation
+                  ON relation.tenant_id = role.tenant_id
+                 AND relation.role_id = role.id
+                 AND relation.deleted = 0
+                JOIN system_menu menu
+                  ON menu.tenant_id = relation.tenant_id
+                 AND menu.id = relation.menu_id
+                 AND menu.deleted = 0
+                WHERE role.tenant_id = 1
+                  AND role.role_code = 'WORKSHOP_MANAGER'
+                  AND menu.permission_code IN (
+                    'system:user:view', 'system:user:create', 'system:user:update',
+                    'system:user:status', 'system:user:reset-password', 'system:user:import'
+                  )
+                """)).isEqualTo(6);
+        assertThat(number("""
+                SELECT COUNT(*)
+                FROM system_role role
+                JOIN system_role_menu relation
+                  ON relation.tenant_id = role.tenant_id
+                 AND relation.role_id = role.id
+                 AND relation.deleted = 0
+                JOIN system_menu menu
+                  ON menu.tenant_id = relation.tenant_id
+                 AND menu.id = relation.menu_id
+                 AND menu.deleted = 0
+                WHERE role.tenant_id = 1
+                  AND role.role_code = 'OPERATOR'
+                  AND menu.permission_code IN (
+                    'equipment:ledger:view', 'equipment:status:view',
+                    'inspection:my-task:view', 'inspection:task:execute',
+                    'inspection:statistics:view', 'mobile:scan'
+                  )
+                """)).isEqualTo(6);
     }
 
     @Test

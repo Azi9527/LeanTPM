@@ -119,7 +119,7 @@ public class EquipmentService {
             int pageSize
     ) {
         var current = SecurityUtils.currentUser();
-        DataPermission scope = dataPermissionService.current();
+        DataPermission scope = DataPermission.all(current.userId());
         int offset = (page - 1) * pageSize;
         String normalizedStatus = upper(currentStatusCode);
         String normalizedStage = upper(lifecycleStage);
@@ -141,10 +141,11 @@ public class EquipmentService {
     @Transactional(readOnly = true)
     public EquipmentDtos.EquipmentDetail detail(long id) {
         var current = SecurityUtils.currentUser();
+        DataPermission readScope = DataPermission.all(current.userId());
         EquipmentDtos.EquipmentRow equipment = requireAccessible(
-                current.tenantId(), id, dataPermissionService.current()
+                current.tenantId(), id, readScope
         );
-        return detail(current.tenantId(), equipment, dataPermissionService.current());
+        return detail(current.tenantId(), equipment, readScope);
     }
 
     @Transactional
@@ -440,14 +441,14 @@ public class EquipmentService {
     @Transactional(readOnly = true)
     public List<EquipmentDtos.StatusHistoryRow> statusHistory(long id) {
         var current = SecurityUtils.currentUser();
-        requireAccessible(current.tenantId(), id, dataPermissionService.current());
+        requireAccessible(current.tenantId(), id, DataPermission.all(current.userId()));
         return mapper.findStatusHistory(current.tenantId(), id);
     }
 
     @Transactional(readOnly = true)
     public List<EquipmentDtos.BarcodeRow> barcodes(Long equipmentId, boolean activeOnly) {
         var current = SecurityUtils.currentUser();
-        DataPermission scope = dataPermissionService.current();
+        DataPermission scope = DataPermission.all(current.userId());
         if (equipmentId != null) {
             requireAccessible(current.tenantId(), equipmentId, scope);
         }
@@ -531,7 +532,7 @@ public class EquipmentService {
             );
         }
         requireAccessible(
-                current.tenantId(), barcode.equipmentId(), dataPermissionService.current()
+                current.tenantId(), barcode.equipmentId(), DataPermission.all(current.userId())
         );
         String baseUrl = parameterService.getString(
                 current.tenantId(),

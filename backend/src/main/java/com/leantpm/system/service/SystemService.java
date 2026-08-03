@@ -21,6 +21,9 @@ public class SystemService {
     private static final Set<String> DATA_SCOPE_TYPES = Set.of(
             "ALL", "ORGANIZATION", "ORGANIZATION_AND_CHILDREN", "SELF", "CUSTOM"
     );
+    private static final Set<String> ASSIGNABLE_BUSINESS_ROLES = Set.of(
+            "WORKSHOP_MANAGER", "TEAM_LEADER", "OPERATOR"
+    );
 
     private final SystemMapper mapper;
     private final PasswordEncoder passwordEncoder;
@@ -61,6 +64,7 @@ public class SystemService {
     public long createUser(SystemDtos.CreateUserRequest request) {
         var current = SecurityUtils.currentUser();
         assertCanCreateIn(request.organizationId());
+        assertAssignableRoles(request.roleIds());
         String username = request.username().trim();
         if (mapper.countUsername(current.tenantId(), username) > 0) {
             throw new BusinessException("USERNAME_EXISTS", "用户名已存在", HttpStatus.CONFLICT);
@@ -85,6 +89,8 @@ public class SystemService {
     @Transactional
     public void updateUser(long userId, SystemDtos.UpdateUserRequest request) {
         var current = SecurityUtils.currentUser();
+        assertNotProtectedAdministrator(userId);
+        assertAssignableRoles(request.roleIds());
         DataPermission scope = dataPermissionService.current();
         assertCanAccessUser(current.tenantId(), userId, scope);
         if (!scope.canCreateIn(request.organizationId())) {
@@ -102,6 +108,7 @@ public class SystemService {
         if (userId == current.userId() && !request.enabled()) {
             throw new BusinessException("CANNOT_DISABLE_SELF", "不能停用当前登录账号");
         }
+        assertNotProtectedAdministrator(userId);
         DataPermission scope = dataPermissionService.current();
         assertCanAccessUser(current.tenantId(), userId, scope);
         if (mapper.updateUserStatus(
@@ -115,6 +122,7 @@ public class SystemService {
     @Transactional
     public void resetPassword(long userId, SystemDtos.ResetPasswordRequest request) {
         var current = SecurityUtils.currentUser();
+        assertNotProtectedAdministrator(userId);
         DataPermission scope = dataPermissionService.current();
         assertCanAccessUser(current.tenantId(), userId, scope);
         if (mapper.resetUserPassword(
@@ -132,6 +140,9 @@ public class SystemService {
     public List<SystemDtos.RoleRow> roles() {
         var current = SecurityUtils.currentUser();
         return mapper.findRoles(current.tenantId()).stream()
+                .filter(role -> isSuperAdministrator()
+                        || (role.status() == 1
+                        && ASSIGNABLE_BUSINESS_ROLES.contains(role.roleCode())))
                 .map(role -> new SystemDtos.RoleRow(
                         role.id(), role.roleCode(), role.roleName(), role.dataScope(), role.status(),
                         role.sortOrder(), role.remark(), role.version(),
@@ -139,6 +150,39 @@ public class SystemService {
                         mapper.findRoleCustomOrganizationIds(current.tenantId(), role.id())
                 ))
                 .toList();
+    }
+
+    private void assertAssignableRoles(List<Long> roleIds) {
+        var current = SecurityUtils.currentUser();
+        Set<Long> requested = Set.copyOf(roleIds == null ? List.of() : roleIds);
+        Set<Long> allowed = mapper.findRoles(current.tenantId()).stream()
+                .filter(role -> role.status() == 1)
+                .filter(role -> isSuperAdministrator()
+                        || ASSIGNABLE_BUSINESS_ROLES.contains(role.roleCode()))
+                .map(SystemDtos.RoleRow::id)
+                .collect(java.util.stream.Collectors.toSet());
+        if (requested.isEmpty() || !allowed.containsAll(requested)) {
+            throw new BusinessException(
+                    "ROLE_ASSIGNMENT_FORBIDDEN", "不能分配停用角色或超出本人权限的角色",
+                    HttpStatus.FORBIDDEN
+            );
+        }
+    }
+
+    private void assertNotProtectedAdministrator(long userId) {
+        var current = SecurityUtils.currentUser();
+        if (!isSuperAdministrator()
+                && mapper.countUserAdminRole(current.tenantId(), userId) > 0) {
+            throw new BusinessException(
+                    "ADMIN_USER_PROTECTED", "只有超级管理员可以修改管理员账号",
+                    HttpStatus.FORBIDDEN
+            );
+        }
+    }
+
+    private boolean isSuperAdministrator() {
+        Set<String> roles = SecurityUtils.currentUser().roles();
+        return roles.contains("ADMIN") || roles.contains("SUPER_ADMIN");
     }
 
     @Transactional

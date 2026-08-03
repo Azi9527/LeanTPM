@@ -25,6 +25,8 @@ public interface SystemMapper {
 
     List<Long> findUserRoleIds(@Param("tenantId") long tenantId, @Param("userId") long userId);
 
+    int countUserAdminRole(@Param("tenantId") long tenantId, @Param("userId") long userId);
+
     UserScopeTarget findUserScopeTarget(
             @Param("tenantId") long tenantId,
             @Param("userId") long userId
