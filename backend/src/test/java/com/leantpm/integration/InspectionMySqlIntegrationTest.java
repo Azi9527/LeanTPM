@@ -2,6 +2,7 @@ package com.leantpm.integration;
 
 import com.leantpm.equipment.EquipmentDtos;
 import com.leantpm.equipment.EquipmentService;
+import com.leantpm.common.exception.BusinessException;
 import com.leantpm.inspection.InspectionCatalogService;
 import com.leantpm.inspection.InspectionCalendarDtos;
 import com.leantpm.inspection.InspectionCalendarService;
@@ -34,6 +35,7 @@ import java.util.List;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @EnabledIfEnvironmentVariable(named = "LEANTPM_TEST_DB_URL", matches = ".+")
 @SpringBootTest(
@@ -308,17 +310,37 @@ class InspectionMySqlIntegrationTest {
                 })
                 .toList();
 
-        taskService.submit(
-                task.id(),
+        InspectionDtos.SaveTaskResultsRequest submissionRequest =
                 new InspectionDtos.SaveTaskResultsRequest(
                         results, "完成现场点检", task.version()
-                )
-        );
+                );
+        taskService.submit(task.id(), submissionRequest);
         InspectionDtos.TaskDetail submitted = taskService.detail(task.id());
         assertThat(submitted.task().taskStatus()).isEqualTo("PENDING_REVIEW");
         assertThat(submitted.abnormalities()).singleElement()
                 .extracting(InspectionDtos.AbnormalRow::abnormalStatus)
                 .isEqualTo("OPEN");
+
+        authenticateCollaborator();
+        assertThatThrownBy(() -> taskService.submit(task.id(), submissionRequest))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code", "message")
+                .containsExactly(
+                        "INSPECTION_TASK_ALREADY_SUBMITTED",
+                        "任务已由点检执行人集成测试于"
+                                + submitted.task().submittedTime()
+                                .format(java.time.format.DateTimeFormatter.ofPattern(
+                                        "yyyy-MM-dd HH:mm:ss"
+                                ))
+                                + "提交完成，当前结果未被覆盖"
+                );
+        assertThat(taskService.detail(task.id()).items())
+                .allSatisfy(item -> assertThat(item.result().executedBy())
+                        .isEqualTo(OPERATOR_ID));
+
+        authenticateOperator();
+        assertThat(taskService.detail(task.id()).task().version())
+                .isEqualTo(submitted.task().version());
 
         authenticateAdmin();
         taskService.review(

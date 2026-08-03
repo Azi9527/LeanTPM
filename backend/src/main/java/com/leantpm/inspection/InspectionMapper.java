@@ -435,6 +435,11 @@ public interface InspectionMapper {
             @Param("operatorId") long operatorId
     );
 
+    SubmissionState lockSubmission(
+            @Param("tenantId") long tenantId,
+            @Param("id") long id
+    );
+
     int submitResults(@Param("tenantId") long tenantId, @Param("taskId") long taskId);
 
     int updateTaskStatus(
@@ -646,5 +651,15 @@ public interface InspectionMapper {
     }
 
     record ManualTaskIdentity(long id, String requestHash) {
+    }
+
+    record SubmissionState(
+            long id,
+            String taskStatus,
+            int version,
+            Long submittedBy,
+            String submittedByName,
+            LocalDateTime submittedTime
+    ) {
     }
 }

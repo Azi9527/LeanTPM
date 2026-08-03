@@ -1173,6 +1173,21 @@
           AND task_status IN ('PENDING','OVERDUE','IN_PROGRESS')
     </update>
 
+    <select id="lockSubmission"
+            resultType="com.leantpm.inspection.InspectionMapper$SubmissionState">
+        SELECT task.id, task.task_status, task.version,
+               task.submitted_by, submitter.real_name AS submitted_by_name,
+               task.submitted_time
+        FROM inspection_task task
+        LEFT JOIN system_user submitter
+          ON submitter.tenant_id = task.tenant_id
+         AND submitter.id = task.submitted_by
+         AND submitter.deleted = 0
+        WHERE task.tenant_id = #{tenantId} AND task.id = #{id}
+          AND task.deleted = 0
+        FOR UPDATE
+    </select>
+
     <update id="submitResults">
         UPDATE inspection_task_result
         SET result_status = 'SUBMITTED', submitted_time = CURRENT_TIMESTAMP(3),
@@ -1189,6 +1204,8 @@
                                   THEN CURRENT_TIMESTAMP(3) ELSE submitted_time END,
             completed_time = CASE WHEN #{targetStatus} = 'COMPLETED'
                                   THEN CURRENT_TIMESTAMP(3) ELSE completed_time END,
+            submitted_by = CASE WHEN #{targetStatus} IN ('PENDING_REVIEW','COMPLETED')
+                                THEN #{operatorId} ELSE submitted_by END,
             execution_remark = COALESCE(#{remark}, execution_remark),
             updated_by = #{operatorId}, version = version + 1
         WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0

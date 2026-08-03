@@ -35,6 +35,7 @@ import java.security.MessageDigest;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
@@ -487,35 +488,33 @@ public class InspectionTaskService {
         DataPermission scope = dataPermissionService.current();
         InspectionDtos.TaskRow task = requireTask(current.tenantId(), id, scope);
         assertCanExecute(current, task);
-        if (!EDITABLE_STATUSES.contains(task.taskStatus())) {
-            throw new BusinessException(
-                    "INSPECTION_TASK_NOT_EDITABLE", "当前任务状态不允许录入结果",
-                    HttpStatus.CONFLICT
-            );
-        }
-        if (task.version() != request.taskVersion()) {
-            throw optimisticConflict();
-        }
-        for (InspectionDtos.SaveResultRequest resultRequest : request.results()) {
-            saveResult(current, task, resultRequest);
-        }
-        if (mapper.updateTaskAfterDraft(
-                current.tenantId(), id, task.version(), clean(request.executionRemark()),
-                current.userId()
-        ) == 0) {
-            throw optimisticConflict();
-        }
-        mapper.insertTaskEvent(
-                current.tenantId(), id, "DRAFT_SAVED", task.taskStatus(), "IN_PROGRESS",
-                "保存点检草稿", current.userId()
-        );
+        persistDraft(current, task, request, true);
     }
 
     @Transactional
     public void submit(long id, InspectionDtos.SaveTaskResultsRequest request) {
         CurrentUser current = SecurityUtils.currentUser();
-        saveDraft(id, request);
+        InspectionDtos.TaskRow authorizedTask = requireTask(
+                current.tenantId(), id, dataPermissionService.current()
+        );
+        assertCanExecute(current, authorizedTask);
+        InspectionMapper.SubmissionState state = mapper.lockSubmission(
+                current.tenantId(), id
+        );
+        if (state == null) {
+            throw new BusinessException(
+                    "INSPECTION_TASK_NOT_FOUND", "点检任务不存在", HttpStatus.NOT_FOUND
+            );
+        }
+        if (state.submittedTime() != null
+                || Set.of("PENDING_REVIEW", "COMPLETED").contains(state.taskStatus())) {
+            throw alreadySubmitted(state);
+        }
         InspectionDtos.TaskRow task = requireTask(
+                current.tenantId(), id, dataPermissionService.current()
+        );
+        persistDraft(current, task, request, false);
+        task = requireTask(
                 current.tenantId(), id, DataPermission.all(current.userId())
         );
         if (mapper.countMissingRequiredResults(current.tenantId(), id) > 0) {
@@ -545,6 +544,53 @@ public class InspectionTaskService {
         changeLogService.record(
                 "INSPECTION_TASK", id, "SUBMIT", task,
                 mapper.findTask(current.tenantId(), id, DataPermission.all(current.userId()))
+        );
+    }
+
+    private void persistDraft(
+            CurrentUser current,
+            InspectionDtos.TaskRow task,
+            InspectionDtos.SaveTaskResultsRequest request,
+            boolean recordDraftEvent
+    ) {
+        if (!EDITABLE_STATUSES.contains(task.taskStatus())) {
+            throw new BusinessException(
+                    "INSPECTION_TASK_NOT_EDITABLE", "当前任务状态不允许录入结果",
+                    HttpStatus.CONFLICT
+            );
+        }
+        if (task.version() != request.taskVersion()) {
+            throw optimisticConflict();
+        }
+        for (InspectionDtos.SaveResultRequest resultRequest : request.results()) {
+            saveResult(current, task, resultRequest);
+        }
+        if (mapper.updateTaskAfterDraft(
+                current.tenantId(), task.id(), task.version(),
+                clean(request.executionRemark()), current.userId()
+        ) == 0) {
+            throw optimisticConflict();
+        }
+        if (recordDraftEvent) {
+            mapper.insertTaskEvent(
+                    current.tenantId(), task.id(), "DRAFT_SAVED",
+                    task.taskStatus(), "IN_PROGRESS", "保存点检草稿", current.userId()
+            );
+        }
+    }
+
+    private BusinessException alreadySubmitted(InspectionMapper.SubmissionState state) {
+        String submitter = state.submittedByName() == null
+                ? "其他执行人" : state.submittedByName();
+        String time = state.submittedTime() == null
+                ? "此前"
+                : state.submittedTime().format(
+                        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+                );
+        return new BusinessException(
+                "INSPECTION_TASK_ALREADY_SUBMITTED",
+                "任务已由" + submitter + "于" + time + "提交完成，当前结果未被覆盖",
+                HttpStatus.CONFLICT
         );
     }
 
