@@ -19,6 +19,7 @@ frontend/dist/
 backend/src/main/resources/application-local.yml
 var/
 runtime/
+outputs/
 
 # OS
 .DS_Store
