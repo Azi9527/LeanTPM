@@ -37,7 +37,7 @@ class MySqlMigrationIntegrationTest {
     @Test
     void appliesEveryMigrationAndFoundationTable() throws Exception {
         assertThat(number("SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1"))
-                .isEqualTo(18);
+                .isEqualTo(19);
         assertThat(number("""
                 SELECT COUNT(*)
                 FROM information_schema.tables
@@ -97,9 +97,10 @@ class MySqlMigrationIntegrationTest {
                     'visualization_model_resource',
                     'visualization_scene',
                     'visualization_scene_node',
-                    'visualization_status_color'
+                    'visualization_status_color',
+                    'system_user_import_batch'
                   )
-                """)).isEqualTo(55);
+                """)).isEqualTo(56);
     }
 
     @Test
@@ -308,20 +309,22 @@ class MySqlMigrationIntegrationTest {
     }
 
     @Test
-    void seedsThreeBusinessRolesAndDemoUsers() throws Exception {
+    void seedsBusinessRolesAndDemoUsers() throws Exception {
         assertThat(number("""
                 SELECT COUNT(*)
                 FROM system_role
                 WHERE tenant_id = 1
-                  AND role_code IN ('ADMIN', 'PLANNER', 'OPERATOR')
+                  AND role_code IN (
+                    'ADMIN', 'PLANNER', 'WORKSHOP_MANAGER', 'TEAM_LEADER', 'OPERATOR'
+                  )
                   AND status = 1
                   AND deleted = 0
-                """)).isEqualTo(3);
+                """)).isEqualTo(5);
         assertThat(number("""
                 SELECT COUNT(*)
                 FROM system_role
                 WHERE tenant_id = 1 AND deleted = 0
-                """)).isEqualTo(3);
+                """)).isEqualTo(5);
         assertThat(number("""
                 SELECT COUNT(*)
                 FROM system_user
@@ -367,6 +370,38 @@ class MySqlMigrationIntegrationTest {
                         LIMIT 1
                         """)
         )).isTrue();
+    }
+
+    @Test
+    void seedsWorkshopAndTeamRoleTemplatesWithScopedPermissions() throws Exception {
+        assertThat(text("""
+                SELECT data_scope
+                FROM system_role
+                WHERE tenant_id = 1 AND role_code = 'WORKSHOP_MANAGER' AND deleted = 0
+                """)).isEqualTo("ORGANIZATION_AND_CHILDREN");
+        assertThat(text("""
+                SELECT data_scope
+                FROM system_role
+                WHERE tenant_id = 1 AND role_code = 'TEAM_LEADER' AND deleted = 0
+                """)).isEqualTo("ORGANIZATION");
+        assertThat(number("""
+                SELECT COUNT(*)
+                FROM system_role role
+                JOIN system_role_menu relation
+                  ON relation.tenant_id = role.tenant_id
+                 AND relation.role_id = role.id
+                JOIN system_menu menu
+                  ON menu.tenant_id = relation.tenant_id
+                 AND menu.id = relation.menu_id
+                WHERE role.tenant_id = 1
+                  AND role.role_code = 'TEAM_LEADER'
+                  AND menu.permission_code IN (
+                    'inspection:task:view', 'inspection:task:assign',
+                    'inspection:abnormal:view', 'inspection:abnormal:handle',
+                    'mobile:workbench:view'
+                  )
+                  AND menu.deleted = 0
+                """)).isEqualTo(5);
     }
 
     @Test

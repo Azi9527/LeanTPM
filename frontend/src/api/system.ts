@@ -184,6 +184,25 @@ export interface OnlineSessionRow {
   currentSession: boolean
 }
 
+export interface UserImportError {
+  rowNumber: number
+  column: string
+  message: string
+}
+
+export interface UserImportResult {
+  batchId: string
+  status: 'VALIDATED' | 'VALIDATED_WITH_ERRORS' | 'INVALID' | 'COMMITTED'
+  strategy: 'ADD_ONLY' | 'ADD_UPDATE' | 'MIXED'
+  totalRows: number
+  validRows: number
+  newUsers: number
+  updatedUsers: number
+  skippedUsers: number
+  errors: UserImportError[]
+  committedTime?: string
+}
+
 export interface PageQuery {
   keyword?: string
   status?: number
@@ -203,6 +222,18 @@ export const systemApi = {
   updateUserStatus: (id: number, data: object) => http.patch(`/system/users/${id}/status`, data),
   resetUserPassword: (id: number, newPassword: string) =>
     http.post(`/system/users/${id}/reset-password`, { newPassword }),
+  downloadUserImportTemplate: () =>
+    http.get<Blob>('/system/users/import-template', { responseType: 'blob' }),
+  validateUserImport: (formData: FormData) =>
+    http.post<ApiResponse<UserImportResult>>('/system/users/import/validate', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+  commitUserImport: (batchId: string) =>
+    http.post<ApiResponse<UserImportResult>>('/system/users/import/commit', undefined, {
+      params: { batchId },
+    }),
+  userImportBatch: (batchId: string) =>
+    getData<UserImportResult>(`/system/users/imports/${encodeURIComponent(batchId)}`),
 
   roles: () => getData<RoleRow[]>('/system/roles'),
   createRole: (data: object) => http.post('/system/roles', data),

@@ -4,11 +4,17 @@ import com.leantpm.common.api.ApiResponse;
 import com.leantpm.common.api.PageResult;
 import com.leantpm.common.idempotency.Idempotent;
 import com.leantpm.system.dto.SystemDtos;
+import com.leantpm.system.dto.UserImportDtos;
 import com.leantpm.system.service.SystemService;
+import com.leantpm.system.service.UserImportService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,8 +25,11 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
@@ -29,9 +38,11 @@ import java.util.Map;
 @RequestMapping("/api/v1/system")
 public class SystemController {
     private final SystemService service;
+    private final UserImportService userImportService;
 
-    public SystemController(SystemService service) {
+    public SystemController(SystemService service, UserImportService userImportService) {
         this.service = service;
+        this.userImportService = userImportService;
     }
 
     @GetMapping("/users")
@@ -43,6 +54,42 @@ public class SystemController {
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int pageSize
     ) {
         return ApiResponse.success(service.users(keyword, status, page, pageSize));
+    }
+
+    @GetMapping("/users/import-template")
+    @PreAuthorize("hasAuthority('system:user:import')")
+    public ResponseEntity<byte[]> userImportTemplate() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.parseMediaType(
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ));
+        headers.setContentDisposition(ContentDisposition.attachment()
+                .filename("LeanTPM-user-import-template.xlsx", StandardCharsets.UTF_8)
+                .build());
+        return ResponseEntity.ok().headers(headers).body(userImportService.template());
+    }
+
+    @PostMapping(value = "/users/import/validate", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAuthority('system:user:import')")
+    public ApiResponse<UserImportDtos.ImportResult> validateUserImport(
+            @RequestPart("file") MultipartFile file
+    ) {
+        return ApiResponse.success(userImportService.validate(file));
+    }
+
+    @PostMapping("/users/import/commit")
+    @Idempotent
+    @PreAuthorize("hasAuthority('system:user:import')")
+    public ApiResponse<UserImportDtos.ImportResult> commitUserImport(
+            @RequestParam String batchId
+    ) {
+        return ApiResponse.success(userImportService.commit(batchId));
+    }
+
+    @GetMapping("/users/imports/{batchId}")
+    @PreAuthorize("hasAuthority('system:user:import')")
+    public ApiResponse<UserImportDtos.ImportResult> userImportBatch(@PathVariable String batchId) {
+        return ApiResponse.success(userImportService.batch(batchId));
     }
 
     @PostMapping("/users")

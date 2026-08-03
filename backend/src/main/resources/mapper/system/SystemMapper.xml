@@ -91,6 +91,18 @@
         LIMIT 1
     </select>
 
+    <select id="findUserByUsername" resultType="com.leantpm.system.dto.SystemDtos$UserRow">
+        SELECT u.id, u.username, u.real_name, u.employee_no, u.mobile, u.email,
+               u.organization_id, o.organization_name, u.status, u.mobile_enabled,
+               u.must_change_password, u.last_login_time, u.created_time, u.version,
+               NULL AS role_ids
+        FROM system_user u
+        LEFT JOIN organization o
+          ON o.tenant_id = u.tenant_id AND o.id = u.organization_id AND o.deleted = 0
+        WHERE u.tenant_id = #{tenantId} AND u.username = #{username} AND u.deleted = 0
+        LIMIT 1
+    </select>
+
     <update id="updateUser">
         UPDATE system_user AS u
         SET real_name = #{request.realName},

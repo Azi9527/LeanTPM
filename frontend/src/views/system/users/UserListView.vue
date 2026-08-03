@@ -1,8 +1,20 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
-import { systemApi, type OrganizationNode, type RoleRow, type UserRow } from '@/api/system'
+import {
+  ElMessage,
+  ElMessageBox,
+  type FormInstance,
+  type FormRules,
+  type UploadFile,
+} from 'element-plus'
+import { Download, Plus, UploadFilled } from '@element-plus/icons-vue'
+import {
+  systemApi,
+  type OrganizationNode,
+  type RoleRow,
+  type UserImportResult,
+  type UserRow,
+} from '@/api/system'
 import { useAuthStore } from '@/stores/auth'
 import { errorMessage } from '@/utils/http'
 
@@ -10,6 +22,11 @@ const auth = useAuthStore()
 const loading = ref(false)
 const saving = ref(false)
 const dialogVisible = ref(false)
+const importDialogVisible = ref(false)
+const importFile = ref<File>()
+const importResult = ref<UserImportResult>()
+const validatingImport = ref(false)
+const committingImport = ref(false)
 const editing = ref<UserRow | null>(null)
 const formRef = ref<FormInstance>()
 const rows = ref<UserRow[]>([])
@@ -204,6 +221,71 @@ async function resetPassword(row: UserRow) {
   }
 }
 
+function openImport() {
+  importFile.value = undefined
+  importResult.value = undefined
+  importDialogVisible.value = true
+}
+
+function chooseImportFile(uploadFile: UploadFile) {
+  importFile.value = uploadFile.raw
+  importResult.value = undefined
+}
+
+async function downloadImportTemplate() {
+  try {
+    const response = await systemApi.downloadUserImportTemplate()
+    const url = URL.createObjectURL(response.data)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = 'LeanTPM-user-import-template.xlsx'
+    anchor.click()
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    ElMessage.error(errorMessage(error, '用户导入模板下载失败'))
+  }
+}
+
+async function validateImport() {
+  if (!importFile.value) {
+    ElMessage.warning('请先选择 Excel 文件')
+    return
+  }
+  validatingImport.value = true
+  try {
+    const body = new FormData()
+    body.append('file', importFile.value)
+    const response = await systemApi.validateUserImport(body)
+    importResult.value = response.data.data
+    if (importResult.value.validRows > 0) {
+      ElMessage.success(`校验完成，可导入 ${importResult.value.validRows} 行`)
+    } else {
+      ElMessage.warning('没有可导入的数据，请按错误回执修改文件')
+    }
+  } catch (error) {
+    ElMessage.error(errorMessage(error, '用户导入文件校验失败'))
+  } finally {
+    validatingImport.value = false
+  }
+}
+
+async function commitImport() {
+  if (!importResult.value?.batchId || importResult.value.validRows < 1) return
+  committingImport.value = true
+  try {
+    const response = await systemApi.commitUserImport(importResult.value.batchId)
+    importResult.value = response.data.data
+    ElMessage.success(
+      `导入完成：新增 ${importResult.value.newUsers}，更新 ${importResult.value.updatedUsers}，跳过 ${importResult.value.skippedUsers}`,
+    )
+    await load()
+  } catch (error) {
+    ElMessage.error(errorMessage(error, '用户批量导入提交失败'))
+  } finally {
+    committingImport.value = false
+  }
+}
+
 const pageSummary = computed(() => `共 ${total.value} 个用户`)
 </script>
 
@@ -212,6 +294,7 @@ const pageSummary = computed(() => `共 ${total.value} 个用户`)
     <header class="page-header">
       <div><h1>用户管理</h1><p>维护人员账号、使用范围和业务角色。</p></div>
       <div class="page-actions">
+        <el-button v-if="auth.can('system:user:import')" :icon="UploadFilled" @click="openImport">批量导入</el-button>
         <el-button v-if="auth.can('system:user:create')" type="primary" :icon="Plus" @click="openCreate">新增用户</el-button>
       </div>
     </header>
@@ -313,6 +396,61 @@ const pageSummary = computed(() => `共 ${total.value} 个用户`)
         <el-button type="primary" :loading="saving" @click="save">保存</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="importDialogVisible" title="批量导入用户" width="min(820px, 96vw)" destroy-on-close>
+      <el-alert
+        title="支持仅新增、或新增并更新；组织和角色使用编码匹配。单次最多 1000 行，初始密码最低 6 位。"
+        type="info"
+        :closable="false"
+        show-icon
+      />
+      <div class="import-actions">
+        <el-button :icon="Download" @click="downloadImportTemplate">下载导入模板</el-button>
+        <el-upload
+          accept=".xlsx"
+          :auto-upload="false"
+          :limit="1"
+          :show-file-list="true"
+          :on-change="chooseImportFile"
+          :on-remove="() => { importFile = undefined; importResult = undefined }"
+        >
+          <el-button :icon="UploadFilled">选择 Excel 文件</el-button>
+        </el-upload>
+        <el-button type="primary" :disabled="!importFile" :loading="validatingImport" @click="validateImport">
+          校验文件
+        </el-button>
+      </div>
+
+      <template v-if="importResult">
+        <el-descriptions :column="4" border class="import-summary">
+          <el-descriptions-item label="总行数">{{ importResult.totalRows }}</el-descriptions-item>
+          <el-descriptions-item label="有效行">{{ importResult.validRows }}</el-descriptions-item>
+          <el-descriptions-item label="错误数">{{ importResult.errors.length }}</el-descriptions-item>
+          <el-descriptions-item label="处理策略">{{ importResult.strategy }}</el-descriptions-item>
+          <el-descriptions-item label="预计新增">{{ importResult.newUsers }}</el-descriptions-item>
+          <el-descriptions-item label="预计更新">{{ importResult.updatedUsers }}</el-descriptions-item>
+          <el-descriptions-item label="预计跳过">{{ importResult.skippedUsers }}</el-descriptions-item>
+          <el-descriptions-item label="状态">{{ importResult.status }}</el-descriptions-item>
+        </el-descriptions>
+        <el-table v-if="importResult.errors.length" :data="importResult.errors" max-height="260" size="small">
+          <el-table-column prop="rowNumber" label="Excel 行" width="90" />
+          <el-table-column prop="column" label="字段" width="150" />
+          <el-table-column prop="message" label="错误说明" min-width="300" />
+        </el-table>
+      </template>
+
+      <template #footer>
+        <el-button @click="importDialogVisible = false">关闭</el-button>
+        <el-button
+          type="primary"
+          :disabled="!importResult || importResult.validRows < 1 || importResult.status === 'COMMITTED'"
+          :loading="committingImport"
+          @click="commitImport"
+        >
+          提交有效数据
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -325,6 +463,8 @@ const pageSummary = computed(() => `共 ${total.value} 个用户`)
 }
 .full-width { grid-column: 1 / -1; }
 .field-hint { margin-top: 4px; color: var(--tpm-text-secondary); font-size: 11px; }
+.import-actions { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; margin: 18px 0; }
+.import-summary { margin-bottom: 16px; }
 @media (max-width: 600px) {
   .user-form { grid-template-columns: 1fr; }
   .full-width { grid-column: auto; }

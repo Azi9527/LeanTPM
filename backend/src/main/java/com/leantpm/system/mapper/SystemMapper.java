@@ -47,6 +47,11 @@ public interface SystemMapper {
 
     Long findUserIdByUsername(@Param("tenantId") long tenantId, @Param("username") String username);
 
+    SystemDtos.UserRow findUserByUsername(
+            @Param("tenantId") long tenantId,
+            @Param("username") String username
+    );
+
     int updateUser(
             @Param("tenantId") long tenantId,
             @Param("userId") long userId,
