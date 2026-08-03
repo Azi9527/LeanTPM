@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { pinyin } from 'pinyin-pro'
-import { inspectionApi, type SchemeRow, type TaskDetail, type TaskQuery, type TaskRow, type TaskStatus } from '@/api/inspection'
+import { inspectionApi, type InspectionExportJob, type SchemeRow, type TaskDetail, type TaskQuery, type TaskRow, type TaskStatus } from '@/api/inspection'
 import { equipmentApi, type EquipmentRow } from '@/api/equipment'
 import { masterDataApi, type OrganizationRow, type ReferenceUser } from '@/api/masterData'
 import { useAuthStore } from '@/stores/auth'
@@ -20,6 +20,9 @@ const createVisible = ref(false)
 const assignVisible = ref(false)
 const assigning = ref(false)
 const exporting = ref(false)
+const includeImages = ref(false)
+const exportJobVisible = ref(false)
+const exportJob = ref<InspectionExportJob | null>(null)
 const detail = ref<TaskDetail | null>(null)
 const assignTarget = ref<TaskRow | null>(null)
 const equipment = ref<EquipmentRow[]>([])
@@ -113,13 +116,55 @@ function taskQuery(includePage: boolean): TaskQuery {
 async function exportResults() {
   exporting.value = true
   try {
-    await inspectionApi.exportResults(taskQuery(false))
-    ElMessage.success('点检结果已导出')
+    if (!includeImages.value) {
+      await inspectionApi.exportResults(taskQuery(false))
+      ElMessage.success('点检结果已导出')
+      return
+    }
+    const created = await inspectionApi.createImageExportJob(taskQuery(false))
+    ElMessage.success('含图片导出任务已提交，正在后台生成')
+    await waitForExport(created.id)
   } catch (error) {
     ElMessage.error(errorMessage(error, '点检结果导出失败'))
   } finally {
     exporting.value = false
   }
+}
+
+async function waitForExport(jobId: number) {
+  for (let attempt = 0; attempt < 150; attempt += 1) {
+    const current = await inspectionApi.imageExportJob(jobId)
+    exportJob.value = current
+    if (current.job.jobStatus === 'COMPLETED') {
+      exportJobVisible.value = true
+      if (current.files.length === 1) {
+        await inspectionApi.downloadImageExportFile(jobId, current.files[0])
+        ElMessage.success(`已导出 ${current.job.imageCount} 张水印图片`)
+      } else {
+        ElMessage.success(`导出完成，已拆分为 ${current.files.length} 个工作簿`)
+      }
+      return
+    }
+    if (current.job.jobStatus === 'FAILED') {
+      throw new Error(current.job.errorMessage || '后台生成失败')
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 2000))
+  }
+  throw new Error('后台导出仍在处理中，请稍后重试')
+}
+
+async function downloadExportFile(file: InspectionExportJob['files'][number]) {
+  if (!exportJob.value) return
+  try {
+    await inspectionApi.downloadImageExportFile(exportJob.value.job.id, file)
+  } catch (error) {
+    ElMessage.error(errorMessage(error, '导出文件下载失败'))
+  }
+}
+
+function formatBytes(value: number) {
+  if (value < 1024 * 1024) return `${Math.max(1, Math.round(value / 1024))} KB`
+  return `${(value / 1024 / 1024).toFixed(1)} MB`
 }
 
 function resetFilters() {
@@ -345,7 +390,10 @@ async function close(row: TaskRow, targetStatus: 'CANCELLED' | 'VOIDED') {
       </el-select>
       <el-button type="primary" @click="page = 1; load()">查询</el-button>
       <el-button @click="resetFilters">重置</el-button>
-      <el-button v-if="auth.can('inspection:task:export')" :loading="exporting" @click="exportResults">导出结果</el-button>
+      <template v-if="auth.can('inspection:task:export')">
+        <el-checkbox v-model="includeImages">包含水印图片</el-checkbox>
+        <el-button :loading="exporting" @click="exportResults">导出结果</el-button>
+      </template>
     </section>
     <section class="surface-card table-card" v-loading="loading">
       <div class="table-toolbar"><span class="table-title">点检任务台账</span><span>共 {{ total }} 条</span></div>
@@ -374,6 +422,23 @@ async function close(row: TaskRow, targetStatus: 'CANCELLED' | 'VOIDED') {
       </el-table>
       <el-pagination v-model:current-page="page" :page-size="20" :total="total" layout="total, prev, pager, next" @change="load" />
     </section>
+
+    <el-dialog v-model="exportJobVisible" title="含图片导出文件" width="min(680px, 96vw)">
+      <el-alert
+        v-if="exportJob"
+        type="success"
+        :closable="false"
+        :title="`已导出 ${exportJob.job.taskCount} 个任务、${exportJob.job.resultCount} 条结果、${exportJob.job.imageCount} 张水印图片`"
+        description="超过 1000 张图片或估算 200MB 时系统会自动拆分；非水印图片和读取失败会在图片明细中明确标记。"
+      />
+      <el-table v-if="exportJob" :data="exportJob.files" class="export-file-table">
+        <el-table-column prop="partNumber" label="分卷" width="80" />
+        <el-table-column prop="fileName" label="文件" min-width="280" />
+        <el-table-column label="图片" width="90"><template #default="{ row }">{{ row.imageCount }} 张</template></el-table-column>
+        <el-table-column label="大小" width="100"><template #default="{ row }">{{ formatBytes(row.fileSize) }}</template></el-table-column>
+        <el-table-column label="操作" width="90"><template #default="{ row }"><el-button link type="primary" @click="downloadExportFile(row)">下载</el-button></template></el-table-column>
+      </el-table>
+    </el-dialog>
 
     <el-dialog v-model="createVisible" title="创建手工点检任务" width="min(700px, 96vw)">
       <el-form label-position="top" class="form-grid">

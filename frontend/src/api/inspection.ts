@@ -378,6 +378,34 @@ export interface TaskQuery {
   pageSize?: number
 }
 
+export interface InspectionExportFile {
+  id: number
+  partNumber: number
+  fileName: string
+  fileSize: number
+  imageCount: number
+  createdTime: string
+}
+
+export interface InspectionExportJob {
+  job: {
+    id: number
+    exportCode: string
+    jobStatus: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
+    includeImages: boolean
+    taskCount: number
+    resultCount: number
+    imageCount: number
+    estimatedImageBytes: number
+    fileCount: number
+    errorMessage?: string
+    createdTime: string
+    startedTime?: string
+    completedTime?: string
+  }
+  files: InspectionExportFile[]
+}
+
 export interface InspectionImportError {
   sheet: string
   rowNumber: number
@@ -493,6 +521,28 @@ export const inspectionApi = {
     const anchor = document.createElement('a')
     anchor.href = url
     anchor.download = 'LeanTPM-点检结果.xlsx'
+    anchor.click()
+    URL.revokeObjectURL(url)
+  },
+  createImageExportJob: async (query: TaskQuery) => {
+    const response = await http.post<ApiResponse<{
+      id: number
+      exportCode: string
+      jobStatus: string
+    }>>('/inspection/results/export-jobs', query)
+    return response.data.data
+  },
+  imageExportJob: (id: number) =>
+    getData<InspectionExportJob>(`/inspection/results/export-jobs/${id}`),
+  downloadImageExportFile: async (jobId: number, file: InspectionExportFile) => {
+    const response = await http.get<Blob>(
+      `/inspection/results/export-jobs/${jobId}/files/${file.id}`,
+      { responseType: 'blob' },
+    )
+    const url = URL.createObjectURL(response.data)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = file.fileName
     anchor.click()
     URL.revokeObjectURL(url)
   },

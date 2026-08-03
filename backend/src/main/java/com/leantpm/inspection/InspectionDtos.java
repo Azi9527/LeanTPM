@@ -404,13 +404,78 @@ public final class InspectionDtos {
             String equipmentCode,
             String equipmentName,
             String itemName,
+            String abnormalCode,
             Long attachmentId,
             String originalName,
             String contentType,
             String extension,
             Long fileSize,
             String attachmentType,
+            String storagePath,
+            Boolean watermarkedFlag,
             LocalDateTime createdTime
+    ) {
+    }
+
+    public record CreateExportJobResult(
+            long id,
+            String exportCode,
+            String jobStatus
+    ) {
+    }
+
+    public record ExportJobRow(
+            long id,
+            String exportCode,
+            String jobStatus,
+            boolean includeImages,
+            int taskCount,
+            int resultCount,
+            int imageCount,
+            long estimatedImageBytes,
+            int fileCount,
+            String errorMessage,
+            LocalDateTime createdTime,
+            LocalDateTime startedTime,
+            LocalDateTime completedTime
+    ) {
+    }
+
+    public record ExportJobDetail(
+            ExportJobRow job,
+            List<ExportFileRow> files
+    ) {
+    }
+
+    public record ExportFileRow(
+            long id,
+            int partNumber,
+            String fileName,
+            long fileSize,
+            int imageCount,
+            LocalDateTime createdTime
+    ) {
+    }
+
+    public record ExportJobData(
+            long id,
+            long tenantId,
+            String exportCode,
+            String jobStatus,
+            String queryJson,
+            String dataScopeJson,
+            long requestedBy
+    ) {
+    }
+
+    public record ExportFileData(
+            long id,
+            long exportJobId,
+            String fileName,
+            String storagePath,
+            String contentType,
+            long fileSize,
+            String sha256
     ) {
     }
 

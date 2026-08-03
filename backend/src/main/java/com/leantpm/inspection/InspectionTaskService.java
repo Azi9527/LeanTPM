@@ -1166,7 +1166,7 @@ public class InspectionTaskService {
         return abnormal;
     }
 
-    private InspectionDtos.TaskQuery normalizeTaskQuery(
+    InspectionDtos.TaskQuery normalizeTaskQuery(
             InspectionDtos.TaskQuery query
     ) {
         InspectionDtos.TaskQuery source = query == null

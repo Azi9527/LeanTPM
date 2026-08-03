@@ -9,6 +9,8 @@ import com.leantpm.inspection.InspectionCalendarService;
 import com.leantpm.inspection.InspectionDtos;
 import com.leantpm.inspection.InspectionImportDtos;
 import com.leantpm.inspection.InspectionImportService;
+import com.leantpm.inspection.InspectionExportService;
+import com.leantpm.inspection.InspectionExportWorker;
 import com.leantpm.inspection.InspectionTaskService;
 import com.leantpm.security.CurrentUser;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -28,6 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.nio.file.Files;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -47,6 +50,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
                 "spring.data.redis.repositories.enabled=false",
                 "management.health.redis.enabled=false",
                 "leantpm.security.jwt-secret=integration-test-secret-at-least-32-characters",
+                "leantpm.storage.upload-dir=${java.io.tmpdir}/leantpm-inspection-it-exports",
                 "leantpm.bootstrap.admin-password="
         }
 )
@@ -71,6 +75,12 @@ class InspectionMySqlIntegrationTest {
 
     @Autowired
     private InspectionImportService importService;
+
+    @Autowired
+    private InspectionExportService exportService;
+
+    @Autowired
+    private InspectionExportWorker exportWorker;
 
     @Autowired
     private JdbcTemplate jdbc;
@@ -435,6 +445,27 @@ class InspectionMySqlIntegrationTest {
         } catch (Exception exception) {
             throw new AssertionError("导出的点检结果工作簿无法读取", exception);
         }
+
+        var exportJob = exportService.createImageExportJob(resultQuery);
+        exportWorker.processPendingJobs();
+        var completedExport = exportService.exportJob(exportJob.id());
+        assertThat(completedExport.job().jobStatus()).isEqualTo("COMPLETED");
+        assertThat(completedExport.job().taskCount()).isEqualTo(1);
+        assertThat(completedExport.job().resultCount()).isEqualTo(3);
+        assertThat(completedExport.files()).singleElement().satisfies(file -> {
+            var download = exportService.exportFile(exportJob.id(), file.id());
+            assertThat(download.resource().exists()).isTrue();
+            try (var workbook = new XSSFWorkbook(download.resource().getInputStream())) {
+                assertThat(workbook.getSheet("图片明细")).isNotNull();
+            } catch (Exception exception) {
+                throw new AssertionError("后台图片导出工作簿无法读取", exception);
+            }
+            try {
+                Files.deleteIfExists(download.resource().getFile().toPath());
+            } catch (Exception exception) {
+                throw new AssertionError("后台图片导出测试文件清理失败", exception);
+            }
+        });
 
         long manualEquipmentOne = createEquipment(
                 "EQ-INSPECTION-MANUAL-001",

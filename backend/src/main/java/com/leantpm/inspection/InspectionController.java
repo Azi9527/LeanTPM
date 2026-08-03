@@ -39,15 +39,18 @@ public class InspectionController {
     private final InspectionCatalogService catalogService;
     private final InspectionTaskService taskService;
     private final InspectionImportService importService;
+    private final InspectionExportService exportService;
 
     public InspectionController(
             InspectionCatalogService catalogService,
             InspectionTaskService taskService,
-            InspectionImportService importService
+            InspectionImportService importService,
+            InspectionExportService exportService
     ) {
         this.catalogService = catalogService;
         this.taskService = taskService;
         this.importService = importService;
+        this.exportService = exportService;
     }
 
     @GetMapping("/import-template")
@@ -308,6 +311,39 @@ public class InspectionController {
                                 .build().toString()
                 )
                 .body(workbook);
+    }
+
+    @PostMapping("/results/export-jobs")
+    @PreAuthorize("hasAuthority('inspection:task:export')")
+    public ApiResponse<InspectionDtos.CreateExportJobResult> createImageExportJob(
+            @RequestBody InspectionDtos.TaskQuery query
+    ) {
+        return ApiResponse.success(exportService.createImageExportJob(query));
+    }
+
+    @GetMapping("/results/export-jobs/{jobId}")
+    @PreAuthorize("hasAuthority('inspection:task:export')")
+    public ApiResponse<InspectionDtos.ExportJobDetail> exportJob(@PathVariable long jobId) {
+        return ApiResponse.success(exportService.exportJob(jobId));
+    }
+
+    @GetMapping("/results/export-jobs/{jobId}/files/{fileId}")
+    @PreAuthorize("hasAuthority('inspection:task:export')")
+    public ResponseEntity<Resource> exportFile(
+            @PathVariable long jobId,
+            @PathVariable long fileId
+    ) {
+        var download = exportService.exportFile(jobId, fileId);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(download.file().contentType()))
+                .contentLength(download.file().fileSize())
+                .header(
+                        HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment()
+                                .filename(download.file().fileName(), StandardCharsets.UTF_8)
+                                .build().toString()
+                )
+                .body(download.resource());
     }
 
     @GetMapping("/tasks/{id}")

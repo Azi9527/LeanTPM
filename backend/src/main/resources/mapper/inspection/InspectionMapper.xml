@@ -969,9 +969,13 @@
     <select id="findTaskAttachmentExportRows"
             resultType="com.leantpm.inspection.InspectionDtos$TaskAttachmentExportRow">
         SELECT task.task_code, e.equipment_code, e.equipment_name, item.item_name,
+               abnormal.abnormal_code,
                attachment.id AS attachment_id, attachment.original_name,
                attachment.content_type, attachment.extension, attachment.file_size,
-               relation.attachment_type, attachment.created_time
+               relation.attachment_type, attachment.storage_path,
+               CASE WHEN evidence.watermarked_attachment_id IS NOT NULL THEN 1 ELSE 0 END
+                   AS watermarked_flag,
+               attachment.created_time
         FROM inspection_task task
         <include refid="taskJoins"/>
         JOIN inspection_attachment relation
@@ -985,9 +989,106 @@
          AND result.id = relation.task_result_id
         LEFT JOIN inspection_task_item item
           ON item.tenant_id = result.tenant_id AND item.id = result.task_item_id
+        LEFT JOIN inspection_abnormal abnormal
+          ON abnormal.tenant_id = relation.tenant_id
+         AND abnormal.id = relation.abnormal_id
+         AND abnormal.deleted = 0
+        LEFT JOIN mobile_photo_evidence evidence
+          ON evidence.tenant_id = attachment.tenant_id
+         AND evidence.watermarked_attachment_id = attachment.id
         WHERE <include refid="taskFilters"/>
         ORDER BY task.planned_date DESC, task.id DESC, relation.id
         LIMIT #{limit}
+    </select>
+
+    <insert id="insertExportJob">
+        INSERT INTO inspection_export_job
+            (tenant_id, export_code, query_json, data_scope_json, requested_by)
+        VALUES
+            (#{tenantId}, #{exportCode}, #{queryJson}, #{dataScopeJson}, #{requestedBy})
+    </insert>
+
+    <select id="findExportJobData"
+            resultType="com.leantpm.inspection.InspectionDtos$ExportJobData">
+        SELECT id, tenant_id, export_code, job_status, query_json, data_scope_json,
+               requested_by
+        FROM inspection_export_job
+        WHERE tenant_id = #{tenantId} AND export_code = #{exportCode}
+        LIMIT 1
+    </select>
+
+    <select id="findOwnedExportJob"
+            resultType="com.leantpm.inspection.InspectionDtos$ExportJobRow">
+        SELECT id, export_code, job_status, include_images, task_count, result_count,
+               image_count, estimated_image_bytes, file_count, error_message,
+               created_time, started_time, completed_time
+        FROM inspection_export_job
+        WHERE tenant_id = #{tenantId} AND id = #{jobId} AND requested_by = #{requestedBy}
+        LIMIT 1
+    </select>
+
+    <select id="findExportFiles"
+            resultType="com.leantpm.inspection.InspectionDtos$ExportFileRow">
+        SELECT id, part_number, file_name, file_size, image_count, created_time
+        FROM inspection_export_file
+        WHERE tenant_id = #{tenantId} AND export_job_id = #{jobId}
+        ORDER BY part_number
+    </select>
+
+    <select id="findPendingExportJobs"
+            resultType="com.leantpm.inspection.InspectionDtos$ExportJobData">
+        SELECT id, tenant_id, export_code, job_status, query_json, data_scope_json,
+               requested_by
+        FROM inspection_export_job
+        WHERE job_status = 'PENDING'
+        ORDER BY created_time, id
+        LIMIT #{limit}
+    </select>
+
+    <update id="claimExportJob">
+        UPDATE inspection_export_job
+        SET job_status = 'PROCESSING', started_time = CURRENT_TIMESTAMP(3), error_message = NULL
+        WHERE id = #{id} AND job_status = 'PENDING'
+    </update>
+
+    <update id="completeExportJob">
+        UPDATE inspection_export_job
+        SET job_status = 'COMPLETED', task_count = #{taskCount},
+            result_count = #{resultCount}, image_count = #{imageCount},
+            estimated_image_bytes = #{estimatedImageBytes}, file_count = #{fileCount},
+            completed_time = CURRENT_TIMESTAMP(3)
+        WHERE id = #{id} AND job_status = 'PROCESSING'
+    </update>
+
+    <update id="failExportJob">
+        UPDATE inspection_export_job
+        SET job_status = 'FAILED', error_message = #{errorMessage},
+            completed_time = CURRENT_TIMESTAMP(3)
+        WHERE id = #{id} AND job_status = 'PROCESSING'
+    </update>
+
+    <insert id="insertExportFile">
+        INSERT INTO inspection_export_file
+            (tenant_id, export_job_id, part_number, file_name, storage_path,
+             content_type, file_size, sha256, image_count)
+        VALUES
+            (#{tenantId}, #{jobId}, #{partNumber}, #{fileName}, #{storagePath},
+             #{contentType}, #{fileSize}, #{sha256}, #{imageCount})
+    </insert>
+
+    <select id="findOwnedExportFile"
+            resultType="com.leantpm.inspection.InspectionDtos$ExportFileData">
+        SELECT file.id, file.export_job_id, file.file_name, file.storage_path,
+               file.content_type, file.file_size, file.sha256
+        FROM inspection_export_file file
+        JOIN inspection_export_job job ON job.id = file.export_job_id
+        WHERE file.tenant_id = #{tenantId}
+          AND file.export_job_id = #{jobId}
+          AND file.id = #{fileId}
+          AND job.tenant_id = file.tenant_id
+          AND job.requested_by = #{requestedBy}
+          AND job.job_status = 'COMPLETED'
+        LIMIT 1
     </select>
 
     <select id="findTask" resultType="com.leantpm.inspection.InspectionDtos$TaskRow">

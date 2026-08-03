@@ -346,6 +346,64 @@ public interface InspectionMapper {
             @Param("limit") int limit
     );
 
+    int insertExportJob(
+            @Param("tenantId") long tenantId,
+            @Param("exportCode") String exportCode,
+            @Param("queryJson") String queryJson,
+            @Param("dataScopeJson") String dataScopeJson,
+            @Param("requestedBy") long requestedBy
+    );
+
+    InspectionDtos.ExportJobData findExportJobData(
+            @Param("tenantId") long tenantId,
+            @Param("exportCode") String exportCode
+    );
+
+    InspectionDtos.ExportJobRow findOwnedExportJob(
+            @Param("tenantId") long tenantId,
+            @Param("jobId") long jobId,
+            @Param("requestedBy") long requestedBy
+    );
+
+    List<InspectionDtos.ExportFileRow> findExportFiles(
+            @Param("tenantId") long tenantId,
+            @Param("jobId") long jobId
+    );
+
+    List<InspectionDtos.ExportJobData> findPendingExportJobs(@Param("limit") int limit);
+
+    int claimExportJob(@Param("id") long id);
+
+    int completeExportJob(
+            @Param("id") long id,
+            @Param("taskCount") int taskCount,
+            @Param("resultCount") int resultCount,
+            @Param("imageCount") int imageCount,
+            @Param("estimatedImageBytes") long estimatedImageBytes,
+            @Param("fileCount") int fileCount
+    );
+
+    int failExportJob(@Param("id") long id, @Param("errorMessage") String errorMessage);
+
+    int insertExportFile(
+            @Param("tenantId") long tenantId,
+            @Param("jobId") long jobId,
+            @Param("partNumber") int partNumber,
+            @Param("fileName") String fileName,
+            @Param("storagePath") String storagePath,
+            @Param("contentType") String contentType,
+            @Param("fileSize") long fileSize,
+            @Param("sha256") String sha256,
+            @Param("imageCount") int imageCount
+    );
+
+    InspectionDtos.ExportFileData findOwnedExportFile(
+            @Param("tenantId") long tenantId,
+            @Param("jobId") long jobId,
+            @Param("fileId") long fileId,
+            @Param("requestedBy") long requestedBy
+    );
+
     InspectionDtos.TaskRow findTask(
             @Param("tenantId") long tenantId,
             @Param("id") long id,
