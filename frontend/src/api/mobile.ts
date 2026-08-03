@@ -9,10 +9,16 @@ export interface MobileWorkCount {
 }
 
 export interface MobileMessage {
+  id: number
   messageType: string
   severity: string
   title: string
   content: string
+  businessType: string
+  businessId: number
+  acknowledgeRequired: boolean
+  readTime?: string
+  acknowledgedTime?: string
   occurredTime: string
   routePath: string
 }

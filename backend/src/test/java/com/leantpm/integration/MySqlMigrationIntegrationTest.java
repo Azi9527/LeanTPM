@@ -37,7 +37,7 @@ class MySqlMigrationIntegrationTest {
     @Test
     void appliesEveryMigrationAndFoundationTable() throws Exception {
         assertThat(number("SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1"))
-                .isEqualTo(19);
+                .isEqualTo(20);
         assertThat(number("""
                 SELECT COUNT(*)
                 FROM information_schema.tables
@@ -98,9 +98,13 @@ class MySqlMigrationIntegrationTest {
                     'visualization_scene',
                     'visualization_scene_node',
                     'visualization_status_color',
-                    'system_user_import_batch'
+                    'system_user_import_batch',
+                    'notification_rule',
+                    'notification_message',
+                    'notification_delivery',
+                    'notification_escalation'
                   )
-                """)).isEqualTo(56);
+                """)).isEqualTo(60);
     }
 
     @Test
@@ -402,6 +406,26 @@ class MySqlMigrationIntegrationTest {
                   )
                   AND menu.deleted = 0
                 """)).isEqualTo(5);
+    }
+
+    @Test
+    void seedsNotificationRulesMenusAndChannels() throws Exception {
+        assertThat(number("""
+                SELECT COUNT(*) FROM notification_rule
+                WHERE tenant_id = 1 AND enabled = 1 AND deleted = 0
+                """)).isEqualTo(10);
+        assertThat(number("""
+                SELECT COUNT(*) FROM notification_rule
+                WHERE tenant_id = 1
+                  AND trigger_type IN ('DUE_SOON', 'MANUAL_CREATED', 'OVERDUE')
+                  AND JSON_CONTAINS(channels_json, JSON_QUOTE('SYSTEM'))
+                  AND JSON_CONTAINS(channels_json, JSON_QUOTE('ANDROID'))
+                """)).isEqualTo(10);
+        assertThat(number("""
+                SELECT COUNT(*) FROM system_menu
+                WHERE tenant_id = 1 AND id IN (70, 71, 72, 73, 721, 731)
+                  AND status = 1 AND deleted = 0
+                """)).isEqualTo(6);
     }
 
     @Test

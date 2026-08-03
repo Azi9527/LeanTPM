@@ -36,6 +36,24 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '工作台', permission: 'dashboard:view' },
       },
       {
+        path: 'notifications/messages',
+        name: 'NotificationMessages',
+        component: () => import('@/views/notifications/NotificationCenterView.vue'),
+        meta: { title: '我的消息', permission: 'notification:message:view' },
+      },
+      {
+        path: 'notifications/rules',
+        name: 'NotificationRules',
+        component: () => import('@/views/notifications/NotificationRuleView.vue'),
+        meta: { title: '提醒规则', permission: 'notification:rule:view' },
+      },
+      {
+        path: 'notifications/deliveries',
+        name: 'NotificationDeliveries',
+        component: () => import('@/views/notifications/NotificationDeliveryView.vue'),
+        meta: { title: '发送记录', permission: 'notification:delivery:view' },
+      },
+      {
         path: 'system/users',
         name: 'SystemUsers',
         component: () => import('@/views/system/users/UserListView.vue'),

@@ -110,7 +110,7 @@ function navigate(index: string) {
         <div class="topbar-actions">
           <el-tooltip content="消息中心">
             <el-badge is-dot>
-              <el-button circle text aria-label="消息中心"><Bell /></el-button>
+              <el-button circle text aria-label="消息中心" @click="router.push('/notifications/messages')"><Bell /></el-button>
             </el-badge>
           </el-tooltip>
           <el-dropdown>
@@ -140,7 +140,7 @@ function navigate(index: string) {
         <button type="button" @click="router.push('/dashboard')"><el-icon><House /></el-icon><span>工作台</span></button>
         <button type="button" @click="router.push('/coming-soon/scan')"><el-icon><FullScreen /></el-icon><span>扫码</span></button>
         <button type="button" @click="router.push('/coming-soon/tasks')"><el-icon><List /></el-icon><span>任务</span></button>
-        <button type="button" @click="router.push('/coming-soon/messages')"><el-icon><Bell /></el-icon><span>消息</span></button>
+        <button type="button" @click="router.push('/notifications/messages')"><el-icon><Bell /></el-icon><span>消息</span></button>
         <button type="button" @click="passwordDialogVisible = true"><el-icon><User /></el-icon><span>我的</span></button>
       </nav>
     </div>

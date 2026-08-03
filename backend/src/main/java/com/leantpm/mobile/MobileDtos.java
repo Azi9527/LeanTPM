@@ -16,10 +16,16 @@ public final class MobileDtos {
     }
 
     public record MessageItem(
+            long id,
             String messageType,
             String severity,
             String title,
             String content,
+            String businessType,
+            long businessId,
+            boolean acknowledgeRequired,
+            LocalDateTime readTime,
+            LocalDateTime acknowledgedTime,
             LocalDateTime occurredTime,
             String routePath
     ) {

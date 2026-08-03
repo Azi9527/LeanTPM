@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import { notificationApi } from '@/api/notification'
 import { useMobileStore } from '@/stores/mobile'
+import { errorMessage } from '@/utils/http'
 
 const router = useRouter()
 const mobile = useMobileStore()
@@ -12,6 +15,26 @@ function severityClass(severity: string): string {
 function dateTime(value: string): string {
   return value.replace('T', ' ').slice(0, 16)
 }
+
+async function openMessage(message: (typeof mobile.messages)[number]) {
+  try {
+    if (!message.readTime) await notificationApi.read(message.id)
+    if (message.routePath) await router.push(message.routePath)
+    await mobile.refresh()
+  } catch (error) {
+    ElMessage.error(errorMessage(error, '消息操作失败'))
+  }
+}
+
+async function acknowledge(message: (typeof mobile.messages)[number]) {
+  try {
+    await notificationApi.acknowledge(message.id)
+    ElMessage.success('已确认收到')
+    await mobile.refresh()
+  } catch (error) {
+    ElMessage.error(errorMessage(error, '消息确认失败'))
+  }
+}
 </script>
 
 <template>
@@ -19,12 +42,13 @@ function dateTime(value: string): string {
     <header><div><p>ALERTS</p><h1>现场消息</h1></div><el-button circle @click="mobile.refresh"><el-icon><Refresh /></el-icon></el-button></header>
     <article
       v-for="message in mobile.messages"
-      :key="`${message.messageType}-${message.occurredTime}-${message.title}`"
+      :key="message.id"
       class="message-card"
-      @click="message.routePath && router.push(message.routePath)"
+      :class="{ unread: !message.readTime }"
+      @click="openMessage(message)"
     >
       <span class="severity" :class="severityClass(message.severity)"><el-icon><Warning /></el-icon></span>
-      <div><strong>{{ message.title }}</strong><p>{{ message.content }}</p><time>{{ dateTime(message.occurredTime) }}</time></div>
+      <div><strong>{{ message.title }}</strong><p>{{ message.content }}</p><time>{{ dateTime(message.occurredTime) }}</time><el-button v-if="message.acknowledgeRequired && !message.acknowledgedTime" size="small" type="warning" plain @click.stop="acknowledge(message)">确认收到</el-button></div>
       <el-icon v-if="message.routePath"><ArrowRight /></el-icon>
     </article>
     <el-empty v-if="!mobile.loading && !mobile.messages.length" description="暂无逾期任务或未关闭异常" />
@@ -38,6 +62,7 @@ header p, header h1 { margin: 0; }
 header p { color: #178198; font-size: 11px; font-weight: 800; letter-spacing: .14em; }
 header h1 { margin-top: 4px; font-size: 26px; }
 .message-card { display: grid; grid-template-columns: 42px 1fr auto; align-items: center; gap: 12px; padding: 16px; border-radius: 17px; background: white; box-shadow: 0 6px 20px rgba(23, 58, 69, .06); }
+.message-card.unread { border-left: 4px solid #178198; }
 .severity { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 13px; color: #a86a0f; background: #fff3db; }
 .severity.danger { color: #ca4242; background: #ffeded; }
 .message-card strong, .message-card p { display: block; margin: 0; }

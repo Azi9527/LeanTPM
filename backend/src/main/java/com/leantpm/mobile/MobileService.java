@@ -1,6 +1,7 @@
 package com.leantpm.mobile;
 
 import com.leantpm.common.exception.BusinessException;
+import com.leantpm.notification.NotificationService;
 import com.leantpm.security.SecurityUtils;
 import com.leantpm.security.datascope.DataPermissionService;
 import org.springframework.http.HttpStatus;
@@ -15,13 +16,16 @@ import java.util.Locale;
 public class MobileService {
     private final MobileMapper mapper;
     private final DataPermissionService dataPermissionService;
+    private final NotificationService notificationService;
 
     public MobileService(
             MobileMapper mapper,
-            DataPermissionService dataPermissionService
+            DataPermissionService dataPermissionService,
+            NotificationService notificationService
     ) {
         this.mapper = mapper;
         this.dataPermissionService = dataPermissionService;
+        this.notificationService = notificationService;
     }
 
     @Transactional(readOnly = true)
@@ -40,9 +44,15 @@ public class MobileService {
                 ),
                 safeCount(mapper.inspectionCount(current.tenantId(), current.userId())),
                 safeCount(mapper.maintenanceCount(current.tenantId(), current.userId())),
-                List.copyOf(mapper.messages(
-                        current.tenantId(), current.userId(), 30
-                ))
+                notificationService.messages(false, 1, 30).records().stream()
+                        .map(message -> new MobileDtos.MessageItem(
+                                message.id(), message.messageType(), message.severity(),
+                                message.title(), message.content(), message.businessType(),
+                                message.businessId(), message.acknowledgeRequired(),
+                                message.readTime(), message.acknowledgedTime(),
+                                message.occurredTime(), message.routePath()
+                        ))
+                        .toList()
         );
     }
 
