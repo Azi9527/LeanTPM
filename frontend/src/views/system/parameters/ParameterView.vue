@@ -258,7 +258,7 @@ async function remove(row: ParameterRow) {
           <el-form-item label="辅助品牌色">
             <div class="color-field"><el-color-picker v-model="brandForm.secondaryColor" /><el-input v-model="brandForm.secondaryColor" maxlength="7" /></div>
           </el-form-item>
-          <el-form-item label="中性品牌色">
+          <el-form-item label="强调品牌色">
             <div class="color-field"><el-color-picker v-model="brandForm.neutralColor" /><el-input v-model="brandForm.neutralColor" maxlength="7" /></div>
           </el-form-item>
           <div v-if="auth.can('system:parameter:manage')" class="branding-actions">
@@ -400,7 +400,7 @@ async function remove(row: ParameterRow) {
 .branding-preview {
   display: flex; overflow: hidden; align-items: flex-start; flex-direction: column; min-height: 280px;
   padding: 24px; border-radius: 16px; color: #fff;
-  background: linear-gradient(145deg, var(--preview-neutral), color-mix(in srgb, var(--preview-primary) 48%, var(--preview-neutral)));
+  background: linear-gradient(145deg, var(--preview-secondary), color-mix(in srgb, var(--preview-primary) 62%, var(--preview-secondary)));
 }
 .preview-logo { display: flex; align-items: center; width: 100%; min-height: 76px; padding: 9px; border-radius: 10px; background: #fff; }
 .preview-logo img { display: block; width: 100%; max-height: 66px; object-fit: contain; }

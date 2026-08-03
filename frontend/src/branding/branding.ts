@@ -17,9 +17,9 @@ export const DEFAULT_BRANDING: BrandingSettings = {
   shortName: '宝山矿业',
   subtitle: '精益设备管理',
   logoUrl: '/branding/baoshan-mining-logo.png',
-  primaryColor: '#c4000a',
-  secondaryColor: '#1c7d50',
-  neutralColor: '#3e3a39',
+  primaryColor: '#1c7d50',
+  secondaryColor: '#3e3a39',
+  neutralColor: '#c4000a',
 }
 
 const CACHE_KEY = 'leantpm_branding_cache'
@@ -37,7 +37,7 @@ export function applyBranding(settings: Partial<BrandingSettings>, persist = tru
   const root = document.documentElement
   const primary = normalized.primaryColor
   const secondary = normalized.secondaryColor
-  const neutral = normalized.neutralColor
+  const accent = normalized.neutralColor
   const variables: Record<string, string> = {
     '--tpm-primary': primary,
     '--tpm-primary-strong': mix(primary, '#000000', 0.24),
@@ -47,22 +47,22 @@ export function applyBranding(settings: Partial<BrandingSettings>, persist = tru
     '--tpm-secondary-strong': mix(secondary, '#000000', 0.22),
     '--tpm-secondary-soft': mix(secondary, '#ffffff', 0.88),
     '--tpm-secondary-rgb': rgbChannels(secondary),
-    '--tpm-accent': secondary,
-    '--tpm-success': secondary,
-    '--tpm-danger': primary,
-    '--tpm-text': neutral,
-    '--tpm-sidebar': mix(neutral, '#000000', 0.25),
-    '--tpm-neutral-rgb': rgbChannels(neutral),
+    '--tpm-accent': accent,
+    '--tpm-success': primary,
+    '--tpm-danger': accent,
+    '--tpm-text': secondary,
+    '--tpm-sidebar': mix(secondary, '#000000', 0.25),
+    '--tpm-neutral-rgb': rgbChannels(secondary),
     '--el-color-primary': primary,
     '--el-color-primary-dark-2': mix(primary, '#000000', 0.2),
-    '--el-color-success': secondary,
-    '--el-color-danger': primary,
+    '--el-color-success': primary,
+    '--el-color-danger': accent,
   }
 
   for (const level of [3, 5, 7, 8, 9]) {
     variables[`--el-color-primary-light-${level}`] = mix(primary, '#ffffff', level / 10)
-    variables[`--el-color-success-light-${level}`] = mix(secondary, '#ffffff', level / 10)
-    variables[`--el-color-danger-light-${level}`] = mix(primary, '#ffffff', level / 10)
+    variables[`--el-color-success-light-${level}`] = mix(primary, '#ffffff', level / 10)
+    variables[`--el-color-danger-light-${level}`] = mix(accent, '#ffffff', level / 10)
   }
   Object.entries(variables).forEach(([key, value]) => root.style.setProperty(key, value))
   document.title = normalized.systemName

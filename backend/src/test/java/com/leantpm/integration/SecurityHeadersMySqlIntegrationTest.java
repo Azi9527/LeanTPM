@@ -90,8 +90,8 @@ class SecurityHeadersMySqlIntegrationTest {
                 .andExpect(jsonPath("$.data.systemName").value("宝山矿业设备管理系统"))
                 .andExpect(jsonPath("$.data.shortName").value("宝山矿业"))
                 .andExpect(jsonPath("$.data.logoUrl").value("/branding/baoshan-mining-logo.png"))
-                .andExpect(jsonPath("$.data.primaryColor").value("#c4000a"))
-                .andExpect(jsonPath("$.data.secondaryColor").value("#1c7d50"))
-                .andExpect(jsonPath("$.data.neutralColor").value("#3e3a39"));
+                .andExpect(jsonPath("$.data.primaryColor").value("#1c7d50"))
+                .andExpect(jsonPath("$.data.secondaryColor").value("#3e3a39"))
+                .andExpect(jsonPath("$.data.neutralColor").value("#c4000a"));
     }
 }

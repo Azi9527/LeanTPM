@@ -29,9 +29,9 @@ public class BrandingService {
                 value("branding.short-name", "宝山矿业"),
                 value("branding.subtitle", "精益设备管理"),
                 value("branding.logo-url", "/branding/baoshan-mining-logo.png"),
-                value("branding.primary-color", "#c4000a"),
-                value("branding.secondary-color", "#1c7d50"),
-                value("branding.neutral-color", "#3e3a39")
+                value("branding.primary-color", "#1c7d50"),
+                value("branding.secondary-color", "#3e3a39"),
+                value("branding.neutral-color", "#c4000a")
         );
     }
 

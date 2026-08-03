@@ -37,7 +37,7 @@ class MySqlMigrationIntegrationTest {
     @Test
     void appliesEveryMigrationAndFoundationTable() throws Exception {
         assertThat(number("SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1"))
-                .isEqualTo(23);
+                .isEqualTo(24);
         assertThat(number("""
                 SELECT COUNT(*)
                 FROM information_schema.tables
@@ -498,6 +498,14 @@ class MySqlMigrationIntegrationTest {
         assertThat(text("""
                 SELECT parameter_value FROM system_parameter
                 WHERE tenant_id = 1 AND parameter_key = 'branding.primary-color'
+                """)).isEqualTo("#1c7d50");
+        assertThat(text("""
+                SELECT parameter_value FROM system_parameter
+                WHERE tenant_id = 1 AND parameter_key = 'branding.secondary-color'
+                """)).isEqualTo("#3e3a39");
+        assertThat(text("""
+                SELECT parameter_value FROM system_parameter
+                WHERE tenant_id = 1 AND parameter_key = 'branding.neutral-color'
                 """)).isEqualTo("#c4000a");
         assertThat(text("""
                 SELECT data_type FROM information_schema.columns
