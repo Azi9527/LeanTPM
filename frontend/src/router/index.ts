@@ -201,6 +201,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '点检方案', permission: 'inspection:scheme:view' },
       },
       {
+        path: 'inspection/calendars',
+        name: 'InspectionCalendars',
+        component: () => import('@/views/inspection/calendars/InspectionCalendarView.vue'),
+        meta: { title: '点检日历', permission: 'inspection:calendar:view' },
+      },
+      {
         path: 'inspection/plans',
         name: 'InspectionPlans',
         component: () => import('@/views/inspection/plans/InspectionPlanView.vue'),

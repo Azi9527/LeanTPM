@@ -3,6 +3,8 @@ package com.leantpm.integration;
 import com.leantpm.equipment.EquipmentDtos;
 import com.leantpm.equipment.EquipmentService;
 import com.leantpm.inspection.InspectionCatalogService;
+import com.leantpm.inspection.InspectionCalendarDtos;
+import com.leantpm.inspection.InspectionCalendarService;
 import com.leantpm.inspection.InspectionDtos;
 import com.leantpm.inspection.InspectionImportDtos;
 import com.leantpm.inspection.InspectionImportService;
@@ -58,6 +60,9 @@ class InspectionMySqlIntegrationTest {
 
     @Autowired
     private InspectionCatalogService catalogService;
+
+    @Autowired
+    private InspectionCalendarService calendarService;
 
     @Autowired
     private InspectionTaskService taskService;
@@ -118,6 +123,8 @@ class InspectionMySqlIntegrationTest {
                         "inspection:scheme:view",
                         "inspection:scheme:manage",
                         "inspection:scheme:publish",
+                        "inspection:calendar:view",
+                        "inspection:calendar:manage",
                         "inspection:plan:view",
                         "inspection:plan:manage",
                         "inspection:plan:generate",
@@ -220,6 +227,8 @@ class InspectionMySqlIntegrationTest {
                 null,
                 null,
                 LocalTime.of(8, 0),
+                60,
+                1L,
                 null,
                 OPERATOR_ID,
                 null,
@@ -485,6 +494,90 @@ class InspectionMySqlIntegrationTest {
                 Integer.class,
                 validated.batchId()
         )).isEqualTo(1);
+    }
+
+    @Test
+    void managesWorkCalendarExceptionsAndFreezesSchemeGenerationPolicy() {
+        assertThat(calendarService.calendars(null, 1))
+                .anySatisfy(calendar -> assertThat(calendar.defaultFlag()).isTrue());
+
+        long calendarId = calendarService.create(
+                new InspectionCalendarDtos.SaveCalendarRequest(
+                        "Integration six-day calendar",
+                        "6,1,2,2,3,4,5",
+                        false,
+                        1,
+                        "Integration calendar",
+                        null
+                )
+        );
+        InspectionCalendarDtos.CalendarDetail created = calendarService.detail(calendarId);
+        assertThat(created.calendar().workDays()).isEqualTo("1,2,3,4,5,6");
+
+        long exceptionId = calendarService.createException(
+                calendarId,
+                new InspectionCalendarDtos.SaveExceptionRequest(
+                        "National Day",
+                        LocalDate.of(2026, 10, 1),
+                        LocalDate.of(2026, 10, 7),
+                        "RESTDAY",
+                        200,
+                        1,
+                        "Factory holiday",
+                        null
+                )
+        );
+        InspectionCalendarDtos.CalendarDetail detail = calendarService.detail(calendarId);
+        assertThat(detail.exceptions()).singleElement().satisfies(exception -> {
+            assertThat(exception.id()).isEqualTo(exceptionId);
+            assertThat(exception.dayType()).isEqualTo("RESTDAY");
+            assertThat(exception.startDate()).isEqualTo(LocalDate.of(2026, 10, 1));
+            assertThat(exception.endDate()).isEqualTo(LocalDate.of(2026, 10, 7));
+        });
+
+        long equipmentId = createEquipment(
+                "EQ-INSPECTION-CALENDAR-001",
+                "Calendar policy equipment",
+                "INSPECTION-CALENDAR-SN-001"
+        );
+        long schemeId = catalogService.createScheme(new InspectionDtos.SaveSchemeRequest(
+                "ISP-IT-CALENDAR",
+                "Calendar policy scheme",
+                "DAILY",
+                "DAILY",
+                1,
+                null,
+                null,
+                LocalTime.of(7, 30),
+                180,
+                calendarId,
+                null,
+                OPERATOR_ID,
+                null,
+                false,
+                true,
+                LocalDate.now(),
+                null,
+                List.of(new InspectionDtos.SaveSchemeItemRequest(
+                        1L, 10, true, false, false
+                )),
+                List.of(),
+                List.of(equipmentId),
+                true,
+                "Calendar policy integration test",
+                "Initial version",
+                null
+        ));
+        InspectionDtos.SchemeDetail scheme = catalogService.scheme(schemeId, null);
+        catalogService.publish(schemeId, scheme.version().id());
+
+        assertThat(catalogService.plans(
+                "EQ-INSPECTION-CALENDAR-001", "ACTIVE", 1, 20
+        ).records()).singleElement().satisfies(plan -> {
+            assertThat(plan.equipmentId()).isEqualTo(equipmentId);
+            assertThat(plan.generationLeadMinutes()).isEqualTo(180);
+            assertThat(plan.workCalendarId()).isEqualTo(calendarId);
+        });
     }
 
     private InspectionDtos.SaveResultRequest result(

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { inspectionApi, type ItemRow, type SchemeDetail, type SchemeRow } from '@/api/inspection'
+import { inspectionApi, type InspectionCalendarRow, type ItemRow, type SchemeDetail, type SchemeRow } from '@/api/inspection'
 import { equipmentApi, type EquipmentRow } from '@/api/equipment'
 import { masterDataApi, type EquipmentCategoryRow, type ReferenceUser } from '@/api/masterData'
 import { useAuthStore } from '@/stores/auth'
@@ -24,6 +24,7 @@ const items = ref<ItemRow[]>([])
 const equipment = ref<EquipmentRow[]>([])
 const categories = ref<EquipmentCategoryRow[]>([])
 const users = ref<ReferenceUser[]>([])
+const calendars = ref<InspectionCalendarRow[]>([])
 
 const form = reactive({
   schemeCode: '',
@@ -34,6 +35,8 @@ const form = reactive({
   weekDays: [] as number[],
   monthDays: [] as number[],
   scheduledTime: '08:00:00',
+  generationLeadMinutes: 60,
+  workCalendarId: undefined as number | undefined,
   shiftCode: '',
   defaultAssigneeUserId: undefined as number | undefined,
   defaultTeamCode: '',
@@ -84,16 +87,18 @@ async function load() {
 
 async function loadReferences() {
   try {
-    const [itemPage, equipmentPage, categoryRows, userRows] = await Promise.all([
+    const [itemPage, equipmentPage, categoryRows, userRows, calendarRows] = await Promise.all([
       inspectionApi.items({ status: 1, page: 1, pageSize: 200 }),
       equipmentApi.page({ status: 1, page: 1, pageSize: 200 }),
       masterDataApi.categories(),
       masterDataApi.referenceUsers(),
+      inspectionApi.calendars({ status: 1 }),
     ])
     items.value = itemPage.records
     equipment.value = equipmentPage.records
     categories.value = categoryRows.filter((row) => row.status === 1)
     users.value = userRows
+    calendars.value = calendarRows
   } catch (error) {
     ElMessage.error(errorMessage(error, '加载方案引用数据失败'))
   }
@@ -109,6 +114,8 @@ function resetForm() {
     weekDays: [],
     monthDays: [],
     scheduledTime: '08:00:00',
+    generationLeadMinutes: 60,
+    workCalendarId: calendars.value.find((row) => row.defaultFlag)?.id,
     shiftCode: '',
     defaultAssigneeUserId: undefined,
     defaultTeamCode: '',
@@ -140,6 +147,9 @@ async function open(row?: SchemeRow) {
         weekDays: csvNumbers(value.version.weekDays),
         monthDays: csvNumbers(value.version.monthDays),
         scheduledTime: value.version.scheduledTime || '08:00:00',
+        generationLeadMinutes: value.version.generationLeadMinutes ?? 60,
+        workCalendarId: value.version.workCalendarId
+          ?? calendars.value.find((calendar) => calendar.defaultFlag)?.id,
         shiftCode: value.version.shiftCode || '',
         defaultAssigneeUserId: value.version.defaultAssigneeUserId,
         defaultTeamCode: value.version.defaultTeamCode || '',
@@ -163,8 +173,8 @@ async function open(row?: SchemeRow) {
 }
 
 async function save() {
-  if (!form.schemeName || !form.itemIds.length || (!form.categoryIds.length && !form.equipmentIds.length)) {
-    ElMessage.warning('请填写方案名称，并选择项目及适用设备范围')
+  if (!form.schemeName || !form.workCalendarId || !form.itemIds.length || (!form.categoryIds.length && !form.equipmentIds.length)) {
+    ElMessage.warning('请填写方案名称、工作日历，并选择项目及适用设备范围')
     return
   }
   saving.value = true
@@ -267,6 +277,8 @@ function csvNumbers(value?: string) {
         <el-form-item label="周期类型"><el-select v-model="form.cycleType"><el-option v-for="(label, value) in cycleLabels" :key="value" :label="label" :value="value" /></el-select></el-form-item>
         <el-form-item label="周期间隔"><el-input-number v-model="form.cycleInterval" :min="1" /></el-form-item>
         <el-form-item label="计划时间"><el-time-picker v-model="form.scheduledTime" value-format="HH:mm:ss" /></el-form-item>
+        <el-form-item label="提前生成（分钟）"><el-input-number v-model="form.generationLeadMinutes" :min="0" :max="43200" :step="30" /><div class="field-hint">默认提前 60 分钟，最大 30 天</div></el-form-item>
+        <el-form-item label="点检工作日历"><el-select v-model="form.workCalendarId" filterable><el-option v-for="calendar in calendars" :key="calendar.id" :label="calendar.defaultFlag ? `${calendar.calendarName}（默认）` : calendar.calendarName" :value="calendar.id" /></el-select></el-form-item>
         <el-form-item v-if="form.cycleType === 'WEEKLY'" label="执行星期" class="full"><el-checkbox-group v-model="form.weekDays"><el-checkbox v-for="day in 7" :key="day" :value="day">周{{ '一二三四五六日'[day - 1] }}</el-checkbox></el-checkbox-group></el-form-item>
         <el-form-item v-if="form.cycleType === 'MONTHLY'" label="每月日期" class="full"><el-select v-model="form.monthDays" multiple collapse-tags><el-option v-for="day in 31" :key="day" :label="`${day}日`" :value="day" /></el-select></el-form-item>
         <el-form-item label="默认执行人"><el-select v-model="form.defaultAssigneeUserId" clearable filterable><el-option v-for="user in users" :key="user.id" :label="`${user.realName} (${user.username})`" :value="user.id" /></el-select></el-form-item>
@@ -288,6 +300,8 @@ function csvNumbers(value?: string) {
           <el-descriptions-item label="方案编码">{{ detail.scheme.schemeCode }}</el-descriptions-item>
           <el-descriptions-item label="版本">V{{ detail.version.versionNumber }} · {{ detail.version.versionStatus }}</el-descriptions-item>
           <el-descriptions-item label="周期">{{ cycleLabels[detail.version.cycleType] }} / {{ detail.version.cycleInterval }}</el-descriptions-item>
+          <el-descriptions-item label="提前生成">{{ detail.version.generationLeadMinutes }} 分钟</el-descriptions-item>
+          <el-descriptions-item label="工作日历">{{ calendars.find((row) => row.id === detail?.version.workCalendarId)?.calendarName || '未指定' }}</el-descriptions-item>
           <el-descriptions-item label="默认执行人">{{ detail.version.defaultAssigneeName || '未指定' }}</el-descriptions-item>
           <el-descriptions-item label="生效">{{ detail.version.effectiveDate }} ~ {{ detail.version.expiryDate || '长期' }}</el-descriptions-item>
           <el-descriptions-item label="控制">{{ detail.version.reviewRequiredFlag ? '需复核' : '免复核' }} / {{ detail.version.backfillAllowedFlag ? '可补录' : '不可补录' }}</el-descriptions-item>
@@ -306,5 +320,6 @@ function csvNumbers(value?: string) {
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
 .page-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .full { grid-column: 1 / -1; }
+.field-hint { margin-top: 4px; color: var(--el-text-color-secondary); font-size: 12px; }
 @media (max-width: 700px) { .form-grid { grid-template-columns: 1fr; } .full { grid-column: auto; } }
 </style>

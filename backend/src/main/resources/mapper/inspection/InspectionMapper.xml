@@ -266,14 +266,16 @@
     <insert id="insertSchemeVersion">
         INSERT INTO inspection_scheme_version
             (tenant_id, scheme_id, version_number, version_status, cycle_type,
-             cycle_interval, week_days, month_days, scheduled_time, shift_code,
+             cycle_interval, week_days, month_days, scheduled_time,
+             generation_lead_minutes, work_calendar_id, shift_code,
              default_assignee_user_id, default_team_code, review_required_flag,
              backfill_allowed_flag, effective_date, expiry_date, change_summary,
              created_by, updated_by)
         VALUES
             (#{tenantId}, #{schemeId}, #{versionNumber}, 'DRAFT', #{request.cycleType},
              #{request.cycleInterval}, #{request.weekDays}, #{request.monthDays},
-             #{request.scheduledTime}, #{request.shiftCode}, #{request.defaultAssigneeUserId},
+             #{request.scheduledTime}, #{request.generationLeadMinutes},
+             #{request.workCalendarId}, #{request.shiftCode}, #{request.defaultAssigneeUserId},
              #{request.defaultTeamCode}, #{request.reviewRequired}, #{request.backfillAllowed},
              #{request.effectiveDate}, #{request.expiryDate}, #{request.changeSummary},
              #{operatorId}, #{operatorId})
@@ -289,7 +291,8 @@
     <sql id="schemeVersionColumns">
         version.id, version.scheme_id, version.version_number, version.version_status,
         version.cycle_type, version.cycle_interval, version.week_days, version.month_days,
-        version.scheduled_time, version.shift_code, version.default_assignee_user_id,
+        version.scheduled_time, version.generation_lead_minutes,
+        version.work_calendar_id, version.shift_code, version.default_assignee_user_id,
         assignee.real_name AS default_assignee_name, version.default_team_code,
         version.review_required_flag, version.backfill_allowed_flag,
         version.effective_date, version.expiry_date, version.published_by,
@@ -442,15 +445,24 @@
     <insert id="insertPlan">
         INSERT INTO inspection_plan
             (tenant_id, scheme_id, scheme_version_id, equipment_id, cycle_type,
-             cycle_interval, week_days, month_days, scheduled_time, shift_code,
+             cycle_interval, week_days, month_days, scheduled_time,
+             generation_lead_minutes, work_calendar_id, shift_code,
              assignee_user_id, team_code, next_generation_date, created_by, updated_by)
         SELECT #{tenantId}, #{schemeId}, version.id, #{equipmentId}, version.cycle_type,
                version.cycle_interval, version.week_days, version.month_days,
-               version.scheduled_time, version.shift_code, version.default_assignee_user_id,
+               version.scheduled_time, version.generation_lead_minutes,
+               version.work_calendar_id, version.shift_code, version.default_assignee_user_id,
                version.default_team_code, #{nextGenerationDate}, #{operatorId}, #{operatorId}
         FROM inspection_scheme_version version
         WHERE version.tenant_id = #{tenantId} AND version.id = #{versionId}
         ON DUPLICATE KEY UPDATE
+            cycle_type = VALUES(cycle_type), cycle_interval = VALUES(cycle_interval),
+            week_days = VALUES(week_days), month_days = VALUES(month_days),
+            scheduled_time = VALUES(scheduled_time),
+            generation_lead_minutes = VALUES(generation_lead_minutes),
+            work_calendar_id = VALUES(work_calendar_id), shift_code = VALUES(shift_code),
+            assignee_user_id = VALUES(assignee_user_id), team_code = VALUES(team_code),
+            next_generation_date = VALUES(next_generation_date),
             plan_status = 'ACTIVE', paused_reason = NULL, updated_by = VALUES(updated_by),
             version = inspection_plan.version + 1
     </insert>
@@ -485,6 +497,7 @@
         e.equipment_code, e.equipment_name, e.organization_id,
         organization.organization_name, location.location_name,
         plan.cycle_type, plan.cycle_interval, plan.scheduled_time,
+        plan.generation_lead_minutes, plan.work_calendar_id,
         plan.assignee_user_id, assignee.real_name AS assignee_name,
         plan.next_generation_date, plan.last_generation_date,
         plan.plan_status, plan.paused_reason, plan.version

@@ -78,6 +78,8 @@ export interface SchemeVersionRow {
   weekDays?: string
   monthDays?: string
   scheduledTime?: string
+  generationLeadMinutes: number
+  workCalendarId?: number
   shiftCode?: string
   defaultAssigneeUserId?: number
   defaultAssigneeName?: string
@@ -114,6 +116,36 @@ export interface SchemeDetail {
   versionHistory: SchemeVersionRow[]
 }
 
+export interface InspectionCalendarRow {
+  id: number
+  calendarName: string
+  workDays: string
+  defaultFlag: boolean
+  status: number
+  description?: string
+  exceptionCount: number
+  version: number
+}
+
+export interface InspectionCalendarExceptionRow {
+  id: number
+  calendarId: number
+  exceptionName: string
+  startDate: string
+  endDate: string
+  dayType: 'WORKDAY' | 'RESTDAY'
+  priorityValue: number
+  status: number
+  description?: string
+  updatedTime: string
+  version: number
+}
+
+export interface InspectionCalendarDetail {
+  calendar: InspectionCalendarRow
+  exceptions: InspectionCalendarExceptionRow[]
+}
+
 export interface PlanRow {
   id: number
   schemeId: number
@@ -129,6 +161,8 @@ export interface PlanRow {
   cycleType: string
   cycleInterval: number
   scheduledTime?: string
+  generationLeadMinutes: number
+  workCalendarId?: number
   assigneeUserId?: number
   assigneeName?: string
   nextGenerationDate: string
@@ -402,6 +436,21 @@ export const inspectionApi = {
     http.post(`/inspection/schemes/${id}/versions`, data),
   publishScheme: (id: number, versionId: number) =>
     http.post(`/inspection/schemes/${id}/versions/${versionId}/publish`),
+
+  calendars: (params?: object) =>
+    getData<InspectionCalendarRow[]>('/inspection/calendars', params),
+  calendar: (id: number) =>
+    getData<InspectionCalendarDetail>(`/inspection/calendars/${id}`),
+  createCalendar: (data: object) => http.post('/inspection/calendars', data),
+  updateCalendar: (id: number, data: object) => http.put(`/inspection/calendars/${id}`, data),
+  deleteCalendar: (id: number, version: number) =>
+    http.delete(`/inspection/calendars/${id}`, { params: { version } }),
+  createCalendarException: (calendarId: number, data: object) =>
+    http.post(`/inspection/calendars/${calendarId}/exceptions`, data),
+  updateCalendarException: (calendarId: number, id: number, data: object) =>
+    http.put(`/inspection/calendars/${calendarId}/exceptions/${id}`, data),
+  deleteCalendarException: (calendarId: number, id: number, version: number) =>
+    http.delete(`/inspection/calendars/${calendarId}/exceptions/${id}`, { params: { version } }),
 
   plans: (params: object) =>
     getData<PageResult<PlanRow>>('/inspection/plans', params),

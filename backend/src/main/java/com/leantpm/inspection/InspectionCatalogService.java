@@ -26,6 +26,7 @@ public class InspectionCatalogService {
             Set.of("SINGLE_CHOICE", "MULTIPLE_CHOICE");
 
     private final InspectionMapper mapper;
+    private final InspectionCalendarMapper calendarMapper;
     private final NumberRuleService numberRuleService;
     private final DataPermissionService dataPermissionService;
     private final ChangeLogService changeLogService;
@@ -33,12 +34,14 @@ public class InspectionCatalogService {
 
     public InspectionCatalogService(
             InspectionMapper mapper,
+            InspectionCalendarMapper calendarMapper,
             NumberRuleService numberRuleService,
             DataPermissionService dataPermissionService,
             ChangeLogService changeLogService,
             ObjectMapper objectMapper
     ) {
         this.mapper = mapper;
+        this.calendarMapper = calendarMapper;
         this.numberRuleService = numberRuleService;
         this.dataPermissionService = dataPermissionService;
         this.changeLogService = changeLogService;
@@ -518,6 +521,22 @@ public class InspectionCatalogService {
                     "USER_NOT_FOUND", "默认执行人不存在或已停用", HttpStatus.NOT_FOUND
             );
         }
+        if (request.generationLeadMinutes() > 43_200) {
+            throw new BusinessException(
+                    "INSPECTION_SCHEME_GENERATION_LEAD_INVALID",
+                    "提前生成时间不能超过 30 天"
+            );
+        }
+        if (request.workCalendarId() == null
+                || calendarMapper.countActiveCalendar(
+                tenantId, request.workCalendarId()
+        ) == 0) {
+            throw new BusinessException(
+                    "INSPECTION_WORK_CALENDAR_NOT_FOUND",
+                    "请选择有效的点检工作日历",
+                    HttpStatus.NOT_FOUND
+            );
+        }
         if (updating && request.version() == null) {
             throw new BusinessException("VERSION_REQUIRED", "缺少方案数据版本");
         }
@@ -568,6 +587,11 @@ public class InspectionCatalogService {
                 clean(request.weekDays()),
                 clean(request.monthDays()),
                 request.scheduledTime(),
+                request.generationLeadMinutes(),
+                request.workCalendarId() == null
+                        ? calendarMapper.findDefaultCalendarId(
+                        SecurityUtils.currentUser().tenantId()
+                ) : request.workCalendarId(),
                 upper(request.shiftCode()),
                 request.defaultAssigneeUserId(),
                 upper(request.defaultTeamCode()),

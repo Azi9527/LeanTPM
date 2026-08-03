@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.leantpm.inspection.InspectionCalendarMapper">
+    <sql id="calendarColumns">
+        calendar.id, calendar.calendar_name, calendar.work_days,
+        calendar.default_flag, calendar.status, calendar.description,
+        (SELECT COUNT(*) FROM inspection_calendar_exception exception_row
+         WHERE exception_row.tenant_id = calendar.tenant_id
+           AND exception_row.calendar_id = calendar.id
+           AND exception_row.deleted = 0) AS exception_count,
+        calendar.version
+    </sql>
+
+    <select id="findCalendars" resultType="com.leantpm.inspection.InspectionCalendarDtos$CalendarRow">
+        SELECT <include refid="calendarColumns"/>
+        FROM inspection_work_calendar calendar
+        WHERE calendar.tenant_id = #{tenantId} AND calendar.deleted = 0
+        <if test="keyword != null and keyword != ''">
+            AND (calendar.calendar_name LIKE CONCAT('%', #{keyword}, '%')
+                 OR calendar.description LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        <if test="status != null">AND calendar.status = #{status}</if>
+        ORDER BY calendar.default_flag DESC, calendar.calendar_name, calendar.id
+    </select>
+
+    <select id="findCalendar" resultType="com.leantpm.inspection.InspectionCalendarDtos$CalendarRow">
+        SELECT <include refid="calendarColumns"/>
+        FROM inspection_work_calendar calendar
+        WHERE calendar.tenant_id = #{tenantId} AND calendar.id = #{id}
+          AND calendar.deleted = 0
+        LIMIT 1
+    </select>
+
+    <select id="countCalendarName" resultType="int">
+        SELECT COUNT(*) FROM inspection_work_calendar
+        WHERE tenant_id = #{tenantId} AND calendar_name = #{calendarName} AND deleted = 0
+        <if test="excludeId != null">AND id != #{excludeId}</if>
+    </select>
+
+    <update id="clearDefault">
+        UPDATE inspection_work_calendar
+        SET default_flag = 0, updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId} AND default_flag = 1 AND deleted = 0
+    </update>
+
+    <insert id="insertCalendar">
+        INSERT INTO inspection_work_calendar
+            (tenant_id, calendar_name, work_days, default_flag, status,
+             description, created_by, updated_by)
+        VALUES
+            (#{tenantId}, #{request.calendarName}, #{request.workDays},
+             #{request.defaultFlag}, #{request.status}, #{request.description},
+             #{operatorId}, #{operatorId})
+    </insert>
+
+    <select id="findCalendarIdByName" resultType="long">
+        SELECT id FROM inspection_work_calendar
+        WHERE tenant_id = #{tenantId} AND calendar_name = #{calendarName} AND deleted = 0
+        LIMIT 1
+    </select>
+
+    <select id="findDefaultCalendarId" resultType="long">
+        SELECT id FROM inspection_work_calendar
+        WHERE tenant_id = #{tenantId} AND default_flag = 1 AND status = 1 AND deleted = 0
+        ORDER BY updated_time DESC, id DESC LIMIT 1
+    </select>
+
+    <select id="countActiveCalendar" resultType="int">
+        SELECT COUNT(*) FROM inspection_work_calendar
+        WHERE tenant_id = #{tenantId} AND id = #{id} AND status = 1 AND deleted = 0
+    </select>
+
+    <update id="updateCalendar">
+        UPDATE inspection_work_calendar
+        SET calendar_name = #{request.calendarName}, work_days = #{request.workDays},
+            default_flag = #{request.defaultFlag}, status = #{request.status},
+            description = #{request.description}, updated_by = #{operatorId},
+            version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0
+          AND version = #{request.version}
+    </update>
+
+    <select id="countCalendarReferences" resultType="int">
+        SELECT
+            (SELECT COUNT(*) FROM inspection_scheme_version
+             WHERE tenant_id = #{tenantId} AND work_calendar_id = #{id})
+            +
+            (SELECT COUNT(*) FROM inspection_plan
+             WHERE tenant_id = #{tenantId} AND work_calendar_id = #{id} AND deleted = 0)
+    </select>
+
+    <update id="deleteCalendar">
+        UPDATE inspection_work_calendar
+        SET deleted = 1, status = 0, default_flag = 0,
+            updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0
+          AND version = #{version}
+    </update>
+
+    <select id="findExceptions" resultType="com.leantpm.inspection.InspectionCalendarDtos$CalendarExceptionRow">
+        SELECT id, calendar_id, exception_name, start_date, end_date, day_type,
+               priority_value, status, description, updated_time, version
+        FROM inspection_calendar_exception
+        WHERE tenant_id = #{tenantId} AND calendar_id = #{calendarId} AND deleted = 0
+        ORDER BY start_date DESC, priority_value DESC, updated_time DESC, id DESC
+    </select>
+
+    <select id="findException" resultType="com.leantpm.inspection.InspectionCalendarDtos$CalendarExceptionRow">
+        SELECT id, calendar_id, exception_name, start_date, end_date, day_type,
+               priority_value, status, description, updated_time, version
+        FROM inspection_calendar_exception
+        WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0
+        LIMIT 1
+    </select>
+
+    <insert id="insertException">
+        INSERT INTO inspection_calendar_exception
+            (tenant_id, calendar_id, exception_name, start_date, end_date,
+             day_type, priority_value, status, description, created_by, updated_by)
+        VALUES
+            (#{tenantId}, #{calendarId}, #{request.exceptionName},
+             #{request.startDate}, #{request.endDate}, #{request.dayType},
+             #{request.priorityValue}, #{request.status}, #{request.description},
+             #{operatorId}, #{operatorId})
+    </insert>
+
+    <select id="findLatestExceptionId" resultType="long">
+        SELECT id FROM inspection_calendar_exception
+        WHERE tenant_id = #{tenantId} AND calendar_id = #{calendarId}
+          AND created_by = #{operatorId} AND deleted = 0
+        ORDER BY id DESC LIMIT 1
+    </select>
+
+    <update id="updateException">
+        UPDATE inspection_calendar_exception
+        SET exception_name = #{request.exceptionName}, start_date = #{request.startDate},
+            end_date = #{request.endDate}, day_type = #{request.dayType},
+            priority_value = #{request.priorityValue}, status = #{request.status},
+            description = #{request.description}, updated_by = #{operatorId},
+            version = version + 1
+        WHERE tenant_id = #{tenantId} AND calendar_id = #{calendarId}
+          AND id = #{id} AND deleted = 0 AND version = #{request.version}
+    </update>
+
+    <update id="deleteException">
+        UPDATE inspection_calendar_exception
+        SET deleted = 1, status = 0, updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId} AND calendar_id = #{calendarId}
+          AND id = #{id} AND deleted = 0 AND version = #{version}
+    </update>
+</mapper>

@@ -89,6 +89,7 @@ public class InspectionImportService {
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
     private final InspectionMapper inspectionMapper;
+    private final InspectionCalendarMapper inspectionCalendarMapper;
     private final EquipmentMapper equipmentMapper;
     private final MasterDataMapper masterDataMapper;
     private final InspectionCatalogService catalogService;
@@ -99,6 +100,7 @@ public class InspectionImportService {
             JdbcTemplate jdbc,
             ObjectMapper objectMapper,
             InspectionMapper inspectionMapper,
+            InspectionCalendarMapper inspectionCalendarMapper,
             EquipmentMapper equipmentMapper,
             MasterDataMapper masterDataMapper,
             InspectionCatalogService catalogService,
@@ -108,6 +110,7 @@ public class InspectionImportService {
         this.jdbc = jdbc;
         this.objectMapper = objectMapper;
         this.inspectionMapper = inspectionMapper;
+        this.inspectionCalendarMapper = inspectionCalendarMapper;
         this.equipmentMapper = equipmentMapper;
         this.masterDataMapper = masterDataMapper;
         this.catalogService = catalogService;
@@ -359,7 +362,8 @@ public class InspectionImportService {
         return new InspectionDtos.SaveSchemeRequest(
                 input.schemeCode(), input.schemeName(), input.inspectionType(),
                 input.cycleType(), input.cycleInterval(), input.weekDays(),
-                input.monthDays(), input.scheduledTime(), input.shiftCode(), assigneeId,
+                input.monthDays(), input.scheduledTime(), 60,
+                inspectionCalendarId(tenantId), input.shiftCode(), assigneeId,
                 input.defaultTeamCode(), input.reviewRequired(), input.backfillAllowed(),
                 input.effectiveDate(), input.expiryDate(), items, List.copyOf(categoryIds),
                 List.copyOf(equipmentIds), input.enabled(), input.description(),
@@ -404,6 +408,17 @@ public class InspectionImportService {
                     "IMPORT_FILE_INVALID", "无法读取点检 Excel 文件，请使用系统模板"
             );
         }
+    }
+
+    private Long inspectionCalendarId(long tenantId) {
+        Long calendarId = inspectionCalendarMapper.findDefaultCalendarId(tenantId);
+        if (calendarId == null) {
+            throw new BusinessException(
+                    "INSPECTION_WORK_CALENDAR_REQUIRED",
+                    "导入点检方案前请先设置默认点检工作日历"
+            );
+        }
+        return calendarId;
     }
 
     private List<InspectionImportDtos.ItemInput> parseItems(
