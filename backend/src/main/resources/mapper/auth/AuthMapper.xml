@@ -98,10 +98,6 @@
         WHERE tenant_id = #{tenantId} AND id = #{userId} AND deleted = 0
     </update>
 
-    <select id="countUsers" resultType="int">
-        SELECT COUNT(*) FROM system_user WHERE tenant_id = #{tenantId} AND deleted = 0
-    </select>
-
     <insert id="insertBootstrapAdmin">
         INSERT INTO system_user
             (tenant_id, username, password_hash, real_name, organization_id, status, mobile_enabled,

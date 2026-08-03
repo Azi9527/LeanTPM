@@ -31,7 +31,7 @@ public class AdminBootstrap implements ApplicationRunner {
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
-        if (authMapper.countUsers(AuthService.DEFAULT_TENANT_ID) > 0) {
+        if (authMapper.findByUsername(AuthService.DEFAULT_TENANT_ID, "admin") != null) {
             return;
         }
         if (adminPassword == null || adminPassword.isBlank()) {
@@ -48,6 +48,9 @@ public class AdminBootstrap implements ApplicationRunner {
                 passwordEncoder.encode(adminPassword)
         );
         var admin = authMapper.findByUsername(AuthService.DEFAULT_TENANT_ID, "admin");
+        if (admin == null) {
+            throw new IllegalStateException("admin 管理员初始化失败");
+        }
         authMapper.assignRole(AuthService.DEFAULT_TENANT_ID, admin.getId(), 1L);
         log.info("已初始化 admin 管理员，请在首次登录后立即修改密码");
     }

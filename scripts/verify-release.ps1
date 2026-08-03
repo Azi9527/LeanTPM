@@ -5,7 +5,8 @@ param(
     [string]$MySqlPassword = '',
     [switch]$SkipMySql,
     [switch]$IncludeAndroid,
-    [string]$GradleExecutable = $env:LEANTPM_GRADLE_EXECUTABLE
+    [string]$GradleExecutable = $env:LEANTPM_GRADLE_EXECUTABLE,
+    [string]$MavenExecutable = $env:LEANTPM_MAVEN_EXECUTABLE
 )
 
 $ErrorActionPreference = 'Stop'
@@ -13,6 +14,18 @@ $repositoryRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Pat
 $backendRoot = Join-Path $repositoryRoot 'backend'
 $frontendRoot = Join-Path $repositoryRoot 'frontend'
 $results = [System.Collections.Generic.List[object]]::new()
+if ([string]::IsNullOrWhiteSpace($MavenExecutable)) {
+    $mavenCommand = Get-Command mvn.cmd -ErrorAction SilentlyContinue
+    if ($mavenCommand) {
+        $MavenExecutable = $mavenCommand.Source
+    }
+    else {
+        $MavenExecutable = Join-Path $repositoryRoot 'runtime\apache-maven-3.9.11\bin\mvn.cmd'
+    }
+}
+if (-not (Test-Path -LiteralPath $MavenExecutable)) {
+    throw "Maven executable was not found at $MavenExecutable"
+}
 
 function Invoke-ReleaseStep {
     param(
@@ -51,7 +64,7 @@ try {
     }
 
     Invoke-ReleaseStep 'Backend unit tests' {
-        & mvn.cmd -q '-Dleantpm.build.directory=target-release' test `
+        & $MavenExecutable -q '-Dleantpm.build.directory=target-release' test `
             -f (Join-Path $backendRoot 'pom.xml')
     }
 
@@ -61,7 +74,8 @@ try {
                 -MySqlHost $MySqlHost `
                 -MySqlPort $MySqlPort `
                 -MySqlUser $MySqlUser `
-                -MySqlPassword $MySqlPassword
+                -MySqlPassword $MySqlPassword `
+                -MavenExecutable $MavenExecutable
         }
         Invoke-ReleaseStep 'MySQL critical indexes' {
             & (Join-Path $PSScriptRoot 'check-mysql-indexes.ps1') `

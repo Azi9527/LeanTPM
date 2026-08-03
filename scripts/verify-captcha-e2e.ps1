@@ -4,10 +4,15 @@ param(
     [string]$MySqlUser = 'root',
     [string]$MySqlPassword = 'root',
     [int]$RedisPort = 6389,
-    [int]$ServerPort = 18088
+    [int]$ServerPort = 18088,
+    [string]$MavenExecutable = $env:LEANTPM_MAVEN_EXECUTABLE,
+    [string]$RedisArchive = ''
 )
 
 $ErrorActionPreference = 'Stop'
+$processPath = $env:Path
+[Environment]::SetEnvironmentVariable('PATH', $null, 'Process')
+[Environment]::SetEnvironmentVariable('Path', $processPath, 'Process')
 $database = 'leantpm_captcha_verify_{0}_{1}' -f (Get-Date -Format 'yyyyMMddHHmmss'), $PID
 $repositoryRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $backendRoot = Join-Path $repositoryRoot 'backend'
@@ -23,6 +28,24 @@ $baseUrl = "http://127.0.0.1:$ServerPort/api/v1"
 $redisProcess = $null
 $backendProcess = $null
 $backendListenerProcessId = $null
+if ([string]::IsNullOrWhiteSpace($MavenExecutable)) {
+    $mavenCommand = Get-Command mvn.cmd -ErrorAction SilentlyContinue
+    if ($mavenCommand) {
+        $MavenExecutable = $mavenCommand.Source
+    }
+    else {
+        $MavenExecutable = Join-Path $repositoryRoot 'runtime\apache-maven-3.9.11\bin\mvn.cmd'
+    }
+}
+if (-not (Test-Path -LiteralPath $MavenExecutable)) {
+    throw "Maven executable was not found at $MavenExecutable"
+}
+if ([string]::IsNullOrWhiteSpace($RedisArchive)) {
+    $bundledArchive = Join-Path $repositoryRoot 'runtime\redis-windows.zip'
+    if (Test-Path -LiteralPath $bundledArchive) {
+        $RedisArchive = $bundledArchive
+    }
+}
 
 function Invoke-Json {
     param(
@@ -36,6 +59,7 @@ function Invoke-Json {
         Uri = $Uri
         Headers = $Headers
         ContentType = 'application/json'
+        TimeoutSec = 15
     }
     if ($null -ne $Body) {
         $arguments.Body = $Body | ConvertTo-Json -Depth 8
@@ -58,6 +82,27 @@ function Read-ErrorCode {
     }
 }
 
+function Stop-TestProcess {
+    param([System.Diagnostics.Process]$Process)
+    if ($null -eq $Process) {
+        return
+    }
+    try {
+        $Process.Refresh()
+        if (-not $Process.HasExited) {
+            $Process.Kill()
+            [void]$Process.WaitForExit(5000)
+        }
+    }
+    catch { }
+    try {
+        if (Get-Process -Id $Process.Id -ErrorAction SilentlyContinue) {
+            & taskkill.exe /PID $Process.Id /T /F 2>$null | Out-Null
+        }
+    }
+    catch { }
+}
+
 try {
     $occupiedPorts = Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
         Where-Object { $_.LocalPort -in @($RedisPort, $ServerPort) }
@@ -66,7 +111,12 @@ try {
     }
 
     New-Item -ItemType Directory -Path $redisRoot -Force | Out-Null
-    Invoke-WebRequest -Uri $redisUrl -OutFile $redisZip
+    if ([string]::IsNullOrWhiteSpace($RedisArchive)) {
+        Invoke-WebRequest -Uri $redisUrl -OutFile $redisZip
+    }
+    else {
+        Copy-Item -LiteralPath $RedisArchive -Destination $redisZip
+    }
     $actualHash = (Get-FileHash -LiteralPath $redisZip -Algorithm SHA256).Hash
     if ($actualHash -ne $redisSha256) {
         throw "Redis archive hash mismatch: $actualHash"
@@ -100,7 +150,7 @@ try {
     }
     Write-Output "MYSQL_TEMP_DATABASE_CREATED=$database"
 
-    & mvn.cmd '-Dleantpm.build.directory=target-codex' '-DskipTests' package `
+    & $MavenExecutable '-Dleantpm.build.directory=target-codex' '-DskipTests' package `
         -f (Join-Path $backendRoot 'pom.xml')
     if ($LASTEXITCODE -ne 0) {
         throw 'Backend package failed'
@@ -115,8 +165,17 @@ try {
     $env:LEANTPM_BOOTSTRAP_ADMIN_PASSWORD = $initialPassword
     $env:LEANTPM_JWT_SECRET = $jwtSecret
     $env:LEANTPM_UPLOAD_DIR = Join-Path $runtimeRoot 'uploads'
+    $env:MANAGEMENT_ENDPOINT_SHUTDOWN_ACCESS = 'unrestricted'
+    $env:MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE = 'health,info,shutdown'
 
-    $jar = Join-Path $backendRoot 'target-codex\leantpm-backend-0.1.0-SNAPSHOT.jar'
+    $jar = Get-ChildItem -LiteralPath (Join-Path $backendRoot 'target-codex') `
+        -File -Filter 'leantpm-backend-*.jar' |
+        Where-Object { $_.Name -notlike '*.original' } |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1 -ExpandProperty FullName
+    if (-not $jar) {
+        throw 'Backend executable jar was not created'
+    }
     $backendProcess = Start-Process -FilePath 'java.exe' -ArgumentList @('-jar', $jar) `
         -RedirectStandardOutput (Join-Path $runtimeRoot 'backend.out.log') `
         -RedirectStandardError (Join-Path $runtimeRoot 'backend.err.log') `
@@ -126,7 +185,8 @@ try {
     for ($attempt = 0; $attempt -lt 40; $attempt++) {
         Start-Sleep -Milliseconds 500
         try {
-            $health = Invoke-RestMethod -Uri "http://127.0.0.1:$ServerPort/actuator/health"
+            $health = Invoke-RestMethod -Uri "http://127.0.0.1:$ServerPort/actuator/health" `
+                -TimeoutSec 2
             if ($health.status -eq 'UP') {
                 $ready = $true
                 break
@@ -141,12 +201,8 @@ try {
     if (-not $ready) {
         throw "Backend did not become healthy. See $runtimeRoot"
     }
-    $backendListenerProcessId = Get-NetTCPConnection -State Listen -LocalPort $ServerPort |
-        Select-Object -First 1 -ExpandProperty OwningProcess
-    $listenerProcess = Get-CimInstance Win32_Process `
-        -Filter "ProcessId=$backendListenerProcessId"
-    if ($listenerProcess.CommandLine -notlike '*leantpm-backend-0.1.0-SNAPSHOT.jar*') {
-        throw "Health response came from unexpected process $backendListenerProcessId"
+    if ($backendProcess.HasExited) {
+        throw 'Backend process exited after reporting health'
     }
     Start-Sleep -Seconds 1
 
@@ -226,6 +282,7 @@ try {
     if ($captchaLogin.code -ne 'OK') {
         throw 'Login with the correct captcha failed'
     }
+    $accessToken = $captchaLogin.data.tokens.accessToken
 
     try {
         Invoke-Json -Method Post -Uri "$baseUrl/auth/login" -Body @{
@@ -242,7 +299,8 @@ try {
         }
     }
 
-    $openApi = Invoke-RestMethod -Uri "http://127.0.0.1:$ServerPort/v3/api-docs"
+    $openApi = Invoke-RestMethod -Uri "http://127.0.0.1:$ServerPort/v3/api-docs" `
+        -TimeoutSec 15
     $captchaSecurity = $openApi.paths.'/api/v1/auth/captcha'.get.security
     $profileSecurity = $openApi.paths.'/api/v1/auth/me'.get.security
     $parameterHeaders = @(
@@ -262,7 +320,7 @@ try {
     Write-Output 'CAPTCHA_REQUIRED_WHEN_ENABLED=PASS'
     Write-Output 'CAPTCHA_CORRECT_LOGIN=PASS'
     Write-Output 'CAPTCHA_ONE_TIME_CONSUME=PASS'
-    Write-Output 'MYSQL_FLYWAY_V1_TO_V5=PASS'
+    Write-Output 'MYSQL_FLYWAY_V1_TO_V22=PASS'
     Write-Output 'REDIS_PING=PONG'
     Write-Output 'OPENAPI_SECURITY_AND_IDEMPOTENCY=PASS'
 }
@@ -284,20 +342,28 @@ catch {
     throw
 }
 finally {
+    if ($backendProcess -and -not $backendProcess.HasExited) {
+        try {
+            $shutdownHeaders = @{}
+            if ($accessToken) {
+                $shutdownHeaders.Authorization = "Bearer $accessToken"
+            }
+            Invoke-RestMethod -Method Post `
+                -Uri "http://127.0.0.1:$ServerPort/actuator/shutdown" `
+                -Headers $shutdownHeaders `
+                -TimeoutSec 5 | Out-Null
+            [void]$backendProcess.WaitForExit(10000)
+        }
+        catch { }
+    }
     if ($backendListenerProcessId) {
         Stop-Process -Id $backendListenerProcessId -Force -ErrorAction SilentlyContinue
     }
-    if ($backendProcess -and -not $backendProcess.HasExited) {
-        Stop-Process -Id $backendProcess.Id -Force -ErrorAction SilentlyContinue
-        [void]$backendProcess.WaitForExit(5000)
-    }
+    Stop-TestProcess $backendProcess
     if ($backendProcess) {
         $backendProcess.Dispose()
     }
-    if ($redisProcess -and -not $redisProcess.HasExited) {
-        Stop-Process -Id $redisProcess.Id -Force -ErrorAction SilentlyContinue
-        [void]$redisProcess.WaitForExit(5000)
-    }
+    Stop-TestProcess $redisProcess
     if ($redisProcess) {
         $redisProcess.Dispose()
     }
@@ -315,7 +381,9 @@ finally {
         'LEANTPM_SERVER_PORT',
         'LEANTPM_BOOTSTRAP_ADMIN_PASSWORD',
         'LEANTPM_JWT_SECRET',
-        'LEANTPM_UPLOAD_DIR'
+        'LEANTPM_UPLOAD_DIR',
+        'MANAGEMENT_ENDPOINT_SHUTDOWN_ACCESS',
+        'MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE'
     ) | ForEach-Object { Remove-Item "Env:$_" -ErrorAction SilentlyContinue }
     if (Test-Path -LiteralPath $runtimeRoot) {
         $resolvedRuntime = (Resolve-Path -LiteralPath $runtimeRoot).Path

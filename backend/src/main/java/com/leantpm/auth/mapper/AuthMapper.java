@@ -43,8 +43,6 @@ public interface AuthMapper {
             @Param("passwordHash") String passwordHash
     );
 
-    int countUsers(@Param("tenantId") long tenantId);
-
     int insertBootstrapAdmin(
             @Param("tenantId") long tenantId,
             @Param("username") String username,

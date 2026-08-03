@@ -1,0 +1,26 @@
+[Unit]
+Description=LeanTPM Backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=leantpm
+Group=leantpm
+WorkingDirectory=/opt/leantpm/backend
+EnvironmentFile=/etc/leantpm/leantpm.env
+ExecStart=/usr/bin/java -XX:MaxRAMPercentage=75 -jar /opt/leantpm/backend/leantpm-backend.jar
+SuccessExitStatus=143
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/leantpm/uploads /var/log/leantpm
+UMask=0027
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

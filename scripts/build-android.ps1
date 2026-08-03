@@ -3,7 +3,8 @@ param(
     [string]$Configuration = 'Debug',
     [string]$AndroidSdk = $env:ANDROID_HOME,
     [string]$OutputDirectory = '',
-    [string]$GradleExecutable = $env:LEANTPM_GRADLE_EXECUTABLE
+    [string]$GradleExecutable = $env:LEANTPM_GRADLE_EXECUTABLE,
+    [switch]$Offline
 )
 
 $ErrorActionPreference = 'Stop'
@@ -70,7 +71,7 @@ finally {
     Pop-Location
 }
 
-$task = "assemble$Configuration"
+$tasks = @("test${Configuration}UnitTest", "assemble$Configuration")
 if ([string]::IsNullOrWhiteSpace($GradleExecutable)) {
     $GradleExecutable = Join-Path $androidRoot 'gradlew.bat'
 }
@@ -79,8 +80,13 @@ if (-not (Test-Path -LiteralPath $GradleExecutable)) {
 }
 Push-Location $androidRoot
 try {
-    & $GradleExecutable --no-daemon --console=plain $task
-    if ($LASTEXITCODE -ne 0) { throw "Gradle task $task failed" }
+    $gradleArguments = @('--no-daemon', '--console=plain')
+    if ($Offline) {
+        $gradleArguments += '--offline'
+    }
+    $gradleArguments += $tasks
+    & $GradleExecutable @gradleArguments
+    if ($LASTEXITCODE -ne 0) { throw "Gradle tasks $($tasks -join ', ') failed" }
 }
 finally {
     Pop-Location
