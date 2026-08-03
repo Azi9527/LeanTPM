@@ -71,7 +71,8 @@
         standard_value, minimum_value, maximum_value, unit, result_type,
         CAST(result_options AS CHAR) AS result_options_json,
         required_flag, photo_required_flag, numeric_required_flag, skip_allowed_flag,
-        abnormal_severity, abnormal_advice, standard_minutes, safety_notes,
+        abnormal_severity, abnormal_advice, abnormal_default_stop_flag,
+        standard_minutes, safety_notes,
         status, description, version
     </sql>
 
@@ -106,7 +107,8 @@
              inspection_content, inspection_method, inspection_tool, inspection_standard,
              standard_value, minimum_value, maximum_value, unit, result_type,
              result_options, required_flag, photo_required_flag, numeric_required_flag,
-             skip_allowed_flag, abnormal_severity, abnormal_advice, standard_minutes,
+             skip_allowed_flag, abnormal_severity, abnormal_advice,
+             abnormal_default_stop_flag, standard_minutes,
              safety_notes, status, description, created_by, updated_by)
         VALUES
             (#{tenantId}, #{request.itemCode}, #{request.itemName}, #{request.itemCategory},
@@ -116,6 +118,7 @@
              #{request.resultType}, CAST(#{resultOptionsJson} AS JSON),
              #{request.required}, #{request.photoRequired}, #{request.numericRequired},
              #{request.skipAllowed}, #{request.abnormalSeverity}, #{request.abnormalAdvice},
+             #{request.abnormalDefaultStop},
              #{request.standardMinutes}, #{request.safetyNotes}, #{request.enabled},
              #{request.description}, #{operatorId}, #{operatorId})
     </insert>
@@ -143,6 +146,7 @@
             skip_allowed_flag = #{request.skipAllowed},
             abnormal_severity = #{request.abnormalSeverity},
             abnormal_advice = #{request.abnormalAdvice},
+            abnormal_default_stop_flag = #{request.abnormalDefaultStop},
             standard_minutes = #{request.standardMinutes}, safety_notes = #{request.safetyNotes},
             status = #{request.enabled}, description = #{request.description},
             updated_by = #{operatorId}, version = version + 1
@@ -338,6 +342,8 @@
                    AS photo_required_flag,
                COALESCE(relation.skip_allowed_override, item.skip_allowed_flag)
                    AS skip_allowed_flag,
+               COALESCE(relation.abnormal_stop_override, item.abnormal_default_stop_flag)
+                   AS abnormal_stop_flag,
                relation.sort_order
         FROM inspection_scheme_item relation
         JOIN inspection_item item
@@ -363,10 +369,12 @@
     <insert id="insertSchemeItem">
         INSERT INTO inspection_scheme_item
             (tenant_id, scheme_version_id, inspection_item_id, sort_order,
-             required_override, photo_required_override, skip_allowed_override, created_by)
+             required_override, photo_required_override, skip_allowed_override,
+             abnormal_stop_override, created_by)
         VALUES
             (#{tenantId}, #{versionId}, #{item.inspectionItemId}, #{item.sortOrder},
-             #{item.required}, #{item.photoRequired}, #{item.skipAllowed}, #{operatorId})
+             #{item.required}, #{item.photoRequired}, #{item.skipAllowed},
+             #{item.abnormalStop}, #{operatorId})
     </insert>
 
     <insert id="insertSchemeCategory">
@@ -670,7 +678,8 @@
              inspection_standard, standard_value, minimum_value, maximum_value, unit,
              result_type, result_options, required_flag, photo_required_flag,
              numeric_required_flag, skip_allowed_flag, abnormal_severity,
-             abnormal_advice, standard_minutes, safety_notes, sort_order)
+             abnormal_advice, abnormal_default_stop_flag,
+             standard_minutes, safety_notes, sort_order)
         SELECT item.tenant_id, #{taskId}, item.id, item.item_code, item.item_name,
                item.item_category, item.inspection_part, item.inspection_content,
                item.inspection_method, item.inspection_tool, item.inspection_standard,
@@ -680,7 +689,9 @@
                COALESCE(relation.photo_required_override, item.photo_required_flag),
                item.numeric_required_flag,
                COALESCE(relation.skip_allowed_override, item.skip_allowed_flag),
-               item.abnormal_severity, item.abnormal_advice, item.standard_minutes,
+               item.abnormal_severity, item.abnormal_advice,
+               COALESCE(relation.abnormal_stop_override, item.abnormal_default_stop_flag),
+               item.standard_minutes,
                item.safety_notes, relation.sort_order
         FROM inspection_scheme_item relation
         JOIN inspection_item item
@@ -986,7 +997,7 @@
                unit, result_type, CAST(result_options AS CHAR) AS result_options_json,
                required_flag, photo_required_flag, numeric_required_flag,
                skip_allowed_flag, abnormal_severity, abnormal_advice,
-               standard_minutes, safety_notes, sort_order
+               abnormal_default_stop_flag, standard_minutes, safety_notes, sort_order
         FROM inspection_task_item
         WHERE tenant_id = #{tenantId} AND task_id = #{taskId} AND id = #{taskItemId}
         LIMIT 1
@@ -999,7 +1010,7 @@
                unit, result_type, CAST(result_options AS CHAR) AS result_options_json,
                required_flag, photo_required_flag, numeric_required_flag,
                skip_allowed_flag, abnormal_severity, abnormal_advice,
-               standard_minutes, safety_notes, sort_order
+               abnormal_default_stop_flag, standard_minutes, safety_notes, sort_order
         FROM inspection_task_item
         WHERE tenant_id = #{tenantId} AND task_id = #{taskId}
         ORDER BY sort_order, id
@@ -1009,8 +1020,10 @@
         SELECT result.id, result.result_status, result.result_code, result.numeric_value,
                result.text_value, result.selected_value,
                CAST(result.selected_values AS CHAR) AS selected_values_json,
-               result.abnormal_flag, result.abnormal_description, result.skipped_flag,
-               result.skip_reason, result.executed_by, user.real_name AS executed_by_name,
+               result.abnormal_flag, result.abnormal_description,
+               result.equipment_stop_required, result.stop_override_reason,
+               result.skipped_flag, result.skip_reason,
+               result.executed_by, user.real_name AS executed_by_name,
                result.executed_time, result.submitted_time, result.version,
                NULL AS attachment_ids
         FROM inspection_task_result result
@@ -1024,12 +1037,14 @@
         INSERT INTO inspection_task_result
             (tenant_id, task_id, task_item_id, result_code, numeric_value, text_value,
              selected_value, selected_values, abnormal_flag, abnormal_description,
+             equipment_stop_required, stop_override_reason,
              skipped_flag, skip_reason, executed_by, created_by, updated_by)
         VALUES
             (#{tenantId}, #{taskId}, #{request.taskItemId}, #{request.resultCode},
              #{request.numericValue}, #{request.textValue}, #{request.selectedValue},
              CAST(#{selectedValuesJson} AS JSON), #{request.abnormal},
-             #{request.abnormalDescription}, #{request.skipped}, #{request.skipReason},
+             #{request.abnormalDescription}, #{request.equipmentStopRequired},
+             #{request.stopOverrideReason}, #{request.skipped}, #{request.skipReason},
              #{operatorId}, #{operatorId}, #{operatorId})
     </insert>
 
@@ -1040,6 +1055,8 @@
             selected_values = CAST(#{selectedValuesJson} AS JSON),
             abnormal_flag = #{request.abnormal},
             abnormal_description = #{request.abnormalDescription},
+            equipment_stop_required = #{request.equipmentStopRequired},
+            stop_override_reason = #{request.stopOverrideReason},
             skipped_flag = #{request.skipped}, skip_reason = #{request.skipReason},
             executed_by = #{operatorId}, executed_time = CURRENT_TIMESTAMP(3),
             updated_by = #{operatorId}, version = version + 1
@@ -1341,12 +1358,46 @@
     <insert id="insertAbnormal">
         INSERT IGNORE INTO inspection_abnormal
             (tenant_id, abnormal_code, task_id, task_result_id, equipment_id,
-             task_item_id, abnormal_title, abnormal_description, severity, created_by, updated_by)
+             task_item_id, abnormal_title, abnormal_description, severity,
+             equipment_stop_required, created_by, updated_by)
         VALUES
             (#{tenantId}, #{abnormalCode}, #{task.id}, #{resultId}, #{task.equipmentId},
              #{item.id}, CONCAT(#{item.itemName}, '异常'), #{description},
-             #{item.abnormalSeverity}, #{operatorId}, #{operatorId})
+             #{item.abnormalSeverity}, #{equipmentStopRequired}, #{operatorId}, #{operatorId})
     </insert>
+
+    <select id="countStopRequiredResults" resultType="int">
+        SELECT COUNT(*)
+        FROM inspection_task_result
+        WHERE tenant_id = #{tenantId} AND task_id = #{taskId}
+          AND abnormal_flag = 1 AND skipped_flag = 0 AND equipment_stop_required = 1
+    </select>
+
+    <select id="findStopReason" resultType="string">
+        SELECT GROUP_CONCAT(
+                   DISTINCT COALESCE(NULLIF(stop_override_reason, ''), NULLIF(abnormal_description, ''))
+                   ORDER BY id SEPARATOR '；'
+               )
+        FROM inspection_task_result
+        WHERE tenant_id = #{tenantId} AND task_id = #{taskId}
+          AND abnormal_flag = 1 AND skipped_flag = 0 AND equipment_stop_required = 1
+    </select>
+
+    <update id="markAbnormalEquipmentStatusChanged">
+        UPDATE inspection_abnormal
+        SET equipment_status_changed = 1,
+            equipment_status_changed_time = CURRENT_TIMESTAMP(3),
+            updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId} AND task_id = #{taskId}
+          AND equipment_stop_required = 1 AND deleted = 0
+    </update>
+
+    <select id="findEquipmentStatus" resultType="com.leantpm.inspection.InspectionMapper$EquipmentStatusData">
+        SELECT status_code, version
+        FROM equipment_current_status
+        WHERE tenant_id = #{tenantId} AND equipment_id = #{equipmentId}
+        LIMIT 1
+    </select>
 
     <sql id="abnormalColumns">
         abnormal.id, abnormal.abnormal_code, abnormal.task_id, task.task_code,
@@ -1356,7 +1407,8 @@
         abnormal.abnormal_status, abnormal.responsible_user_id,
         responsible.real_name AS responsible_user_name, abnormal.due_time,
         abnormal.temporary_action, abnormal.final_result,
-        abnormal.requested_equipment_status, abnormal.repair_order_id,
+        abnormal.requested_equipment_status, abnormal.equipment_stop_required,
+        abnormal.equipment_status_changed, abnormal.repair_order_id,
         closer.real_name AS closed_by_name,
         abnormal.closed_time, verifier.real_name AS verified_by_name,
         abnormal.verified_time, abnormal.verification_comment,

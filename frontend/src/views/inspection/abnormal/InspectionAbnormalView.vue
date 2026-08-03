@@ -141,16 +141,6 @@ async function verify(row: AbnormalRow, passed: boolean) {
   }
 }
 
-async function toRepair(row: AbnormalRow) {
-  try {
-    await inspectionApi.abnormalToRepair(row.id)
-    ElMessage.success('已创建独立维修工单')
-    await load()
-  } catch (error) {
-    ElMessage.error(errorMessage(error, '异常转维修工单失败'))
-  }
-}
-
 async function loadAttachmentContent(attachmentId: number) {
   if (!selected.value) throw new Error('尚未选择点检异常')
   return inspectionApi.abnormalAttachmentContent(selected.value.id, attachmentId)
@@ -175,12 +165,12 @@ async function loadAttachmentContent(attachmentId: number) {
         <el-table-column prop="responsibleUserName" label="责任人" width="110"><template #default="{ row }">{{ row.responsibleUserName || '待分派' }}</template></el-table-column>
         <el-table-column prop="dueTime" label="期限" min-width="170" />
         <el-table-column label="状态" width="100"><template #default="{ row }"><el-tag :type="statusMeta[row.abnormalStatus].type">{{ statusMeta[row.abnormalStatus].label }}</el-tag></template></el-table-column>
+        <el-table-column label="停机联动" width="110"><template #default="{ row }"><el-tag v-if="row.equipmentStopRequired" :type="row.equipmentStatusChanged ? 'danger' : 'warning'">{{ row.equipmentStatusChanged ? '已停机' : '要求停机' }}</el-tag><span v-else>无需停机</span></template></el-table-column>
         <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row)">查看</el-button>
             <el-button v-if="auth.can('inspection:abnormal:handle') && ['OPEN','PROCESSING'].includes(row.abnormalStatus)" link type="primary" @click="openHandle(row)">处理</el-button>
-            <el-button v-if="auth.can('fault:repair:create') && !row.repairOrderId && row.abnormalStatus !== 'CLOSED'" link type="warning" @click="toRepair(row)">转维修</el-button>
-            <el-tag v-else-if="row.repairOrderId" size="small" type="success">已转维修</el-tag>
+            <el-tooltip content="本期不创建维修工单"><el-button link disabled>维修尚未开发</el-button></el-tooltip>
             <template v-if="auth.can('inspection:abnormal:verify') && row.abnormalStatus === 'PENDING_VERIFY'">
               <el-button link type="success" @click="verify(row, true)">通过</el-button>
               <el-button link type="warning" @click="verify(row, false)">退回</el-button>
@@ -199,6 +189,8 @@ async function loadAttachmentContent(attachmentId: number) {
           <el-descriptions-item label="异常标题">{{ selected.abnormalTitle }}</el-descriptions-item>
           <el-descriptions-item label="严重程度">{{ severityMeta[selected.severity].label }}</el-descriptions-item>
           <el-descriptions-item label="异常现象" :span="2">{{ selected.abnormalDescription }}</el-descriptions-item>
+          <el-descriptions-item label="停机要求">{{ selected.equipmentStopRequired ? '需要停机' : '无需停机' }}</el-descriptions-item>
+          <el-descriptions-item label="设备联动">{{ selected.equipmentStatusChanged ? '已联动停机' : '-' }}</el-descriptions-item>
           <el-descriptions-item label="临时措施" :span="2">{{ selected.temporaryAction || '-' }}</el-descriptions-item>
           <el-descriptions-item label="最终结果" :span="2">{{ selected.finalResult || '-' }}</el-descriptions-item>
         </el-descriptions>

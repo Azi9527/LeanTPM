@@ -39,6 +39,7 @@ const form = reactive({
   skipAllowed: false,
   abnormalSeverity: 'MEDIUM',
   abnormalAdvice: '',
+  abnormalDefaultStop: true,
   standardMinutes: 5,
   safetyNotes: '',
   enabled: true,
@@ -100,6 +101,7 @@ function open(row?: ItemRow) {
         skipAllowed: row.skipAllowedFlag,
         abnormalSeverity: row.abnormalSeverity,
         abnormalAdvice: row.abnormalAdvice || '',
+        abnormalDefaultStop: row.abnormalDefaultStopFlag,
         standardMinutes: row.standardMinutes,
         safetyNotes: row.safetyNotes || '',
         enabled: row.status === 1,
@@ -126,6 +128,7 @@ function open(row?: ItemRow) {
         skipAllowed: false,
         abnormalSeverity: 'MEDIUM',
         abnormalAdvice: '',
+        abnormalDefaultStop: true,
         standardMinutes: 5,
         safetyNotes: '',
         enabled: true,
@@ -243,6 +246,7 @@ function parseOptions(value?: string): string[] {
         <el-form-item v-if="['SINGLE_CHOICE','MULTIPLE_CHOICE'].includes(form.resultType)" label="选项（每行一个）" class="full"><el-input v-model="form.resultOptionsText" type="textarea" :rows="4" /></el-form-item>
         <el-form-item label="异常等级"><el-select v-model="form.abnormalSeverity"><el-option label="低" value="LOW" /><el-option label="中" value="MEDIUM" /><el-option label="高" value="HIGH" /><el-option label="紧急" value="CRITICAL" /></el-select></el-form-item>
         <el-form-item label="异常建议"><el-input v-model="form.abnormalAdvice" /></el-form-item>
+        <el-form-item label="异常默认停机"><el-switch v-model="form.abnormalDefaultStop" /><small class="block">任务执行时可调整，调整后必须填写原因</small></el-form-item>
         <el-form-item label="安全说明" class="full"><el-input v-model="form.safetyNotes" type="textarea" /></el-form-item>
         <el-form-item label="执行规则" class="full">
           <el-checkbox v-model="form.required">必填</el-checkbox>

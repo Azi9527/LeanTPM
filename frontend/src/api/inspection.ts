@@ -42,6 +42,7 @@ export interface ItemRow {
   skipAllowedFlag: boolean
   abnormalSeverity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
   abnormalAdvice?: string
+  abnormalDefaultStopFlag: boolean
   standardMinutes: number
   safetyNotes?: string
   status: number
@@ -105,6 +106,7 @@ export interface SchemeItemRow {
   requiredFlag: boolean
   photoRequiredFlag: boolean
   skipAllowedFlag: boolean
+  abnormalStopFlag?: boolean
   sortOrder: number
 }
 
@@ -227,6 +229,8 @@ export interface ResultRow {
   selectedValuesJson?: string
   abnormalFlag?: boolean
   abnormalDescription?: string
+  equipmentStopRequired?: boolean
+  stopOverrideReason?: string
   skippedFlag?: boolean
   skipReason?: string
   executedByName?: string
@@ -259,6 +263,7 @@ export interface TaskItemRow {
   skipAllowedFlag: boolean
   abnormalSeverity: string
   abnormalAdvice?: string
+  abnormalDefaultStopFlag: boolean
   standardMinutes: number
   safetyNotes?: string
   sortOrder: number
@@ -308,6 +313,8 @@ export interface AbnormalRow {
   temporaryAction?: string
   finalResult?: string
   requestedEquipmentStatus?: string
+  equipmentStopRequired?: boolean
+  equipmentStatusChanged?: boolean
   repairOrderId?: number
   closedByName?: string
   closedTime?: string
@@ -521,7 +528,6 @@ export const inspectionApi = {
   },
   handleAbnormal: (id: number, data: object) =>
     http.put(`/inspection/abnormalities/${id}`, data),
-  abnormalToRepair: (id: number) => http.post(`/inspection/abnormalities/${id}/repair-order`),
   verifyAbnormal: (id: number, data: object) =>
     http.post(`/inspection/abnormalities/${id}/verify`, data),
   statistics: () => getData<Statistics>('/inspection/statistics'),

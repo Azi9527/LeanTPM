@@ -45,6 +45,7 @@ const form = reactive({
   effectiveDate: new Date().toISOString().slice(0, 10),
   expiryDate: '',
   itemIds: [] as number[],
+  itemStopOverrides: {} as Record<number, boolean | null>,
   categoryIds: [] as number[],
   equipmentIds: [] as number[],
   enabled: true,
@@ -124,6 +125,7 @@ function resetForm() {
     effectiveDate: new Date().toISOString().slice(0, 10),
     expiryDate: '',
     itemIds: [],
+    itemStopOverrides: {},
     categoryIds: [],
     equipmentIds: [],
     enabled: true,
@@ -158,6 +160,9 @@ async function open(row?: SchemeRow) {
         effectiveDate: value.version.effectiveDate,
         expiryDate: value.version.expiryDate || '',
         itemIds: value.items.map((item) => item.inspectionItemId),
+        itemStopOverrides: Object.fromEntries(
+          value.items.map((item) => [item.inspectionItemId, item.abnormalStopFlag ?? null]),
+        ),
         categoryIds: value.applicability.categoryIds,
         equipmentIds: value.applicability.equipmentIds,
         enabled: value.scheme.status === 1,
@@ -189,6 +194,7 @@ async function save() {
       items: form.itemIds.map((inspectionItemId, index) => ({
         inspectionItemId,
         sortOrder: (index + 1) * 10,
+        abnormalStop: form.itemStopOverrides[inspectionItemId] ?? null,
       })),
       version: editing.value?.version,
     }
@@ -202,6 +208,10 @@ async function save() {
   } finally {
     saving.value = false
   }
+}
+
+function selectedItemRows() {
+  return items.value.filter((item) => form.itemIds.includes(item.id))
 }
 
 async function showDetail(row: SchemeRow, versionId?: number) {
@@ -286,6 +296,13 @@ function csvNumbers(value?: string) {
         <el-form-item label="生效日期"><el-date-picker v-model="form.effectiveDate" type="date" value-format="YYYY-MM-DD" /></el-form-item>
         <el-form-item label="失效日期"><el-date-picker v-model="form.expiryDate" type="date" value-format="YYYY-MM-DD" clearable /></el-form-item>
         <el-form-item label="点检项目" class="full"><el-select v-model="form.itemIds" multiple filterable collapse-tags collapse-tags-tooltip><el-option v-for="item in items" :key="item.id" :label="`${item.itemCode} · ${item.itemName}`" :value="item.id" /></el-select></el-form-item>
+        <el-form-item v-if="form.itemIds.length" label="异常停机规则" class="full">
+          <el-table :data="selectedItemRows()" size="small" border>
+            <el-table-column prop="itemName" label="点检项目" min-width="220" />
+            <el-table-column label="项目默认" width="100"><template #default="{ row }">{{ row.abnormalDefaultStopFlag ? '停机' : '不停机' }}</template></el-table-column>
+            <el-table-column label="方案覆盖" width="180"><template #default="{ row }"><el-select v-model="form.itemStopOverrides[row.id]"><el-option label="继承项目默认" :value="null" /><el-option label="异常停机" :value="true" /><el-option label="异常不停机" :value="false" /></el-select></template></el-table-column>
+          </el-table>
+        </el-form-item>
         <el-form-item label="适用设备分类" class="full"><el-select v-model="form.categoryIds" multiple filterable collapse-tags><el-option v-for="category in categories" :key="category.id" :label="`${category.categoryCode} · ${category.categoryName}`" :value="category.id" /></el-select></el-form-item>
         <el-form-item label="指定设备" class="full"><el-select v-model="form.equipmentIds" multiple filterable collapse-tags collapse-tags-tooltip><el-option v-for="row in equipment" :key="row.id" :label="`${row.equipmentCode} · ${row.equipmentName}`" :value="row.id" /></el-select></el-form-item>
         <el-form-item label="执行控制" class="full"><el-checkbox v-model="form.reviewRequired">提交后复核</el-checkbox><el-checkbox v-model="form.backfillAllowed">允许补录</el-checkbox><el-checkbox v-model="form.enabled">启用方案</el-checkbox></el-form-item>

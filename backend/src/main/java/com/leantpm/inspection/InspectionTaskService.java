@@ -529,6 +529,7 @@ public class InspectionTaskService {
         }
         mapper.submitResults(current.tenantId(), id);
         createAbnormalities(current, task);
+        applyAbnormalStop(current, task);
         String targetStatus = Boolean.TRUE.equals(task.reviewRequiredFlag())
                 ? "PENDING_REVIEW" : "COMPLETED";
         if (mapper.updateTaskStatus(
@@ -780,17 +781,18 @@ public class InspectionTaskService {
                     HttpStatus.NOT_FOUND
             );
         }
-        validateResult(item, request);
+        InspectionDtos.SaveResultRequest normalized = normalizeStopDecision(item, request);
+        validateResult(item, normalized);
         InspectionDtos.ResultRow existing =
                 mapper.findResult(current.tenantId(), request.taskItemId());
         if (existing == null) {
             mapper.insertResult(
-                    current.tenantId(), task.id(), request,
-                    json(request.selectedValues()), current.userId()
+                    current.tenantId(), task.id(), normalized,
+                    json(normalized.selectedValues()), current.userId()
             );
         } else if (mapper.updateResult(
-                current.tenantId(), task.id(), request,
-                json(request.selectedValues()), current.userId()
+                current.tenantId(), task.id(), normalized,
+                json(normalized.selectedValues()), current.userId()
         ) == 0) {
             throw optimisticConflict();
         }
@@ -800,8 +802,8 @@ public class InspectionTaskService {
         String attachmentType = "IMAGE".equals(item.resultType())
                 || Boolean.TRUE.equals(item.photoRequiredFlag())
                 ? "RESULT_PHOTO" : "RESULT_ATTACHMENT";
-        for (Long attachmentId : request.attachmentIds() == null
-                ? List.<Long>of() : request.attachmentIds()) {
+        for (Long attachmentId : normalized.attachmentIds() == null
+                ? List.<Long>of() : normalized.attachmentIds()) {
             if (mapper.countAvailableAttachment(current.tenantId(), attachmentId) == 0) {
                 throw new BusinessException(
                         "ATTACHMENT_NOT_FOUND", "附件不存在或不可用", HttpStatus.NOT_FOUND
@@ -812,6 +814,41 @@ public class InspectionTaskService {
                     attachmentType, current.userId()
             );
         }
+    }
+
+    private InspectionDtos.SaveResultRequest normalizeStopDecision(
+            InspectionMapper.TaskItemData item,
+            InspectionDtos.SaveResultRequest request
+    ) {
+        boolean abnormal = Boolean.TRUE.equals(request.abnormal())
+                && !Boolean.TRUE.equals(request.skipped());
+        if (!abnormal) {
+            return new InspectionDtos.SaveResultRequest(
+                    request.taskItemId(), request.resultCode(), request.numericValue(),
+                    request.textValue(), request.selectedValue(), request.selectedValues(),
+                    request.abnormal(), request.abnormalDescription(), false, null,
+                    request.skipped(), request.skipReason(), request.attachmentIds(),
+                    request.version()
+            );
+        }
+        boolean defaultStop = Boolean.TRUE.equals(item.abnormalDefaultStopFlag());
+        boolean actualStop = request.equipmentStopRequired() == null
+                ? defaultStop : request.equipmentStopRequired();
+        String overrideReason = clean(request.stopOverrideReason());
+        if (actualStop != defaultStop && overrideReason == null) {
+            throw new BusinessException(
+                    "INSPECTION_STOP_OVERRIDE_REASON_REQUIRED",
+                    "异常停机选择与项目默认规则不一致时，必须填写调整原因"
+            );
+        }
+        return new InspectionDtos.SaveResultRequest(
+                request.taskItemId(), request.resultCode(), request.numericValue(),
+                request.textValue(), request.selectedValue(), request.selectedValues(),
+                request.abnormal(), request.abnormalDescription(), actualStop,
+                actualStop == defaultStop ? null : overrideReason,
+                request.skipped(), request.skipReason(), request.attachmentIds(),
+                request.version()
+        );
     }
 
     private void validateResult(
@@ -897,10 +934,44 @@ public class InspectionTaskService {
                         current.tenantId(), code, task, item, result.id(),
                         clean(result.abnormalDescription()) == null
                                 ? item.itemName() + "点检异常" : result.abnormalDescription(),
+                        result.equipmentStopRequired(),
                         current.userId()
                 );
             }
         }
+    }
+
+    private void applyAbnormalStop(CurrentUser current, InspectionDtos.TaskRow task) {
+        if (mapper.countStopRequiredResults(current.tenantId(), task.id()) == 0) {
+            return;
+        }
+        InspectionMapper.EquipmentStatusData equipment = mapper.findEquipmentStatus(
+                current.tenantId(), task.equipmentId()
+        );
+        if (equipment == null) {
+            throw new BusinessException(
+                    "CURRENT_STATUS_NOT_FOUND", "设备当前状态不存在", HttpStatus.NOT_FOUND
+            );
+        }
+        String reasonDetail = clean(mapper.findStopReason(current.tenantId(), task.id()));
+        String reason = "点检任务 " + task.taskCode() + " 异常要求停机"
+                + (reasonDetail == null ? "" : "：" + reasonDetail);
+        if (!"STOPPED".equals(equipment.statusCode())) {
+            equipmentService.changeStatusFromBusiness(
+                    task.equipmentId(),
+                    new EquipmentDtos.ChangeStatusRequest(
+                            "STOPPED", reason, "INSPECTION",
+                            equipment.version()
+                    )
+            );
+        }
+        mapper.markAbnormalEquipmentStatusChanged(
+                current.tenantId(), task.id(), current.userId()
+        );
+        mapper.insertTaskEvent(
+                current.tenantId(), task.id(), "EQUIPMENT_STOPPED",
+                task.taskStatus(), task.taskStatus(), reason, current.userId()
+        );
     }
 
     private InspectionDtos.TaskDetail taskDetail(long tenantId, InspectionDtos.TaskRow task) {
@@ -926,7 +997,8 @@ public class InspectionTaskService {
                     result.id(), result.resultStatus(), result.resultCode(),
                     result.numericValue(), result.textValue(), result.selectedValue(),
                     result.selectedValuesJson(), result.abnormalFlag(),
-                    result.abnormalDescription(), result.skippedFlag(), result.skipReason(),
+                    result.abnormalDescription(), result.equipmentStopRequired(),
+                    result.stopOverrideReason(), result.skippedFlag(), result.skipReason(),
                     result.executedBy(), result.executedByName(), result.executedTime(),
                     result.submittedTime(), result.version(),
                     mapper.findResultAttachmentIds(tenantId, result.id())
@@ -940,7 +1012,8 @@ public class InspectionTaskService {
                 item.maximumValue(), item.unit(), item.resultType(), item.resultOptionsJson(),
                 item.requiredFlag(), item.photoRequiredFlag(), item.numericRequiredFlag(),
                 item.skipAllowedFlag(), item.abnormalSeverity(), item.abnormalAdvice(),
-                item.standardMinutes(), item.safetyNotes(), item.sortOrder(), result
+                item.abnormalDefaultStopFlag(), item.standardMinutes(), item.safetyNotes(),
+                item.sortOrder(), result
         );
     }
 

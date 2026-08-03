@@ -239,9 +239,9 @@ class InspectionMySqlIntegrationTest {
                 LocalDate.now(),
                 null,
                 List.of(
-                        new InspectionDtos.SaveSchemeItemRequest(1L, 10, true, false, false),
-                        new InspectionDtos.SaveSchemeItemRequest(2L, 20, true, false, false),
-                        new InspectionDtos.SaveSchemeItemRequest(3L, 30, true, false, false)
+                        new InspectionDtos.SaveSchemeItemRequest(1L, 10, true, false, false, null),
+                        new InspectionDtos.SaveSchemeItemRequest(2L, 20, true, false, false, null),
+                        new InspectionDtos.SaveSchemeItemRequest(3L, 30, true, false, false, null)
                 ),
                 List.of(1L),
                 List.of(),
@@ -317,9 +317,14 @@ class InspectionMySqlIntegrationTest {
         taskService.submit(task.id(), submissionRequest);
         InspectionDtos.TaskDetail submitted = taskService.detail(task.id());
         assertThat(submitted.task().taskStatus()).isEqualTo("PENDING_REVIEW");
-        assertThat(submitted.abnormalities()).singleElement()
-                .extracting(InspectionDtos.AbnormalRow::abnormalStatus)
-                .isEqualTo("OPEN");
+        assertThat(submitted.abnormalities()).singleElement().satisfies(abnormal -> {
+            assertThat(abnormal.abnormalStatus()).isEqualTo("OPEN");
+            assertThat(abnormal.equipmentStopRequired()).isTrue();
+            assertThat(abnormal.equipmentStatusChanged()).isTrue();
+        });
+        authenticateAdmin();
+        assertThat(equipmentService.detail(generatedTask.equipmentId())
+                .equipment().currentStatusCode()).isEqualTo("STOPPED");
 
         authenticateCollaborator();
         assertThatThrownBy(() -> taskService.submit(task.id(), submissionRequest))
@@ -581,7 +586,7 @@ class InspectionMySqlIntegrationTest {
                 LocalDate.now(),
                 null,
                 List.of(new InspectionDtos.SaveSchemeItemRequest(
-                        1L, 10, true, false, false
+                        1L, 10, true, false, false, null
                 )),
                 List.of(),
                 List.of(equipmentId),
@@ -678,6 +683,8 @@ class InspectionMySqlIntegrationTest {
                 List.of(),
                 abnormal,
                 abnormalDescription,
+                null,
+                null,
                 false,
                 null,
                 List.of(),

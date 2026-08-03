@@ -530,7 +530,29 @@ public interface InspectionMapper {
             @Param("item") TaskItemData item,
             @Param("resultId") long resultId,
             @Param("description") String description,
+            @Param("equipmentStopRequired") Boolean equipmentStopRequired,
             @Param("operatorId") long operatorId
+    );
+
+    int countStopRequiredResults(
+            @Param("tenantId") long tenantId,
+            @Param("taskId") long taskId
+    );
+
+    String findStopReason(
+            @Param("tenantId") long tenantId,
+            @Param("taskId") long taskId
+    );
+
+    int markAbnormalEquipmentStatusChanged(
+            @Param("tenantId") long tenantId,
+            @Param("taskId") long taskId,
+            @Param("operatorId") long operatorId
+    );
+
+    EquipmentStatusData findEquipmentStatus(
+            @Param("tenantId") long tenantId,
+            @Param("equipmentId") long equipmentId
     );
 
     List<InspectionDtos.AbnormalRow> findAbnormalities(
@@ -617,10 +639,14 @@ public interface InspectionMapper {
             Boolean skipAllowedFlag,
             String abnormalSeverity,
             String abnormalAdvice,
+            Boolean abnormalDefaultStopFlag,
             Integer standardMinutes,
             String safetyNotes,
             Integer sortOrder
     ) {
+    }
+
+    record EquipmentStatusData(String statusCode, int version) {
     }
 
     record GenerationPlan(

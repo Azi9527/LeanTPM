@@ -34,6 +34,8 @@ interface ResultDraft {
   selectedValues: string[]
   abnormal: boolean
   abnormalDescription?: string
+  equipmentStopRequired: boolean
+  stopOverrideReason?: string
   skipped: boolean
   skipReason?: string
   attachmentIds: number[]
@@ -127,6 +129,9 @@ async function openTask(row: Pick<TaskRow, 'id'>) {
         selectedValues: parseSelected(result?.selectedValuesJson),
         abnormal: Boolean(result?.abnormalFlag),
         abnormalDescription: result?.abnormalDescription,
+        equipmentStopRequired: result?.equipmentStopRequired
+          ?? item.abnormalDefaultStopFlag,
+        stopOverrideReason: result?.stopOverrideReason,
         skipped: Boolean(result?.skippedFlag),
         skipReason: result?.skipReason,
         attachmentIds: result?.attachmentIds || [],
@@ -166,8 +171,19 @@ function buildPayload(): SavePayload | null {
       taskItemId: item.id,
       ...drafts[item.id],
       abnormalDescription: drafts[item.id].abnormalDescription || undefined,
+      stopOverrideReason: drafts[item.id].stopOverrideReason || undefined,
       skipReason: drafts[item.id].skipReason || undefined,
     })),
+  }
+}
+
+function toggleAbnormal(item: TaskItemRow, value: boolean) {
+  if (value) {
+    drafts[item.id].equipmentStopRequired = item.abnormalDefaultStopFlag
+    drafts[item.id].stopOverrideReason = undefined
+  } else {
+    drafts[item.id].equipmentStopRequired = false
+    drafts[item.id].stopOverrideReason = undefined
   }
 }
 
@@ -424,7 +440,7 @@ function dueClass(row: TaskRow) {
               <el-select v-else-if="item.resultType === 'SINGLE_CHOICE'" v-model="drafts[item.id].selectedValue" :disabled="!executable"><el-option v-for="option in resultOptions(item)" :key="option" :label="option" :value="option" /></el-select>
               <el-select v-else-if="item.resultType === 'MULTIPLE_CHOICE'" v-model="drafts[item.id].selectedValues" multiple :disabled="!executable"><el-option v-for="option in resultOptions(item)" :key="option" :label="option" :value="option" /></el-select>
               <div v-if="executable" class="result-controls">
-                <el-checkbox v-model="drafts[item.id].abnormal">标记异常</el-checkbox>
+                <el-checkbox v-model="drafts[item.id].abnormal" @change="(value: boolean) => toggleAbnormal(item, value)">标记异常</el-checkbox>
                 <el-checkbox v-if="item.skipAllowedFlag" v-model="drafts[item.id].skipped">跳过本项</el-checkbox>
                 <el-upload :show-file-list="false" :auto-upload="true" :http-request="uploadHandler(item.id)">
                   <el-button :loading="uploadingItemId === item.id" plain>{{ item.photoRequiredFlag ? '拍照/上传（必需）' : '上传附件' }}</el-button>
@@ -442,6 +458,16 @@ function dueClass(row: TaskRow) {
                 />
               </div>
               <el-input v-if="drafts[item.id].abnormal" v-model="drafts[item.id].abnormalDescription" :disabled="!executable" type="textarea" placeholder="请描述异常现象" />
+              <div v-if="drafts[item.id].abnormal" class="stop-decision">
+                <el-switch v-model="drafts[item.id].equipmentStopRequired" :disabled="!executable" active-text="设备需要停机" inactive-text="设备无需停机" />
+                <el-tag size="small" type="info">项目默认：{{ item.abnormalDefaultStopFlag ? '停机' : '不停机' }}</el-tag>
+                <el-input
+                  v-if="drafts[item.id].equipmentStopRequired !== item.abnormalDefaultStopFlag"
+                  v-model="drafts[item.id].stopOverrideReason"
+                  :disabled="!executable"
+                  placeholder="与默认停机规则不同，请填写调整原因"
+                />
+              </div>
               <el-input v-if="drafts[item.id].skipped" v-model="drafts[item.id].skipReason" :disabled="!executable" placeholder="请填写跳过原因" />
             </template>
           </div>
@@ -474,6 +500,8 @@ function dueClass(row: TaskRow) {
 .inspection-content h3, .inspection-content p { margin: 0; }
 .standard { padding: 12px; border-radius: 8px; background: var(--el-fill-color-light); }
 .result-controls { justify-content: flex-start; flex-wrap: wrap; }
+.stop-decision { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px; border-radius: 8px; background: var(--el-fill-color-light); }
+.stop-decision .el-input { flex: 1 1 280px; }
 .item-attachments { display: grid; gap: 8px; padding: 12px; border-radius: 8px; background: var(--el-fill-color-extra-light); }
 .attachment-title { color: var(--el-text-color-regular); font-size: 13px; font-weight: 600; }
 .sticky-actions { position: sticky; bottom: 0; justify-content: flex-end; padding: 16px 0; background: var(--el-bg-color); z-index: 2; }

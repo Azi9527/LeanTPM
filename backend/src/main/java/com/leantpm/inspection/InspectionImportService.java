@@ -319,7 +319,7 @@ public class InspectionImportService {
                 input.minimumValue(), input.maximumValue(), input.unit(), input.resultType(),
                 input.resultOptions(), input.required(), input.photoRequired(),
                 input.numericRequired(), input.skipAllowed(), input.abnormalSeverity(),
-                input.abnormalAdvice(), input.standardMinutes(), input.safetyNotes(),
+                input.abnormalAdvice(), true, input.standardMinutes(), input.safetyNotes(),
                 input.enabled(), input.description(), version
         );
     }
@@ -342,7 +342,7 @@ public class InspectionImportService {
                 .map(item -> new InspectionDtos.SaveSchemeItemRequest(
                         inspectionMapper.findItemIdByCode(tenantId, item.itemCode()),
                         item.sortOrder(), item.required(), item.photoRequired(),
-                        item.skipAllowed()
+                        item.skipAllowed(), null
                 ))
                 .toList();
         LinkedHashSet<Long> categoryIds = new LinkedHashSet<>();

@@ -40,6 +40,7 @@ public final class InspectionDtos {
             Boolean skipAllowedFlag,
             String abnormalSeverity,
             String abnormalAdvice,
+            Boolean abnormalDefaultStopFlag,
             Integer standardMinutes,
             String safetyNotes,
             Integer status,
@@ -78,6 +79,7 @@ public final class InspectionDtos {
             @Pattern(regexp = "^(LOW|MEDIUM|HIGH|CRITICAL)$", message = "异常等级不正确")
             String abnormalSeverity,
             @Size(max = 500) String abnormalAdvice,
+            @NotNull Boolean abnormalDefaultStop,
             @NotNull @Min(0) Integer standardMinutes,
             @Size(max = 1000) String safetyNotes,
             @NotNull Boolean enabled,
@@ -145,6 +147,7 @@ public final class InspectionDtos {
             Boolean requiredFlag,
             Boolean photoRequiredFlag,
             Boolean skipAllowedFlag,
+            Boolean abnormalStopFlag,
             int sortOrder
     ) {
     }
@@ -169,7 +172,8 @@ public final class InspectionDtos {
             @NotNull @Min(0) Integer sortOrder,
             Boolean required,
             Boolean photoRequired,
-            Boolean skipAllowed
+            Boolean skipAllowed,
+            Boolean abnormalStop
     ) {
     }
 
@@ -424,6 +428,7 @@ public final class InspectionDtos {
             Boolean skipAllowedFlag,
             String abnormalSeverity,
             String abnormalAdvice,
+            Boolean abnormalDefaultStopFlag,
             Integer standardMinutes,
             String safetyNotes,
             Integer sortOrder,
@@ -441,6 +446,8 @@ public final class InspectionDtos {
             String selectedValuesJson,
             Boolean abnormalFlag,
             String abnormalDescription,
+            Boolean equipmentStopRequired,
+            String stopOverrideReason,
             Boolean skippedFlag,
             String skipReason,
             Long executedBy,
@@ -501,6 +508,8 @@ public final class InspectionDtos {
             List<@Size(max = 100) String> selectedValues,
             @NotNull Boolean abnormal,
             @Size(max = 1000) String abnormalDescription,
+            Boolean equipmentStopRequired,
+            @Size(max = 500) String stopOverrideReason,
             @NotNull Boolean skipped,
             @Size(max = 500) String skipReason,
             List<@Min(1) Long> attachmentIds,
@@ -549,6 +558,8 @@ public final class InspectionDtos {
             String temporaryAction,
             String finalResult,
             String requestedEquipmentStatus,
+            Boolean equipmentStopRequired,
+            Boolean equipmentStatusChanged,
             Long repairOrderId,
             String closedByName,
             LocalDateTime closedTime,

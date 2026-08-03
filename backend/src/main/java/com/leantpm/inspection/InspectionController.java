@@ -3,7 +3,6 @@ package com.leantpm.inspection;
 import com.leantpm.common.api.ApiResponse;
 import com.leantpm.common.api.PageResult;
 import com.leantpm.common.idempotency.Idempotent;
-import com.leantpm.fault.FaultService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -40,18 +39,15 @@ public class InspectionController {
     private final InspectionCatalogService catalogService;
     private final InspectionTaskService taskService;
     private final InspectionImportService importService;
-    private final FaultService faultService;
 
     public InspectionController(
             InspectionCatalogService catalogService,
             InspectionTaskService taskService,
-            InspectionImportService importService,
-            FaultService faultService
+            InspectionImportService importService
     ) {
         this.catalogService = catalogService;
         this.taskService = taskService;
         this.importService = importService;
-        this.faultService = faultService;
     }
 
     @GetMapping("/import-template")
@@ -461,13 +457,6 @@ public class InspectionController {
     ) {
         taskService.verifyAbnormal(id, request);
         return ApiResponse.success();
-    }
-
-    @PostMapping("/abnormalities/{id}/repair-order")
-    @Idempotent
-    @PreAuthorize("hasAuthority('inspection:abnormal:handle') and hasAuthority('fault:repair:create')")
-    public ApiResponse<Map<String, Long>> abnormalToRepair(@PathVariable long id) {
-        return ApiResponse.success(Map.of("id", faultService.createFromInspectionAbnormal(id)));
     }
 
     @GetMapping("/statistics")

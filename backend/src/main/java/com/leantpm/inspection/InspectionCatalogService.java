@@ -567,6 +567,7 @@ public class InspectionCatalogService {
                 request.skipAllowed(),
                 request.abnormalSeverity().trim().toUpperCase(Locale.ROOT),
                 clean(request.abnormalAdvice()),
+                request.abnormalDefaultStop(),
                 request.standardMinutes(),
                 clean(request.safetyNotes()),
                 request.enabled(),
