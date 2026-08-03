@@ -116,6 +116,12 @@ export interface BarcodeRow {
   invalidationReason?: string
 }
 
+export interface BulkBarcodeResult {
+  equipmentCount: number
+  generatedCount: number
+  existingCount: number
+}
+
 export interface DocumentRow {
   attachmentId: number
   originalName: string
@@ -205,6 +211,13 @@ export const equipmentApi = {
     http.post(`/equipment/${id}/barcode`, data),
   regenerateBarcode: (id: number, data: object) =>
     http.post(`/equipment/${id}/barcode/regenerate`, data),
+  generateAllBarcodes: async (data: object) => {
+    const response = await http.post<ApiResponse<BulkBarcodeResult>>(
+      '/equipment/barcodes/generate-all',
+      data,
+    )
+    return response.data.data
+  },
   unbindBarcode: (id: number, reason?: string) =>
     http.delete(`/equipment/${id}/barcode`, { params: { reason } }),
   barcodeImageUrl: (id: number, width = 320, height = 120) =>
@@ -212,6 +225,14 @@ export const equipmentApi = {
   barcodeImage: async (id: number, width = 320, height = 120) => {
     const response = await http.get<Blob>(`/equipment/barcodes/${id}/image`, {
       params: { width, height },
+      responseType: 'blob',
+    })
+    return response.data
+  },
+  barcodeArchive: async (ids: number[] | undefined, width: number, height: number) => {
+    const response = await http.get<Blob>('/equipment/barcodes/archive', {
+      params: { ids, width, height },
+      paramsSerializer: { indexes: null },
       responseType: 'blob',
     })
     return response.data

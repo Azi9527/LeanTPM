@@ -36,6 +36,7 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -51,6 +52,8 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 @Service
 public class EquipmentService {
@@ -504,6 +507,35 @@ public class EquipmentService {
     }
 
     @Transactional
+    public EquipmentDtos.BulkBarcodeResult generateMissingBarcodes(
+            EquipmentDtos.GenerateBarcodeRequest request
+    ) {
+        var current = SecurityUtils.currentUser();
+        DataPermission scope = dataPermissionService.current();
+        List<EquipmentDtos.BarcodeRow> existing = mapper.findBarcodes(
+                current.tenantId(), scope, null, true
+        );
+        List<Long> missingIds = mapper.findActiveEquipmentIdsWithoutBarcode(
+                current.tenantId(), scope
+        );
+        String barcodeType = upper(request.barcodeType());
+        if (barcodeType == null) barcodeType = "QR";
+        for (long equipmentId : missingIds) {
+            mapper.insertBarcode(
+                    current.tenantId(), equipmentId, randomToken(), barcodeType,
+                    current.userId()
+            );
+        }
+        changeLogService.record(
+                "EQUIPMENT_BARCODE", 0, "BULK_CREATE", null,
+                Map.of("generatedCount", missingIds.size(), "barcodeType", barcodeType)
+        );
+        return new EquipmentDtos.BulkBarcodeResult(
+                existing.size() + missingIds.size(), missingIds.size(), existing.size()
+        );
+    }
+
+    @Transactional
     public void unbindBarcode(long equipmentId, String reason) {
         var current = SecurityUtils.currentUser();
         requireAccessible(current.tenantId(), equipmentId, dataPermissionService.current());
@@ -569,6 +601,37 @@ public class EquipmentService {
                     "BARCODE_RENDER_FAILED", "条码图片生成失败",
                     HttpStatus.INTERNAL_SERVER_ERROR
             );
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public byte[] barcodeArchive(List<Long> barcodeIds, int width, int height) {
+        var current = SecurityUtils.currentUser();
+        List<EquipmentDtos.BarcodeRow> rows = mapper.findBarcodes(
+                current.tenantId(), DataPermission.all(current.userId()), null, true
+        ).stream().filter(row -> barcodeIds == null || barcodeIds.isEmpty()
+                        || barcodeIds.contains(row.id()))
+                .toList();
+        if (rows.isEmpty()) {
+            throw new BusinessException("BARCODE_ARCHIVE_EMPTY", "没有可下载的有效二维码");
+        }
+        if (rows.size() > 1000) {
+            throw new BusinessException("BARCODE_ARCHIVE_TOO_LARGE", "一次最多下载 1000 个二维码");
+        }
+        try (ByteArrayOutputStream output = new ByteArrayOutputStream();
+             ZipOutputStream zip = new ZipOutputStream(output, StandardCharsets.UTF_8)) {
+            for (EquipmentDtos.BarcodeRow row : rows) {
+                if (!"QR".equals(row.barcodeType())) continue;
+                String filename = (row.equipmentCode() + "-" + row.equipmentName())
+                        .replaceAll("[\\\\/:*?\"<>|]", "_") + ".png";
+                zip.putNextEntry(new ZipEntry(filename));
+                zip.write(barcodeImage(row.id(), width, height));
+                zip.closeEntry();
+            }
+            zip.finish();
+            return output.toByteArray();
+        } catch (IOException exception) {
+            throw new BusinessException("BARCODE_ARCHIVE_FAILED", "二维码压缩包生成失败");
         }
     }
 

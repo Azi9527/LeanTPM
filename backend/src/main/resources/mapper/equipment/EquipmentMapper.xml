@@ -475,6 +475,21 @@
         ORDER BY barcode.generated_time DESC, barcode.id DESC
     </select>
 
+    <select id="findActiveEquipmentIdsWithoutBarcode" resultType="long">
+        SELECT e.id
+        FROM equipment e
+        LEFT JOIN equipment_barcode barcode
+          ON barcode.tenant_id = e.tenant_id
+         AND barcode.equipment_id = e.id
+         AND barcode.active_slot = 1
+        WHERE e.tenant_id = #{tenantId}
+          AND e.status = 1
+          AND e.deleted = 0
+          AND barcode.id IS NULL
+          AND <include refid="dataScope"/>
+        ORDER BY e.id
+    </select>
+
     <select id="findBarcode"
             resultType="com.leantpm.equipment.EquipmentDtos$BarcodeRow">
         SELECT barcode.id, barcode.equipment_id, equipment.equipment_code,

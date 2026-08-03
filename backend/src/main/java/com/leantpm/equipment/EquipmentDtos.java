@@ -223,6 +223,13 @@ public final class EquipmentDtos {
     ) {
     }
 
+    public record BulkBarcodeResult(
+            int equipmentCount,
+            int generatedCount,
+            int existingCount
+    ) {
+    }
+
     public record PublicEquipmentView(
             String accessToken,
             String equipmentCode,

@@ -212,6 +212,15 @@ class EquipmentMySqlIntegrationTest {
 
         authenticateAdministrator();
 
+        service.unbindBarcode(equipmentId, "批量生成测试");
+        EquipmentDtos.BulkBarcodeResult bulk = service.generateMissingBarcodes(
+                new EquipmentDtos.GenerateBarcodeRequest("QR", null)
+        );
+        assertThat(bulk.generatedCount()).isGreaterThanOrEqualTo(1);
+        EquipmentDtos.BarcodeRow bulkGenerated = service.barcodes(equipmentId, true).getFirst();
+        byte[] archive = service.barcodeArchive(List.of(bulkGenerated.id()), 600, 600);
+        assertThat(archive).startsWith((byte) 'P', (byte) 'K');
+
         assertThat(service.importTemplate()).isNotEmpty();
         assertThat(service.exportWorkbook(
                 "EQ-IT-001", null, null, null, null, null, null

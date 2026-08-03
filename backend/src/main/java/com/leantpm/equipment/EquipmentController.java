@@ -159,6 +159,15 @@ public class EquipmentController {
         return ApiResponse.success(service.generateBarcode(id, request, false));
     }
 
+    @PostMapping("/equipment/barcodes/generate-all")
+    @Idempotent
+    @PreAuthorize("hasAuthority('equipment:barcode:manage')")
+    public ApiResponse<EquipmentDtos.BulkBarcodeResult> generateAllBarcodes(
+            @Valid @RequestBody EquipmentDtos.GenerateBarcodeRequest request
+    ) {
+        return ApiResponse.success(service.generateMissingBarcodes(request));
+    }
+
     @PostMapping("/equipment/{id}/barcode/regenerate")
     @Idempotent
     @PreAuthorize("hasAuthority('equipment:barcode:manage')")
@@ -191,6 +200,22 @@ public class EquipmentController {
                 .cacheControl(org.springframework.http.CacheControl.noStore())
                 .contentType(MediaType.IMAGE_PNG)
                 .body(service.barcodeImage(id, width, height));
+    }
+
+    @GetMapping(value = "/equipment/barcodes/archive", produces = "application/zip")
+    @PreAuthorize("hasAuthority('equipment:barcode:print')")
+    public ResponseEntity<byte[]> barcodeArchive(
+            @RequestParam(required = false) List<Long> ids,
+            @RequestParam(defaultValue = "600") @Min(240) @Max(1600) int width,
+            @RequestParam(defaultValue = "600") @Min(240) @Max(1600) int height
+    ) {
+        ContentDisposition disposition = ContentDisposition.attachment()
+                .filename("LeanTPM-equipment-qr-codes.zip", StandardCharsets.UTF_8)
+                .build();
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
+                .contentType(MediaType.parseMediaType("application/zip"))
+                .body(service.barcodeArchive(ids, width, height));
     }
 
     @GetMapping("/public/equipment/{token}")

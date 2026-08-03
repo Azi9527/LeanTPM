@@ -187,6 +187,11 @@ public interface EquipmentMapper {
             @Param("activeOnly") boolean activeOnly
     );
 
+    List<Long> findActiveEquipmentIdsWithoutBarcode(
+            @Param("tenantId") long tenantId,
+            @Param("scope") DataPermission scope
+    );
+
     EquipmentDtos.BarcodeRow findBarcode(
             @Param("tenantId") long tenantId,
             @Param("barcodeId") long barcodeId

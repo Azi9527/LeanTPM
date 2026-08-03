@@ -16,6 +16,9 @@ const previewVisible = ref(false)
 const selected = ref<BarcodeRow | null>(null)
 const selectedPrintIds = ref<number[]>([])
 const imageUrls = reactive<Record<number, string>>({})
+const generatingAll = ref(false)
+const downloading = ref(false)
+const label = reactive({ widthMm: 60, heightMm: 80, imagePixels: 600 })
 const form = reactive({
   equipmentId: undefined as number | undefined,
   barcodeType: 'QR' as 'QR' | 'CODE128',
@@ -53,8 +56,8 @@ async function load() {
       .map(async (row) => {
         const blob = await equipmentApi.barcodeImage(
           row.id,
-          row.barcodeType === 'QR' ? 260 : 520,
-          row.barcodeType === 'QR' ? 260 : 140,
+          row.barcodeType === 'QR' ? label.imagePixels : Math.min(1200, label.imagePixels * 2),
+          row.barcodeType === 'QR' ? label.imagePixels : Math.max(120, Math.round(label.imagePixels / 2)),
         )
         imageUrls[row.id] = URL.createObjectURL(blob)
       }))
@@ -106,6 +109,41 @@ async function save() {
   }
 }
 
+async function generateAll() {
+  generatingAll.value = true
+  try {
+    const result = await equipmentApi.generateAllBarcodes({ barcodeType: 'QR' })
+    ElMessage.success(`已生成 ${result.generatedCount} 个二维码，${result.existingCount} 台设备已有标签`)
+    await load()
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  } finally {
+    generatingAll.value = false
+  }
+}
+
+async function downloadPngArchive(selectedOnly: boolean) {
+  const ids = selectedOnly ? selectedPrintIds.value : undefined
+  if (selectedOnly && !ids?.length) {
+    ElMessage.warning('请先选择需要下载的有效二维码')
+    return
+  }
+  downloading.value = true
+  try {
+    const blob = await equipmentApi.barcodeArchive(ids, label.imagePixels, label.imagePixels)
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = 'LeanTPM-equipment-qr-codes.zip'
+    anchor.click()
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  } finally {
+    downloading.value = false
+  }
+}
+
 async function unbind(row: BarcodeRow) {
   const { value } = await ElMessageBox.prompt(
     `解绑后，设备 ${row.equipmentCode} 的当前条码将立即失效。`,
@@ -138,7 +176,7 @@ function printLabel(row: BarcodeRow) {
     <!doctype html><html><head><title>${escapeHtml(row.equipmentCode)}</title>
     <style>
       body{font-family:Arial,"Microsoft YaHei",sans-serif;display:grid;place-items:center;margin:0;min-height:100vh}
-      .label{text-align:center;border:1px solid #d1d5db;padding:24px 32px;border-radius:12px}
+      .label{box-sizing:border-box;width:${label.widthMm}mm;height:${label.heightMm}mm;text-align:center;border:1px solid #d1d5db;padding:6mm;border-radius:3mm}
       img{max-width:560px;max-height:360px}
       h2{margin:12px 0 4px}.code{font:16px monospace;color:#4b5563}
     </style></head><body><div class="label">
@@ -172,7 +210,7 @@ function printSelected() {
     <!doctype html><html><head><title>LeanTPM 设备标签</title>
     <style>
       body{font-family:Arial,"Microsoft YaHei",sans-serif;display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin:20px}
-      .label{text-align:center;border:1px solid #d1d5db;padding:18px;break-inside:avoid;border-radius:10px}
+      .label{box-sizing:border-box;width:${label.widthMm}mm;height:${label.heightMm}mm;text-align:center;border:1px solid #d1d5db;padding:4mm;break-inside:avoid;border-radius:2mm}
       img{max-width:100%;height:220px;object-fit:contain}h2{margin:10px 0 4px}.code{font:15px monospace;color:#4b5563}
       @media print{body{margin:0}.label{page-break-inside:avoid}}
     </style></head><body>${labels}<script>window.onload=()=>window.print()<\/script></body></html>
@@ -203,6 +241,11 @@ function escapeHtml(value: string) {
         type="primary"
         @click="openGenerate()"
       >生成条码</el-button>
+      <el-button
+        v-if="auth.can('equipment:barcode:manage')"
+        :loading="generatingAll"
+        @click="generateAll"
+      >一键生成全部二维码</el-button>
     </header>
 
     <section class="surface-card query-bar">
@@ -215,12 +258,26 @@ function escapeHtml(value: string) {
         />
       </el-select>
       <el-checkbox v-model="activeOnly">仅显示有效条码</el-checkbox>
+      <el-input-number v-model="label.widthMm" :min="20" :max="200" controls-position="right" />
+      <span>宽 mm</span>
+      <el-input-number v-model="label.heightMm" :min="20" :max="200" controls-position="right" />
+      <span>高 mm</span>
+      <el-select v-model="label.imagePixels" style="width: 125px">
+        <el-option label="清晰 600px" :value="600" />
+        <el-option label="高清 900px" :value="900" />
+        <el-option label="超清 1200px" :value="1200" />
+      </el-select>
       <el-button type="primary" @click="load">查询</el-button>
       <el-button
         v-if="auth.can('equipment:barcode:print')"
         :disabled="!selectedPrintIds.length"
         @click="printSelected"
       >批量打印（{{ selectedPrintIds.length }}）</el-button>
+      <el-button
+        v-if="auth.can('equipment:barcode:print')"
+        :loading="downloading"
+        @click="downloadPngArchive(Boolean(selectedPrintIds.length))"
+      >{{ selectedPrintIds.length ? '下载选中 PNG' : '下载全部 PNG' }}</el-button>
     </section>
 
     <section class="surface-card barcode-grid" v-loading="loading">
