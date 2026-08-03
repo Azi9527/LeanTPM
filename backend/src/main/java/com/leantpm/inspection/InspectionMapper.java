@@ -325,6 +325,20 @@ public interface InspectionMapper {
             @Param("limit") int limit
     );
 
+    List<InspectionDtos.TaskAbnormalExportRow> findTaskAbnormalExportRows(
+            @Param("tenantId") long tenantId,
+            @Param("scope") DataPermission scope,
+            @Param("query") InspectionDtos.TaskQuery query,
+            @Param("limit") int limit
+    );
+
+    List<InspectionDtos.TaskAttachmentExportRow> findTaskAttachmentExportRows(
+            @Param("tenantId") long tenantId,
+            @Param("scope") DataPermission scope,
+            @Param("query") InspectionDtos.TaskQuery query,
+            @Param("limit") int limit
+    );
+
     InspectionDtos.TaskRow findTask(
             @Param("tenantId") long tenantId,
             @Param("id") long id,

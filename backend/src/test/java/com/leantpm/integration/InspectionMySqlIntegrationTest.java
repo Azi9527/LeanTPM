@@ -4,6 +4,8 @@ import com.leantpm.equipment.EquipmentDtos;
 import com.leantpm.equipment.EquipmentService;
 import com.leantpm.inspection.InspectionCatalogService;
 import com.leantpm.inspection.InspectionDtos;
+import com.leantpm.inspection.InspectionImportDtos;
+import com.leantpm.inspection.InspectionImportService;
 import com.leantpm.inspection.InspectionTaskService;
 import com.leantpm.security.CurrentUser;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -16,11 +18,13 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -57,6 +61,9 @@ class InspectionMySqlIntegrationTest {
 
     @Autowired
     private InspectionTaskService taskService;
+
+    @Autowired
+    private InspectionImportService importService;
 
     @Autowired
     private JdbcTemplate jdbc;
@@ -365,6 +372,7 @@ class InspectionMySqlIntegrationTest {
                 equipmentId,
                 schemeId,
                 true,
+                "HIGH",
                 false
         );
         assertThat(taskService.tasks(resultQuery, 1, 20).records())
@@ -377,6 +385,8 @@ class InspectionMySqlIntegrationTest {
         try (var workbook = new XSSFWorkbook(new ByteArrayInputStream(workbookBytes))) {
             assertThat(workbook.getSheet("任务汇总").getLastRowNum()).isEqualTo(1);
             assertThat(workbook.getSheet("逐项结果").getLastRowNum()).isEqualTo(3);
+            assertThat(workbook.getSheet("异常记录").getLastRowNum()).isEqualTo(1);
+            assertThat(workbook.getSheet("附件索引").getLastRowNum()).isZero();
             assertThat(workbook.getSheet("逐项结果").getRow(1).getCell(0).getStringCellValue())
                     .isEqualTo(generated.taskCodes().getFirst());
         } catch (Exception exception) {
@@ -405,6 +415,76 @@ class InspectionMySqlIntegrationTest {
         ).records())
                 .extracting(InspectionDtos.PlanRow::equipmentId)
                 .containsExactlyInAnyOrder(manualEquipmentOne, manualEquipmentTwo);
+    }
+
+    @Test
+    void validatesAndIdempotentlyCommitsInspectionWorkbook() {
+        byte[] template = importService.template();
+        var file = new MockMultipartFile(
+                "file",
+                "inspection-import.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                template
+        );
+
+        InspectionImportDtos.ImportResult validated = importService.validate(file);
+        assertThat(validated.status()).isEqualTo("VALIDATED");
+        assertThat(validated.errors()).isEmpty();
+        assertThat(validated.itemRows()).isEqualTo(1);
+        assertThat(validated.schemeRows()).isEqualTo(1);
+        assertThat(validated.relationRows()).isEqualTo(2);
+
+        try (var invalidWorkbook = new XSSFWorkbook(new ByteArrayInputStream(template));
+             var invalidBytes = new ByteArrayOutputStream()) {
+            invalidWorkbook.getSheet("适用设备").getRow(1).getCell(1)
+                    .setCellValue("EQUIPMENT-NOT-FOUND");
+            invalidWorkbook.write(invalidBytes);
+            InspectionImportDtos.ImportResult invalid = importService.validate(
+                    new MockMultipartFile(
+                            "file", "inspection-invalid.xlsx",
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            invalidBytes.toByteArray()
+                    )
+            );
+            assertThat(invalid.status()).isEqualTo("INVALID");
+            assertThat(invalid.errors()).anySatisfy(error -> {
+                assertThat(error.sheet()).isEqualTo("适用设备");
+                assertThat(error.rowNumber()).isEqualTo(2);
+                assertThat(error.column()).isEqualTo("设备编码");
+            });
+        } catch (Exception exception) {
+            throw new AssertionError("无法构造点检导入错误样例", exception);
+        }
+
+        InspectionImportDtos.ImportResult committed = importService.commit(
+                validated.batchId()
+        );
+        assertThat(committed.status()).isEqualTo("COMMITTED");
+        assertThat(committed.newItems()).isEqualTo(1);
+        assertThat(committed.newSchemes()).isEqualTo(1);
+        assertThat(committed.committedTime()).isNotNull();
+
+        InspectionImportDtos.ImportResult repeated = importService.commit(
+                validated.batchId()
+        );
+        assertThat(repeated.status()).isEqualTo("COMMITTED");
+        assertThat(repeated.committedTime()).isEqualTo(committed.committedTime());
+        assertThat(catalogService.items(
+                "IMP-LUB-001", null, null, null, 1, 20
+        ).records())
+                .singleElement()
+                .extracting(InspectionDtos.ItemRow::itemName)
+                .isEqualTo("润滑油液位");
+        InspectionDtos.SchemeRow importedScheme = catalogService.schemes(
+                "IMP-SCHEME-001", null, null, 1, 20
+        ).records().getFirst();
+        assertThat(catalogService.scheme(importedScheme.id(), null).version().versionStatus())
+                .isEqualTo("DRAFT");
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM inspection_import_batch WHERE batch_code = ?",
+                Integer.class,
+                validated.batchId()
+        )).isEqualTo(1);
     }
 
     private InspectionDtos.SaveResultRequest result(

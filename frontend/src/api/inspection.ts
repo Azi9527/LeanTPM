@@ -320,9 +320,31 @@ export interface TaskQuery {
   equipmentId?: number
   schemeId?: number
   abnormalOnly?: boolean
+  abnormalSeverity?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
   mineOnly?: boolean
   page?: number
   pageSize?: number
+}
+
+export interface InspectionImportError {
+  sheet: string
+  rowNumber: number
+  column?: string
+  message: string
+}
+
+export interface InspectionImportResult {
+  batchId: string
+  status: 'VALIDATED' | 'INVALID' | 'COMMITTED'
+  itemRows: number
+  schemeRows: number
+  relationRows: number
+  newItems: number
+  updatedItems: number
+  newSchemes: number
+  newSchemeVersions: number
+  errors: InspectionImportError[]
+  committedTime?: string
 }
 
 async function getData<T>(url: string, params?: object): Promise<T> {
@@ -331,6 +353,37 @@ async function getData<T>(url: string, params?: object): Promise<T> {
 }
 
 export const inspectionApi = {
+  downloadImportTemplate: async () => {
+    const response = await http.get<Blob>('/inspection/import-template', {
+      responseType: 'blob',
+    })
+    const url = URL.createObjectURL(response.data)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = 'LeanTPM-点检批量导入模板.xlsx'
+    anchor.click()
+    URL.revokeObjectURL(url)
+  },
+  validateImport: async (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    const response = await http.post<ApiResponse<InspectionImportResult>>(
+      '/inspection/import/validate',
+      form,
+    )
+    return response.data.data
+  },
+  commitImport: async (batchId: string) => {
+    const response = await http.post<ApiResponse<InspectionImportResult>>(
+      '/inspection/import/commit',
+      undefined,
+      { params: { batchId } },
+    )
+    return response.data.data
+  },
+  importBatch: (batchId: string) =>
+    getData<InspectionImportResult>(`/inspection/imports/${batchId}`),
+
   items: (params: object) =>
     getData<PageResult<ItemRow>>('/inspection/items', params),
   item: (id: number) => getData<ItemRow>(`/inspection/items/${id}`),

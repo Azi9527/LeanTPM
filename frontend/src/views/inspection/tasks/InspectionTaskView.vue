@@ -38,6 +38,7 @@ const filters = reactive({
   equipmentId: undefined as number | undefined,
   schemeId: undefined as number | undefined,
   abnormalOnly: false,
+  abnormalSeverity: undefined as TaskQuery['abnormalSeverity'],
 })
 
 const createForm = reactive({
@@ -103,6 +104,7 @@ function taskQuery(includePage: boolean): TaskQuery {
     equipmentId: filters.equipmentId,
     schemeId: filters.schemeId,
     abnormalOnly: filters.abnormalOnly || undefined,
+    abnormalSeverity: filters.abnormalSeverity,
     page: includePage ? page.value : undefined,
     pageSize: includePage ? 20 : undefined,
   }
@@ -132,6 +134,7 @@ function resetFilters() {
     equipmentId: undefined,
     schemeId: undefined,
     abnormalOnly: false,
+    abnormalSeverity: undefined,
   })
   page.value = 1
   load()
@@ -334,6 +337,12 @@ async function close(row: TaskRow, targetStatus: 'CANCELLED' | 'VOIDED') {
         <el-option v-for="row in schemes" :key="row.id" :label="row.schemeName" :value="row.id" />
       </el-select>
       <el-checkbox v-model="filters.abnormalOnly">仅异常</el-checkbox>
+      <el-select v-model="filters.abnormalSeverity" clearable placeholder="异常等级">
+        <el-option label="低" value="LOW" />
+        <el-option label="中" value="MEDIUM" />
+        <el-option label="高" value="HIGH" />
+        <el-option label="紧急" value="CRITICAL" />
+      </el-select>
       <el-button type="primary" @click="page = 1; load()">查询</el-button>
       <el-button @click="resetFilters">重置</el-button>
       <el-button v-if="auth.can('inspection:task:export')" :loading="exporting" @click="exportResults">导出结果</el-button>

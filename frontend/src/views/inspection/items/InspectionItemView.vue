@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { inspectionApi, type ItemRow, type ResultType } from '@/api/inspection'
 import { useAuthStore } from '@/stores/auth'
 import { errorMessage } from '@/utils/http'
+import InspectionImportDialog from '@/components/inspection/InspectionImportDialog.vue'
 
 const auth = useAuthStore()
 const loading = ref(false)
@@ -14,6 +15,7 @@ const page = ref(1)
 const keyword = ref('')
 const resultType = ref<ResultType>()
 const dialogVisible = ref(false)
+const importVisible = ref(false)
 const editing = ref<ItemRow | null>(null)
 
 const form = reactive({
@@ -180,7 +182,10 @@ function parseOptions(value?: string): string[] {
         <h1>点检项目</h1>
         <p>建立可复用的点检标准、结果类型、阈值、拍照和异常规则。</p>
       </div>
-      <el-button v-if="auth.can('inspection:item:manage')" type="primary" @click="open()">新增项目</el-button>
+      <div class="page-actions">
+        <el-button v-if="auth.can('inspection:import')" @click="importVisible = true">批量导入</el-button>
+        <el-button v-if="auth.can('inspection:item:manage')" type="primary" @click="open()">新增项目</el-button>
+      </div>
     </header>
 
     <section class="surface-card query-bar">
@@ -249,11 +254,13 @@ function parseOptions(value?: string): string[] {
       </el-form>
       <template #footer><el-button @click="dialogVisible = false">取消</el-button><el-button type="primary" :loading="saving" @click="save">保存</el-button></template>
     </el-dialog>
+    <InspectionImportDialog v-model="importVisible" @committed="load" />
   </div>
 </template>
 
 <style scoped>
 .form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 16px; }
+.page-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .full { grid-column: 1 / -1; }
 @media (max-width: 640px) { .form-grid { grid-template-columns: 1fr; } .full { grid-column: auto; } }
 </style>

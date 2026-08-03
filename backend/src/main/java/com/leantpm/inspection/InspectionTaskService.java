@@ -47,6 +47,8 @@ public class InspectionTaskService {
             Set.of("PENDING", "IN_PROGRESS", "OVERDUE");
     private static final Set<String> TIME_FIELDS =
             Set.of("PLANNED_DATE", "STARTED_TIME", "SUBMITTED_TIME", "COMPLETED_TIME");
+    private static final Set<String> ABNORMAL_SEVERITIES =
+            Set.of("LOW", "MEDIUM", "HIGH", "CRITICAL");
 
     private final InspectionMapper mapper;
     private final NumberRuleService numberRuleService;
@@ -88,7 +90,7 @@ public class InspectionTaskService {
     ) {
         return tasks(new InspectionDtos.TaskQuery(
                 keyword, taskStatus, plannedDate, "PLANNED_DATE", null, null,
-                null, null, null, null, null, false, mineOnly
+                null, null, null, null, null, false, null, mineOnly
         ), page, pageSize);
     }
 
@@ -138,7 +140,22 @@ public class InspectionTaskService {
                     "点检明细达到 " + EXPORT_RESULT_LIMIT + " 条，请缩小筛选范围"
             );
         }
-        return exportWorkbook(tasks, results);
+        List<InspectionDtos.TaskAbnormalExportRow> abnormalities =
+                mapper.findTaskAbnormalExportRows(
+                        current.tenantId(), scope, query, EXPORT_RESULT_LIMIT + 1
+                );
+        List<InspectionDtos.TaskAttachmentExportRow> attachments =
+                mapper.findTaskAttachmentExportRows(
+                        current.tenantId(), scope, query, EXPORT_RESULT_LIMIT + 1
+                );
+        if (abnormalities.size() > EXPORT_RESULT_LIMIT
+                || attachments.size() > EXPORT_RESULT_LIMIT) {
+            throw new BusinessException(
+                    "INSPECTION_EXPORT_RELATION_TOO_LARGE",
+                    "点检异常或附件索引超过 " + EXPORT_RESULT_LIMIT + " 条，请缩小筛选范围"
+            );
+        }
+        return exportWorkbook(tasks, results, abnormalities, attachments);
     }
 
     @Transactional(readOnly = true)
@@ -946,7 +963,7 @@ public class InspectionTaskService {
         InspectionDtos.TaskQuery source = query == null
                 ? new InspectionDtos.TaskQuery(
                         null, null, null, "PLANNED_DATE", null, null,
-                        null, null, null, null, null, false, false
+                        null, null, null, null, null, false, null, false
                 ) : query;
         String timeField = upper(source.timeField());
         if (timeField == null) {
@@ -963,17 +980,26 @@ public class InspectionTaskService {
                     "INSPECTION_DATE_RANGE_INVALID", "开始日期不能晚于结束日期"
             );
         }
+        String abnormalSeverity = upper(source.abnormalSeverity());
+        if (abnormalSeverity != null && !ABNORMAL_SEVERITIES.contains(abnormalSeverity)) {
+            throw new BusinessException(
+                    "INSPECTION_ABNORMAL_SEVERITY_INVALID", "异常等级查询条件不正确"
+            );
+        }
         return new InspectionDtos.TaskQuery(
                 clean(source.keyword()), upper(source.taskStatus()), source.plannedDate(),
                 timeField, source.startDate(), source.endDate(), source.organizationId(),
                 clean(source.teamCode()), source.assigneeUserId(), source.equipmentId(),
-                source.schemeId(), source.abnormalOnly(), source.mineOnly()
+                source.schemeId(), source.abnormalOnly(), abnormalSeverity,
+                source.mineOnly()
         );
     }
 
     private byte[] exportWorkbook(
             List<InspectionDtos.TaskRow> tasks,
-            List<InspectionDtos.TaskResultExportRow> results
+            List<InspectionDtos.TaskResultExportRow> results,
+            List<InspectionDtos.TaskAbnormalExportRow> abnormalities,
+            List<InspectionDtos.TaskAttachmentExportRow> attachments
     ) {
         try (var workbook = new XSSFWorkbook(); var output = new ByteArrayOutputStream()) {
             CellStyle header = headerStyle(workbook);
@@ -1055,6 +1081,64 @@ public class InspectionTaskService {
                 date(row, column, result.executedTime(), dateTime);
             }
             finishSheet(detail, detailHeaders.length);
+
+            Sheet abnormalSheet = workbook.createSheet("异常记录");
+            String[] abnormalHeaders = {
+                    "异常编号", "任务编号", "设备编号", "设备名称", "点检项目",
+                    "异常标题", "异常说明", "严重度", "状态", "责任人", "处理期限",
+                    "临时措施", "最终结果", "关闭人", "关闭时间", "验证人", "验证时间",
+                    "验证意见", "创建时间"
+            };
+            writeHeader(abnormalSheet, abnormalHeaders, header);
+            rowIndex = 1;
+            for (InspectionDtos.TaskAbnormalExportRow abnormal : abnormalities) {
+                Row row = abnormalSheet.createRow(rowIndex++);
+                int column = 0;
+                text(row, column++, abnormal.abnormalCode());
+                text(row, column++, abnormal.taskCode());
+                text(row, column++, abnormal.equipmentCode());
+                text(row, column++, abnormal.equipmentName());
+                text(row, column++, abnormal.itemName());
+                text(row, column++, abnormal.abnormalTitle());
+                text(row, column++, abnormal.abnormalDescription());
+                text(row, column++, abnormal.severity());
+                text(row, column++, abnormal.abnormalStatus());
+                text(row, column++, abnormal.responsibleUserName());
+                date(row, column++, abnormal.dueTime(), dateTime);
+                text(row, column++, abnormal.temporaryAction());
+                text(row, column++, abnormal.finalResult());
+                text(row, column++, abnormal.closedByName());
+                date(row, column++, abnormal.closedTime(), dateTime);
+                text(row, column++, abnormal.verifiedByName());
+                date(row, column++, abnormal.verifiedTime(), dateTime);
+                text(row, column++, abnormal.verificationComment());
+                date(row, column, abnormal.createdTime(), dateTime);
+            }
+            finishSheet(abnormalSheet, abnormalHeaders.length);
+
+            Sheet attachmentSheet = workbook.createSheet("附件索引");
+            String[] attachmentHeaders = {
+                    "任务编号", "设备编号", "设备名称", "点检项目", "附件ID",
+                    "文件名", "内容类型", "扩展名", "文件大小（字节）", "附件类型", "上传时间"
+            };
+            writeHeader(attachmentSheet, attachmentHeaders, header);
+            rowIndex = 1;
+            for (InspectionDtos.TaskAttachmentExportRow attachment : attachments) {
+                Row row = attachmentSheet.createRow(rowIndex++);
+                int column = 0;
+                text(row, column++, attachment.taskCode());
+                text(row, column++, attachment.equipmentCode());
+                text(row, column++, attachment.equipmentName());
+                text(row, column++, attachment.itemName());
+                number(row, column++, attachment.attachmentId());
+                text(row, column++, attachment.originalName());
+                text(row, column++, attachment.contentType());
+                text(row, column++, attachment.extension());
+                number(row, column++, attachment.fileSize());
+                text(row, column++, attachment.attachmentType());
+                date(row, column, attachment.createdTime(), dateTime);
+            }
+            finishSheet(attachmentSheet, attachmentHeaders.length);
             workbook.write(output);
             return output.toByteArray();
         } catch (IOException exception) {

@@ -22,7 +22,9 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDate;
 import java.nio.charset.StandardCharsets;
@@ -35,13 +37,63 @@ import java.util.Map;
 public class InspectionController {
     private final InspectionCatalogService catalogService;
     private final InspectionTaskService taskService;
+    private final InspectionImportService importService;
 
     public InspectionController(
             InspectionCatalogService catalogService,
-            InspectionTaskService taskService
+            InspectionTaskService taskService,
+            InspectionImportService importService
     ) {
         this.catalogService = catalogService;
         this.taskService = taskService;
+        this.importService = importService;
+    }
+
+    @GetMapping("/import-template")
+    @PreAuthorize("hasAuthority('inspection:import')")
+    public ResponseEntity<byte[]> importTemplate() {
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                ))
+                .header(
+                        HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment()
+                                .filename(
+                                        "LeanTPM-inspection-import-template.xlsx",
+                                        StandardCharsets.UTF_8
+                                )
+                                .build().toString()
+                )
+                .body(importService.template());
+    }
+
+    @PostMapping(
+            value = "/import/validate",
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE
+    )
+    @PreAuthorize("hasAuthority('inspection:import')")
+    public ApiResponse<InspectionImportDtos.ImportResult> validateImport(
+            @RequestPart("file") MultipartFile file
+    ) {
+        return ApiResponse.success(importService.validate(file));
+    }
+
+    @PostMapping("/import/commit")
+    @Idempotent
+    @PreAuthorize("hasAuthority('inspection:import')")
+    public ApiResponse<InspectionImportDtos.ImportResult> commitImport(
+            @RequestParam String batchId
+    ) {
+        return ApiResponse.success(importService.commit(batchId));
+    }
+
+    @GetMapping("/imports/{batchId}")
+    @PreAuthorize("hasAuthority('inspection:import')")
+    public ApiResponse<InspectionImportDtos.ImportResult> importBatch(
+            @PathVariable String batchId
+    ) {
+        return ApiResponse.success(importService.batch(batchId));
     }
 
     @GetMapping("/items")
@@ -206,6 +258,7 @@ public class InspectionController {
             @RequestParam(required = false) Long equipmentId,
             @RequestParam(required = false) Long schemeId,
             @RequestParam(defaultValue = "false") boolean abnormalOnly,
+            @RequestParam(required = false) String abnormalSeverity,
             @RequestParam(defaultValue = "false") boolean mineOnly,
             @RequestParam(defaultValue = "1") @Min(1) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(200) int pageSize
@@ -213,7 +266,7 @@ public class InspectionController {
         return ApiResponse.success(taskService.tasks(new InspectionDtos.TaskQuery(
                 keyword, taskStatus, plannedDate, timeField, startDate, endDate,
                 organizationId, teamCode, assigneeUserId, equipmentId, schemeId,
-                abnormalOnly, mineOnly
+                abnormalOnly, abnormalSeverity, mineOnly
         ), page, pageSize));
     }
 
@@ -231,12 +284,13 @@ public class InspectionController {
             @RequestParam(required = false) Long equipmentId,
             @RequestParam(required = false) Long schemeId,
             @RequestParam(defaultValue = "false") boolean abnormalOnly,
+            @RequestParam(required = false) String abnormalSeverity,
             @RequestParam(defaultValue = "false") boolean mineOnly
     ) {
         byte[] workbook = taskService.exportResults(new InspectionDtos.TaskQuery(
                 keyword, taskStatus, null, timeField, startDate, endDate,
                 organizationId, teamCode, assigneeUserId, equipmentId, schemeId,
-                abnormalOnly, mineOnly
+                abnormalOnly, abnormalSeverity, mineOnly
         ));
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(

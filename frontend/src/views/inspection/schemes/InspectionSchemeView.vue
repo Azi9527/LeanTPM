@@ -6,6 +6,7 @@ import { equipmentApi, type EquipmentRow } from '@/api/equipment'
 import { masterDataApi, type EquipmentCategoryRow, type ReferenceUser } from '@/api/masterData'
 import { useAuthStore } from '@/stores/auth'
 import { errorMessage } from '@/utils/http'
+import InspectionImportDialog from '@/components/inspection/InspectionImportDialog.vue'
 
 const auth = useAuthStore()
 const loading = ref(false)
@@ -16,6 +17,7 @@ const page = ref(1)
 const keyword = ref('')
 const dialogVisible = ref(false)
 const detailVisible = ref(false)
+const importVisible = ref(false)
 const editing = ref<SchemeRow | null>(null)
 const detail = ref<SchemeDetail | null>(null)
 const items = ref<ItemRow[]>([])
@@ -227,7 +229,10 @@ function csvNumbers(value?: string) {
   <div class="page-shell">
     <header class="page-header">
       <div><h1>点检方案</h1><p>方案按版本发布；已发布版本不可修改，历史任务永久保留项目快照。</p></div>
-      <el-button v-if="auth.can('inspection:scheme:manage')" type="primary" @click="open()">新增方案</el-button>
+      <div class="page-actions">
+        <el-button v-if="auth.can('inspection:import')" @click="importVisible = true">批量导入</el-button>
+        <el-button v-if="auth.can('inspection:scheme:manage')" type="primary" @click="open()">新增方案</el-button>
+      </div>
     </header>
     <section class="surface-card query-bar">
       <el-input v-model="keyword" clearable placeholder="方案编码或名称" @keyup.enter="page = 1; load()" />
@@ -293,11 +298,13 @@ function csvNumbers(value?: string) {
         <el-timeline><el-timeline-item v-for="version in detail.versionHistory" :key="version.id" :timestamp="version.publishedTime || version.effectiveDate"><el-button link type="primary" @click="showDetail(detail!.scheme, version.id)">V{{ version.versionNumber }} · {{ version.versionStatus }}</el-button> {{ version.changeSummary }}</el-timeline-item></el-timeline>
       </template>
     </el-drawer>
+    <InspectionImportDialog v-model="importVisible" @committed="load" />
   </div>
 </template>
 
 <style scoped>
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
+.page-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .full { grid-column: 1 / -1; }
 @media (max-width: 700px) { .form-grid { grid-template-columns: 1fr; } .full { grid-column: auto; } }
 </style>

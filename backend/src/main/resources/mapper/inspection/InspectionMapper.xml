@@ -738,6 +738,15 @@
                   AND abnormal_result.abnormal_flag = 1
             )
         </if>
+        <if test="query.abnormalSeverity != null and query.abnormalSeverity != ''">
+            AND EXISTS (
+                SELECT 1 FROM inspection_abnormal filtered_abnormal
+                WHERE filtered_abnormal.tenant_id = task.tenant_id
+                  AND filtered_abnormal.task_id = task.id
+                  AND filtered_abnormal.deleted = 0
+                  AND filtered_abnormal.severity = #{query.abnormalSeverity}
+            )
+        </if>
         <if test="query.mineOnly">
             AND (
                 task.assignee_user_id = #{scope.userId}
@@ -861,6 +870,61 @@
           ON executor.tenant_id = result.tenant_id AND executor.id = result.executed_by
         WHERE <include refid="taskFilters"/>
         ORDER BY task.planned_date DESC, task.id DESC, item.sort_order, item.id
+        LIMIT #{limit}
+    </select>
+
+    <select id="findTaskAbnormalExportRows"
+            resultType="com.leantpm.inspection.InspectionDtos$TaskAbnormalExportRow">
+        SELECT abnormal.abnormal_code, task.task_code,
+               e.equipment_code, e.equipment_name, item.item_name,
+               abnormal.abnormal_title, abnormal.abnormal_description,
+               abnormal.severity, abnormal.abnormal_status,
+               responsible.real_name AS responsible_user_name,
+               abnormal.due_time, abnormal.temporary_action, abnormal.final_result,
+               closer.real_name AS closed_by_name, abnormal.closed_time,
+               verifier.real_name AS verified_by_name, abnormal.verified_time,
+               abnormal.verification_comment, abnormal.created_time
+        FROM inspection_task task
+        <include refid="taskJoins"/>
+        JOIN inspection_abnormal abnormal
+          ON abnormal.tenant_id = task.tenant_id
+         AND abnormal.task_id = task.id
+         AND abnormal.deleted = 0
+        LEFT JOIN inspection_task_item item
+          ON item.tenant_id = abnormal.tenant_id AND item.id = abnormal.task_item_id
+        LEFT JOIN system_user responsible
+          ON responsible.tenant_id = abnormal.tenant_id
+         AND responsible.id = abnormal.responsible_user_id
+        LEFT JOIN system_user closer
+          ON closer.tenant_id = abnormal.tenant_id AND closer.id = abnormal.closed_by
+        LEFT JOIN system_user verifier
+          ON verifier.tenant_id = abnormal.tenant_id AND verifier.id = abnormal.verified_by
+        WHERE <include refid="taskFilters"/>
+        ORDER BY abnormal.created_time DESC, abnormal.id DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="findTaskAttachmentExportRows"
+            resultType="com.leantpm.inspection.InspectionDtos$TaskAttachmentExportRow">
+        SELECT task.task_code, e.equipment_code, e.equipment_name, item.item_name,
+               attachment.id AS attachment_id, attachment.original_name,
+               attachment.content_type, attachment.extension, attachment.file_size,
+               relation.attachment_type, attachment.created_time
+        FROM inspection_task task
+        <include refid="taskJoins"/>
+        JOIN inspection_attachment relation
+          ON relation.tenant_id = task.tenant_id AND relation.task_id = task.id
+        JOIN system_attachment attachment
+          ON attachment.tenant_id = relation.tenant_id
+         AND attachment.id = relation.attachment_id
+         AND attachment.deleted = 0
+        LEFT JOIN inspection_task_result result
+          ON result.tenant_id = relation.tenant_id
+         AND result.id = relation.task_result_id
+        LEFT JOIN inspection_task_item item
+          ON item.tenant_id = result.tenant_id AND item.id = result.task_item_id
+        WHERE <include refid="taskFilters"/>
+        ORDER BY task.planned_date DESC, task.id DESC, relation.id
         LIMIT #{limit}
     </select>
 

@@ -320,6 +320,7 @@ public final class InspectionDtos {
             Long equipmentId,
             Long schemeId,
             boolean abnormalOnly,
+            String abnormalSeverity,
             boolean mineOnly
     ) {
     }
@@ -352,6 +353,44 @@ public final class InspectionDtos {
             String abnormalDescription,
             String executedByName,
             LocalDateTime executedTime
+    ) {
+    }
+
+    public record TaskAbnormalExportRow(
+            String abnormalCode,
+            String taskCode,
+            String equipmentCode,
+            String equipmentName,
+            String itemName,
+            String abnormalTitle,
+            String abnormalDescription,
+            String severity,
+            String abnormalStatus,
+            String responsibleUserName,
+            LocalDateTime dueTime,
+            String temporaryAction,
+            String finalResult,
+            String closedByName,
+            LocalDateTime closedTime,
+            String verifiedByName,
+            LocalDateTime verifiedTime,
+            String verificationComment,
+            LocalDateTime createdTime
+    ) {
+    }
+
+    public record TaskAttachmentExportRow(
+            String taskCode,
+            String equipmentCode,
+            String equipmentName,
+            String itemName,
+            Long attachmentId,
+            String originalName,
+            String contentType,
+            String extension,
+            Long fileSize,
+            String attachmentType,
+            LocalDateTime createdTime
     ) {
     }
 
