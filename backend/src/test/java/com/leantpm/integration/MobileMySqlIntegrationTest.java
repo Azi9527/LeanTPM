@@ -82,7 +82,11 @@ class MobileMySqlIntegrationTest {
         assertThat(bootstrap.maxUploadMb()).isEqualTo(10);
         assertThat(bootstrap.photoPolicy().clockSkewWarningSeconds()).isEqualTo(300);
         assertThat(bootstrap.androidVersion().minimumVersionCode()).isEqualTo(2);
+        assertThat(bootstrap.equipmentStatus().total()).isEqualTo(8);
         assertThat(bootstrap.inspection()).isNotNull();
+        assertThat(bootstrap.inspectionAbnormal()).isNotNull();
+        assertThat(bootstrap.personalInspectionReport().startDate()).isNotNull();
+        assertThat(bootstrap.personalInspectionReport().endDate()).isNotNull();
         assertThat(bootstrap.maintenance()).isNotNull();
         assertThat(bootstrap.messages()).isNotNull();
 

@@ -74,6 +74,7 @@ export interface DashboardResult {
   startDate: string
   endDate: string
   organizationId?: number
+  periodType: 'DAY' | 'WEEK' | 'MONTH'
   refreshSeconds: number
   core: CoreMetrics
   statusDistribution: StatusMetric[]
@@ -289,7 +290,7 @@ async function data<T>(promise: Promise<{ data: ApiResponse<T> }>): Promise<T> {
 }
 
 export const visualizationApi = {
-  dashboard: (params: { startDate?: string; endDate?: string; organizationId?: number }) =>
+  dashboard: (params: { startDate?: string; endDate?: string; organizationId?: number; periodType?: 'DAY' | 'WEEK' | 'MONTH' }) =>
     data<DashboardResult>(http.get('/visualization/dashboard', { params })),
   scenes: () => data<SceneSummary[]>(http.get('/visualization/scenes')),
   scene: (id: number) => data<SceneDetail>(http.get(`/visualization/scenes/${id}`)),

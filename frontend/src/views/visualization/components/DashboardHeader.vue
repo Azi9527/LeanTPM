@@ -16,6 +16,7 @@ defineProps<{
 const startDate = defineModel<string>('startDate', { required: true })
 const endDate = defineModel<string>('endDate', { required: true })
 const organizationId = defineModel<number | undefined>('organizationId')
+const periodType = defineModel<'DAY' | 'WEEK' | 'MONTH'>('periodType', { required: true })
 const emit = defineEmits<{ refresh: []; fullscreen: [] }>()
 </script>
 
@@ -28,6 +29,14 @@ const emit = defineEmits<{ refresh: []; fullscreen: [] }>()
     </div>
     <div class="dashboard-actions">
       <div class="filters">
+        <el-segmented
+          v-model="periodType"
+          :options="[
+            { label: '日', value: 'DAY' },
+            { label: '周', value: 'WEEK' },
+            { label: '月', value: 'MONTH' },
+          ]"
+        />
         <el-date-picker v-model="startDate" type="date" value-format="YYYY-MM-DD" />
         <span>—</span>
         <el-date-picker v-model="endDate" type="date" value-format="YYYY-MM-DD" />
@@ -47,7 +56,7 @@ const emit = defineEmits<{ refresh: []; fullscreen: [] }>()
         </el-select>
       </div>
       <div class="buttons">
-        <span class="updated">更新 {{ generatedAt ? new Date(generatedAt).toLocaleTimeString() : '—' }}</span>
+        <span class="updated">每日自动刷新 · 更新 {{ generatedAt ? new Date(generatedAt).toLocaleTimeString() : '—' }}</span>
         <el-button :icon="Refresh" :loading="loading" @click="emit('refresh')">刷新</el-button>
         <el-button :icon="FullScreen" @click="emit('fullscreen')">全屏</el-button>
       </div>

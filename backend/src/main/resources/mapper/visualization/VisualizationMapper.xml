@@ -239,7 +239,16 @@
 
     <select id="workflowTrend"
             resultType="com.leantpm.visualization.VisualizationDtos$WorkflowTrend">
-        SELECT t.planned_date AS statistic_date,
+        SELECT
+               <choose>
+                   <when test="periodType == 'WEEK'">
+                       DATE_SUB(t.planned_date, INTERVAL WEEKDAY(t.planned_date) DAY)
+                   </when>
+                   <when test="periodType == 'MONTH'">
+                       DATE_SUB(t.planned_date, INTERVAL (DAYOFMONTH(t.planned_date) - 1) DAY)
+                   </when>
+                   <otherwise>t.planned_date</otherwise>
+               </choose> AS statistic_date,
                #{workflowType} AS workflow_type,
                COUNT(*) AS due,
                COALESCE(SUM(t.task_status = 'COMPLETED'), 0) AS completed,
@@ -273,8 +282,8 @@
           AND t.planned_date BETWEEN #{startDate} AND #{endDate}
           AND <include refid="equipmentScope"/>
           <include refid="organizationFilter"/>
-        GROUP BY t.planned_date
-        ORDER BY t.planned_date
+        GROUP BY statistic_date
+        ORDER BY statistic_date
     </select>
 
     <select id="integerParameter" resultType="int">

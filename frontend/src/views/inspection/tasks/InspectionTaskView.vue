@@ -7,8 +7,10 @@ import { equipmentApi, type EquipmentRow } from '@/api/equipment'
 import { masterDataApi, type OrganizationRow, type ReferenceUser } from '@/api/masterData'
 import { useAuthStore } from '@/stores/auth'
 import { errorMessage } from '@/utils/http'
+import { useRoute } from 'vue-router'
 
 const auth = useAuthStore()
+const route = useRoute()
 const loading = ref(false)
 const rows = ref<TaskRow[]>([])
 const total = ref(0)
@@ -78,6 +80,15 @@ const statusMeta: Record<TaskStatus, { label: string; type: '' | 'success' | 'wa
 }
 
 onMounted(async () => {
+  if (typeof route.query.startDate === 'string' && typeof route.query.endDate === 'string') {
+    filters.dateRange = [route.query.startDate, route.query.endDate]
+  }
+  if (typeof route.query.taskStatus === 'string') {
+    status.value = route.query.taskStatus as TaskStatus
+  }
+  filters.abnormalOnly = route.query.abnormalOnly === 'true'
+  const equipmentId = Number(route.query.equipmentId)
+  if (Number.isInteger(equipmentId) && equipmentId > 0) filters.equipmentId = equipmentId
   await Promise.all([load(), loadReferences()])
 })
 

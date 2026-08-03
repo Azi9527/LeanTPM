@@ -55,7 +55,10 @@ public class MobileService {
                         stringParameter(current.tenantId(), "mobile.android-download-url", ""),
                         stringParameter(current.tenantId(), "mobile.android-release-notes", "")
                 ),
+                mapper.equipmentStatusCount(current.tenantId()),
                 safeCount(mapper.inspectionCount(current.tenantId(), current.userId())),
+                mapper.inspectionAbnormalCount(current.tenantId(), current.userId()),
+                mapper.personalInspectionReport(current.tenantId(), current.userId()),
                 safeCount(mapper.maintenanceCount(current.tenantId(), current.userId())),
                 notificationService.messages(false, 1, 30).records().stream()
                         .map(message -> new MobileDtos.MessageItem(

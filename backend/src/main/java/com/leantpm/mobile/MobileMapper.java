@@ -26,6 +26,20 @@ public interface MobileMapper {
             @Param("userId") long userId
     );
 
+    MobileDtos.EquipmentStatusCount equipmentStatusCount(
+            @Param("tenantId") long tenantId
+    );
+
+    MobileDtos.AbnormalCount inspectionAbnormalCount(
+            @Param("tenantId") long tenantId,
+            @Param("userId") long userId
+    );
+
+    MobileDtos.PersonalInspectionReport personalInspectionReport(
+            @Param("tenantId") long tenantId,
+            @Param("userId") long userId
+    );
+
     MobileDtos.WorkCount maintenanceCount(
             @Param("tenantId") long tenantId,
             @Param("userId") long userId

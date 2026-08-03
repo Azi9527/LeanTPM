@@ -125,6 +125,70 @@
           )
     </select>
 
+    <select id="equipmentStatusCount"
+            resultType="com.leantpm.mobile.MobileDtos$EquipmentStatusCount">
+        SELECT COUNT(*) AS total,
+               COALESCE(SUM(current_status.status_code = 'RUNNING'), 0) AS running,
+               COALESCE(SUM(current_status.status_code = 'STOPPED'), 0) AS stopped,
+               COALESCE(SUM(current_status.status_code IN ('FAULT', 'REPAIR')), 0) AS fault,
+               COALESCE(SUM(current_status.status_code = 'OFFLINE'), 0) AS offline
+        FROM equipment e
+        LEFT JOIN equipment_current_status current_status
+          ON current_status.tenant_id = e.tenant_id
+         AND current_status.equipment_id = e.id
+        WHERE e.tenant_id = #{tenantId} AND e.status = 1 AND e.deleted = 0
+    </select>
+
+    <select id="inspectionAbnormalCount"
+            resultType="com.leantpm.mobile.MobileDtos$AbnormalCount">
+        SELECT COALESCE(SUM(abnormal.abnormal_status != 'CLOSED'), 0) AS open,
+               COALESCE(SUM(abnormal.abnormal_status != 'CLOSED'
+                            AND abnormal.severity = 'CRITICAL'), 0) AS critical,
+               COALESCE(SUM(abnormal.abnormal_status != 'CLOSED'
+                            AND abnormal.severity = 'HIGH'), 0) AS high
+        FROM inspection_abnormal abnormal
+        JOIN inspection_task task
+          ON task.tenant_id = abnormal.tenant_id
+         AND task.id = abnormal.task_id
+         AND task.deleted = 0
+        WHERE abnormal.tenant_id = #{tenantId} AND abnormal.deleted = 0
+          AND (
+              task.assignee_user_id = #{userId}
+              OR EXISTS (
+                  SELECT 1 FROM inspection_task_assignee assignee
+                  WHERE assignee.tenant_id = task.tenant_id
+                    AND assignee.task_id = task.id
+                    AND assignee.user_id = #{userId}
+              )
+          )
+    </select>
+
+    <select id="personalInspectionReport"
+            resultType="com.leantpm.mobile.MobileDtos$PersonalInspectionReport">
+        SELECT DATE_SUB(CURRENT_DATE(), INTERVAL 29 DAY) AS start_date,
+               CURRENT_DATE() AS end_date,
+               COUNT(*) AS due,
+               COALESCE(SUM(task.task_status = 'COMPLETED'), 0) AS completed,
+               COALESCE(SUM(EXISTS (
+                   SELECT 1 FROM inspection_abnormal abnormal
+                   WHERE abnormal.tenant_id = task.tenant_id
+                     AND abnormal.task_id = task.id AND abnormal.deleted = 0
+               )), 0) AS abnormal
+        FROM inspection_task task
+        WHERE task.tenant_id = #{tenantId} AND task.deleted = 0
+          AND task.planned_date BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 29 DAY)
+                                    AND CURRENT_DATE()
+          AND (
+              task.assignee_user_id = #{userId}
+              OR EXISTS (
+                  SELECT 1 FROM inspection_task_assignee assignee
+                  WHERE assignee.tenant_id = task.tenant_id
+                    AND assignee.task_id = task.id
+                    AND assignee.user_id = #{userId}
+              )
+          )
+    </select>
+
     <select id="maintenanceCount"
             resultType="com.leantpm.mobile.MobileDtos$WorkCount">
         SELECT COALESCE(SUM(planned_date = CURRENT_DATE()), 0) AS due_today,

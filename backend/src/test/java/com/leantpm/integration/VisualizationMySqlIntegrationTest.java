@@ -86,13 +86,23 @@ class VisualizationMySqlIntegrationTest {
     @Test
     void loadsAggregateDashboardSceneAndEquipmentSnapshot() {
         VisualizationDtos.DashboardResult dashboard = service.dashboard(
-                LocalDate.now().minusDays(6), LocalDate.now(), 2L
+                LocalDate.now().minusDays(6), LocalDate.now(), 2L, "DAY"
         );
         assertThat(dashboard.core().total()).isEqualTo(8);
         assertThat(dashboard.statusDistribution()).hasSize(12);
         assertThat(dashboard.organizationDistribution()).hasSize(4);
         assertThat(dashboard.liveEquipment()).hasSize(8);
-        assertThat(dashboard.refreshSeconds()).isEqualTo(15);
+        assertThat(dashboard.periodType()).isEqualTo("DAY");
+        assertThat(dashboard.refreshSeconds()).isEqualTo(86400);
+
+        VisualizationDtos.DashboardResult weekly = service.dashboard(
+                LocalDate.now().minusDays(77), LocalDate.now(), 2L, "week"
+        );
+        assertThat(weekly.periodType()).isEqualTo("WEEK");
+        VisualizationDtos.DashboardResult monthly = service.dashboard(
+                LocalDate.now().minusMonths(11), LocalDate.now(), 2L, "MONTH"
+        );
+        assertThat(monthly.periodType()).isEqualTo("MONTH");
 
         assertThat(service.scenes()).hasSize(7);
         VisualizationDtos.SceneDetail factory = service.scene(1L);

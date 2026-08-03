@@ -1,11 +1,7 @@
-import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { masterDataApi, type OrganizationRow } from '@/api/masterData'
-import {
-  subscribeVisualization,
-  visualizationApi,
-  type DashboardResult,
-} from '@/api/visualization'
+import { visualizationApi, type DashboardResult } from '@/api/visualization'
 import { errorMessage } from '@/utils/http'
 
 function localDate(date: Date) {
@@ -23,12 +19,12 @@ export function useVisualizationDashboard() {
     startDate: localDate(start),
     endDate: localDate(now),
     organizationId: undefined as number | undefined,
+    periodType: 'DAY' as 'DAY' | 'WEEK' | 'MONTH',
   })
   const loading = ref(false)
   const dashboard = ref<DashboardResult>()
   const organizations = ref<OrganizationRow[]>([])
   let timer: number | undefined
-  const streamController = new AbortController()
 
   async function load(silent = false) {
     if (!silent) loading.value = true
@@ -46,9 +42,24 @@ export function useVisualizationDashboard() {
     if (timer) window.clearInterval(timer)
     timer = window.setInterval(
       () => load(true),
-      Math.max(dashboard.value?.refreshSeconds ?? 15, 5) * 1000,
+      Math.max(dashboard.value?.refreshSeconds ?? 86400, 60) * 1000,
     )
   }
+
+  function resetRange(periodType: 'DAY' | 'WEEK' | 'MONTH') {
+    const end = new Date()
+    const start = new Date(end)
+    if (periodType === 'DAY') start.setDate(start.getDate() - 6)
+    if (periodType === 'WEEK') start.setDate(start.getDate() - 7 * 11)
+    if (periodType === 'MONTH') start.setMonth(start.getMonth() - 11, 1)
+    filters.startDate = localDate(start)
+    filters.endDate = localDate(end)
+  }
+
+  watch(() => filters.periodType, (periodType) => {
+    resetRange(periodType)
+    void load()
+  })
 
   onMounted(async () => {
     try {
@@ -57,12 +68,10 @@ export function useVisualizationDashboard() {
       ElMessage.error(errorMessage(error))
     }
     await load()
-    subscribeVisualization(() => load(true), streamController.signal).catch(() => undefined)
   })
 
   onBeforeUnmount(() => {
     if (timer) window.clearInterval(timer)
-    streamController.abort()
   })
 
   return { filters, loading, dashboard, organizations, load }

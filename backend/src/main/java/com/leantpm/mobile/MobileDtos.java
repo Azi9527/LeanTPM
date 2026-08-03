@@ -9,6 +9,7 @@ import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.util.List;
 
 public final class MobileDtos {
@@ -20,6 +21,31 @@ public final class MobileDtos {
             long pending,
             long overdue,
             long completedToday
+    ) {
+    }
+
+    public record EquipmentStatusCount(
+            long total,
+            long running,
+            long stopped,
+            long fault,
+            long offline
+    ) {
+    }
+
+    public record AbnormalCount(
+            long open,
+            long critical,
+            long high
+    ) {
+    }
+
+    public record PersonalInspectionReport(
+            LocalDate startDate,
+            LocalDate endDate,
+            long due,
+            long completed,
+            long abnormal
     ) {
     }
 
@@ -45,7 +71,10 @@ public final class MobileDtos {
             int maxUploadMb,
             PhotoPolicy photoPolicy,
             AndroidVersionPolicy androidVersion,
+            EquipmentStatusCount equipmentStatus,
             WorkCount inspection,
+            AbnormalCount inspectionAbnormal,
+            PersonalInspectionReport personalInspectionReport,
             WorkCount maintenance,
             List<MessageItem> messages
     ) {

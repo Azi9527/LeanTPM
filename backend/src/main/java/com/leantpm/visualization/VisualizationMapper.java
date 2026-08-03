@@ -49,7 +49,8 @@ public interface VisualizationMapper {
             @Param("organizationIds") List<Long> organizationIds,
             @Param("startDate") LocalDate startDate,
             @Param("endDate") LocalDate endDate,
-            @Param("workflowType") String workflowType
+            @Param("workflowType") String workflowType,
+            @Param("periodType") String periodType
     );
 
     Integer integerParameter(

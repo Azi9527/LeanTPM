@@ -56,6 +56,7 @@ function openEquipment(id: number) {
       v-model:start-date="filters.startDate"
       v-model:end-date="filters.endDate"
       v-model:organization-id="filters.organizationId"
+      v-model:period-type="filters.periodType"
       title="设备综合运行驾驶舱"
       subtitle="设备状态、点检、维保与 OEE 的统一实时视图"
       :generated-at="dashboard?.generatedAt"

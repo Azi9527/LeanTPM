@@ -74,6 +74,29 @@ function duration(seconds: number) {
 function openLiveEquipment(row: { equipmentId: number }) {
   router.push({ path: '/equipment/ledger', query: { equipmentId: row.equipmentId } })
 }
+function drillMetric(label: string) {
+  if (topic.value === 'STATUS') {
+    const statusByLabel: Record<string, string | undefined> = {
+      '运行': 'RUNNING', '停机': 'STOPPED', '故障': 'FAULT',
+      '维修': 'REPAIR', '离线': 'OFFLINE',
+    }
+    router.push({ path: '/equipment/ledger', query: { currentStatusCode: statusByLabel[label] } })
+    return
+  }
+  if (topic.value === 'OEE') {
+    router.push({ path: '/oee/analysis', query: { startDate: filters.startDate, endDate: filters.endDate } })
+    return
+  }
+  const path = topic.value === 'INSPECTION' ? '/inspection/tasks' : '/maintenance/tasks'
+  const query: Record<string, string> = { startDate: filters.startDate, endDate: filters.endDate }
+  if (label === '逾期') query.taskStatus = 'OVERDUE'
+  if (label === '异常') query.abnormalOnly = 'true'
+  router.push({ path, query })
+}
+function drillTrend(row: { statisticDate: string }) {
+  const path = topic.value === 'INSPECTION' ? '/inspection/tasks' : '/maintenance/tasks'
+  router.push({ path, query: { startDate: row.statisticDate, endDate: row.statisticDate } })
+}
 async function fullscreen() {
   if (!document.fullscreenElement) await root.value?.requestFullscreen()
   else await document.exitFullscreen()
@@ -86,6 +109,7 @@ async function fullscreen() {
       v-model:start-date="filters.startDate"
       v-model:end-date="filters.endDate"
       v-model:organization-id="filters.organizationId"
+      v-model:period-type="filters.periodType"
       :title="title"
       subtitle="按组织和日期聚合，支持指标、图表与设备明细联动下钻"
       :generated-at="dashboard?.generatedAt"
@@ -94,7 +118,7 @@ async function fullscreen() {
       @refresh="load()"
       @fullscreen="fullscreen"
     />
-    <MetricStrip :metrics="metrics" />
+    <MetricStrip :metrics="metrics" @select="drillMetric" />
     <CockpitCharts :dashboard="dashboard" :mode="topic" />
 
     <section v-if="topic === 'STATUS'" class="viz-panel">
@@ -148,6 +172,7 @@ async function fullscreen() {
       <el-table
         :data="dashboard?.workflowTrend.filter((item) => item.workflowType === topic) ?? []"
         class="dark-table"
+        @row-click="drillTrend"
       >
         <el-table-column prop="statisticDate" label="日期" min-width="140" />
         <el-table-column prop="due" label="应完成" />

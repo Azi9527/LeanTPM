@@ -389,6 +389,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '设备现场信息', permission: 'mobile:scan' },
       },
       {
+        path: 'equipment-status',
+        name: 'MobileEquipmentStatus',
+        component: () => import('@/views/mobile/equipment/MobileEquipmentStatusView.vue'),
+        meta: { title: '设备状态', permission: 'equipment:view' },
+      },
+      {
         path: 'tasks',
         name: 'MobileTasks',
         component: () => import('@/views/mobile/tasks/MobileTaskHubView.vue'),

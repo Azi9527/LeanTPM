@@ -56,9 +56,12 @@ public class VisualizationController {
     public ApiResponse<VisualizationDtos.DashboardResult> dashboard(
             @RequestParam(required = false) LocalDate startDate,
             @RequestParam(required = false) LocalDate endDate,
-            @RequestParam(required = false) Long organizationId
+            @RequestParam(required = false) Long organizationId,
+            @RequestParam(defaultValue = "DAY") String periodType
     ) {
-        return ApiResponse.success(service.dashboard(startDate, endDate, organizationId));
+        return ApiResponse.success(service.dashboard(
+                startDate, endDate, organizationId, periodType
+        ));
     }
 
     @GetMapping(path = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)

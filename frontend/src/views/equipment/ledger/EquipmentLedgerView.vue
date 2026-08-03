@@ -141,6 +141,9 @@ watch(() => transferForm.organizationId, () => {
 })
 
 onMounted(async () => {
+  if (typeof route.query.currentStatusCode === 'string') {
+    query.currentStatusCode = route.query.currentStatusCode
+  }
   await Promise.all([loadReferences(), load()])
   const equipmentId = Number(route.query.equipmentId)
   if (Number.isInteger(equipmentId) && equipmentId > 0) {

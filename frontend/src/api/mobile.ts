@@ -36,7 +36,26 @@ export interface MobileBootstrap {
     downloadUrl: string
     releaseNotes: string
   }
+  equipmentStatus: {
+    total: number
+    running: number
+    stopped: number
+    fault: number
+    offline: number
+  }
   inspection: MobileWorkCount
+  inspectionAbnormal: {
+    open: number
+    critical: number
+    high: number
+  }
+  personalInspectionReport: {
+    startDate: string
+    endDate: string
+    due: number
+    completed: number
+    abnormal: number
+  }
   maintenance: MobileWorkCount
   messages: MobileMessage[]
 }

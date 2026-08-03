@@ -16,6 +16,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 @Service
 public class VisualizationService {
@@ -42,8 +43,10 @@ public class VisualizationService {
     public VisualizationDtos.DashboardResult dashboard(
             LocalDate startDate,
             LocalDate endDate,
-            Long organizationId
+            Long organizationId,
+            String periodType
     ) {
+        String normalizedPeriodType = normalizePeriodType(periodType);
         LocalDate normalizedEnd = endDate == null ? LocalDate.now() : endDate;
         LocalDate normalizedStart = startDate == null
                 ? normalizedEnd.minusDays(6)
@@ -59,7 +62,7 @@ public class VisualizationService {
         }
 
         int refreshSeconds = parameter(
-                current.tenantId(), "visualization.refresh-seconds", 15, 5, 300
+                current.tenantId(), "visualization.refresh-seconds", 86400, 60, 86400
         );
         int longStopMinutes = parameter(
                 current.tenantId(), "visualization.long-stop-minutes", 120, 1, 10080
@@ -70,11 +73,11 @@ public class VisualizationService {
         List<VisualizationDtos.WorkflowTrend> workflowTrend = new ArrayList<>();
         workflowTrend.addAll(mapper.workflowTrend(
                 current.tenantId(), scope, organizationIds,
-                normalizedStart, normalizedEnd, "INSPECTION"
+                normalizedStart, normalizedEnd, "INSPECTION", normalizedPeriodType
         ));
         workflowTrend.addAll(mapper.workflowTrend(
                 current.tenantId(), scope, organizationIds,
-                normalizedStart, normalizedEnd, "MAINTENANCE"
+                normalizedStart, normalizedEnd, "MAINTENANCE", normalizedPeriodType
         ));
 
         return new VisualizationDtos.DashboardResult(
@@ -82,6 +85,7 @@ public class VisualizationService {
                 normalizedStart,
                 normalizedEnd,
                 organizationId,
+                normalizedPeriodType,
                 refreshSeconds,
                 mapper.coreMetrics(current.tenantId(), scope, organizationIds),
                 mapper.statusDistribution(current.tenantId(), scope, organizationIds),
@@ -101,9 +105,21 @@ public class VisualizationService {
                 List.copyOf(workflowTrend),
                 oeeService.analysis(
                         normalizedStart, normalizedEnd, organizationId, null,
-                        "DAY", "EQUIPMENT", 20
+                        normalizedPeriodType, "EQUIPMENT", 20
                 )
         );
+    }
+
+    private String normalizePeriodType(String periodType) {
+        String normalized = periodType == null
+                ? "DAY"
+                : periodType.trim().toUpperCase(Locale.ROOT);
+        if (!Set.of("DAY", "WEEK", "MONTH").contains(normalized)) {
+            throw new BusinessException(
+                    "VISUALIZATION_PERIOD_TYPE_INVALID", "统计周期仅支持日、周、月"
+            );
+        }
+        return normalized;
     }
 
     @Transactional(readOnly = true)

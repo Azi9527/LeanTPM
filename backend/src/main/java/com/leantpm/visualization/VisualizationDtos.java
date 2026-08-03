@@ -96,6 +96,7 @@ public final class VisualizationDtos {
             LocalDate startDate,
             LocalDate endDate,
             Long organizationId,
+            String periodType,
             int refreshSeconds,
             CoreMetrics core,
             List<StatusMetric> statusDistribution,
