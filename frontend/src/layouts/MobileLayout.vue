@@ -60,6 +60,16 @@ onMounted(async () => {
       :closable="false"
       show-icon
     />
+    <el-alert
+      v-if="mobile.syncing || mobile.queuedPhotoCount || mobile.lastSyncError"
+      class="offline-alert"
+      :title="mobile.syncing
+        ? '正在同步本地队列…'
+        : mobile.lastSyncError || `待上传现场照片 ${mobile.queuedPhotoCount} 张`"
+      :type="mobile.lastSyncError ? 'error' : 'info'"
+      :closable="false"
+      show-icon
+    />
 
     <main class="mobile-content">
       <router-view />

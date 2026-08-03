@@ -76,6 +76,21 @@ export async function countMobileDrafts(): Promise<number> {
   return (await index()).length
 }
 
+export async function listMobileDrafts(): Promise<Array<MobileDraftEnvelope<unknown>>> {
+  const drafts: Array<MobileDraftEnvelope<unknown>> = []
+  for (const key of await index()) {
+    const value = await vaultGet(key)
+    if (!value) continue
+    try {
+      const draft = JSON.parse(value) as MobileDraftEnvelope<unknown>
+      if (draft.schemaVersion === 1) drafts.push(draft)
+    } catch {
+      await vaultRemove(key)
+    }
+  }
+  return drafts
+}
+
 export async function purgeExpiredMobileDrafts(retentionDays: number): Promise<number> {
   const keys = await index()
   const cutoff = Date.now() - Math.max(1, retentionDays) * 86_400_000

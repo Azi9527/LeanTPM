@@ -11,7 +11,10 @@ import {
   removeMobileDraft,
   saveMobileDraft,
 } from '@/mobile/draftStore'
-import { capturePhotoFile } from '@/mobile/device'
+import { capturePhotoEvidence } from '@/mobile/device'
+import { enqueuePhoto } from '@/mobile/photoQueue'
+import { uploadPhotoEvidence } from '@/mobile/photoEvidence'
+import { useAuthStore } from '@/stores/auth'
 import { useMobileStore } from '@/stores/mobile'
 import { errorMessage } from '@/utils/http'
 
@@ -40,6 +43,7 @@ interface SavePayload {
 type AttachmentKind = 'beforeAttachmentIds' | 'afterAttachmentIds' | 'attachmentIds'
 
 const route = useRoute()
+const auth = useAuthStore()
 const mobile = useMobileStore()
 const loading = ref(false)
 const saving = ref(false)
@@ -221,7 +225,7 @@ async function save(submit: boolean) {
     await persistLocal(submit)
     if (!mobile.online) {
       ElMessage.warning(submit
-        ? '当前离线，结果已加密保存；恢复网络后请再次提交'
+        ? '当前离线，结果已加密排队；恢复网络后将自动提交'
         : '当前离线，草稿已加密保存在本机')
       return
     }
@@ -341,18 +345,41 @@ async function upload(
 }
 
 async function capture(itemId: number, kind: AttachmentKind) {
-  if (!mobile.online) {
-    ElMessage.warning('当前离线，恢复网络后再拍照上传')
-    return
-  }
+  if (!detail.value || !mobile.bootstrap) return
   try {
-    const file = await capturePhotoFile(
-      `maintenance-${detail.value?.task.taskCode ?? itemId}-${kind}`,
+    const item = detail.value.items.find((candidate) => candidate.id === itemId)
+    if (!item) return
+    const capture = await capturePhotoEvidence(
+      `maintenance-${detail.value.task.taskCode}-${itemId}-${kind}`,
       mobile.maxUploadMb,
+      {
+        workflowType: 'MAINTENANCE', taskId: detail.value.task.id, taskItemId: itemId,
+        taskCode: detail.value.task.taskCode,
+        equipmentCode: detail.value.task.equipmentCode,
+        equipmentName: detail.value.task.equipmentName,
+        itemName: item.itemName,
+        executorName: auth.displayName,
+        serverTime: mobile.estimatedServerTime(),
+        locationRequired: mobile.bootstrap.photoPolicy.locationRequired,
+      },
     )
-    await upload(itemId, kind, file)
+    if (!mobile.online) {
+      await enqueuePhoto('maintenance', kind, capture)
+      await persistLocal(false, true)
+      await mobile.refreshDraftCount()
+      ElMessage.success('水印照片已加密存入本地队列，联网后自动上传')
+      return
+    }
+    uploadingItemId.value = itemId
+    const uploaded = await uploadPhotoEvidence(capture)
+    drafts[itemId][kind].push(uploaded.attachmentId)
+    if (uploaded.evidence.clockSkewWarning) {
+      ElMessage.warning('设备时间与服务端偏差较大，照片已标记时钟告警')
+    } else ElMessage.success('定位时间水印照片已上传')
   } catch (error) {
     ElMessage.warning(errorMessage(error, '拍照已取消'))
+  } finally {
+    uploadingItemId.value = undefined
   }
 }
 

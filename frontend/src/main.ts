@@ -7,6 +7,7 @@ import App from './App.vue'
 import router from './router'
 import { initializeMobileRuntime } from './mobile/runtime'
 import { initializeHttpStorage } from './utils/http'
+import { consumeNotificationLaunchRoute } from './mobile/localAlerts'
 import './assets/styles/main.scss'
 
 function renderStartupFailure(error: unknown) {
@@ -37,6 +38,13 @@ async function bootstrap() {
     app.use(router)
     app.use(ElementPlus, { size: 'default' })
     app.mount('#app')
+    await router.isReady()
+    const launchRoute = await consumeNotificationLaunchRoute()
+    if (launchRoute) await router.push(launchRoute)
+    window.addEventListener('leantpm-notification-open', (event) => {
+      const route = (event as CustomEvent<{ route?: string }>).detail?.route
+      if (route) void router.push(route)
+    })
   } catch (error) {
     renderStartupFailure(error)
   }

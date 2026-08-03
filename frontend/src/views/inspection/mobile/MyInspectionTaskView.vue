@@ -19,7 +19,10 @@ import {
   removeMobileDraft,
   saveMobileDraft,
 } from '@/mobile/draftStore'
-import { capturePhotoFile } from '@/mobile/device'
+import { capturePhotoEvidence } from '@/mobile/device'
+import { enqueuePhoto } from '@/mobile/photoQueue'
+import { uploadPhotoEvidence } from '@/mobile/photoEvidence'
+import { useAuthStore } from '@/stores/auth'
 import { useMobileStore } from '@/stores/mobile'
 import { errorMessage } from '@/utils/http'
 
@@ -44,6 +47,7 @@ interface SavePayload {
 }
 
 const route = useRoute()
+const auth = useAuthStore()
 const mobile = useMobileStore()
 const loading = ref(false)
 const saving = ref(false)
@@ -223,7 +227,7 @@ async function save(submit: boolean) {
     await persistLocal(submit)
     if (!mobile.online) {
       ElMessage.warning(submit
-        ? '当前离线，结果已加密保存；恢复网络后请再次提交'
+        ? '当前离线，结果已加密排队；恢复网络后将自动提交'
         : '当前离线，草稿已加密保存在本机')
       return
     }
@@ -297,18 +301,48 @@ async function upload(itemId: number, file: File) {
 }
 
 async function capture(itemId: number) {
-  if (!mobile.online) {
-    ElMessage.warning('当前离线，恢复网络后再拍照上传')
-    return
-  }
+  if (!detail.value || !mobile.bootstrap) return
   try {
-    const file = await capturePhotoFile(
-      `inspection-${detail.value?.task.taskCode ?? itemId}`,
+    const item = detail.value.items.find((candidate) => candidate.id === itemId)
+    if (!item) return
+    const capture = await capturePhotoEvidence(
+      `inspection-${detail.value.task.taskCode}-${itemId}`,
       mobile.maxUploadMb,
+      {
+        workflowType: 'INSPECTION', taskId: detail.value.task.id, taskItemId: itemId,
+        taskCode: detail.value.task.taskCode,
+        equipmentCode: detail.value.task.equipmentCode,
+        equipmentName: detail.value.task.equipmentName,
+        itemName: item.itemName,
+        executorName: auth.displayName,
+        serverTime: mobile.estimatedServerTime(),
+        locationRequired: mobile.bootstrap.photoPolicy.locationRequired,
+      },
     )
-    await upload(itemId, file)
+    if (!mobile.online) {
+      await enqueuePhoto('inspection', 'attachmentIds', capture)
+      await persistLocal(false)
+      await mobile.refreshDraftCount()
+      ElMessage.success('水印照片已加密存入本地队列，联网后自动上传')
+      return
+    }
+    uploadingItemId.value = itemId
+    const uploaded = await uploadPhotoEvidence(capture)
+    drafts[itemId].attachmentIds.push(uploaded.attachmentId)
+    localAttachmentBlobs.set(uploaded.attachmentId, capture.watermarkedFile)
+    taskAttachments.value.push({
+      id: uploaded.attachmentId, taskItemId: itemId,
+      originalName: capture.watermarkedFile.name, contentType: capture.watermarkedFile.type,
+      extension: 'jpeg', fileSize: capture.watermarkedFile.size,
+      attachmentType: 'RESULT_PHOTO', createdTime: new Date().toISOString(),
+    })
+    if (uploaded.evidence.clockSkewWarning) {
+      ElMessage.warning('设备时间与服务端偏差较大，照片已标记时钟告警')
+    } else ElMessage.success('定位时间水印照片已上传')
   } catch (error) {
     ElMessage.warning(errorMessage(error, '拍照已取消'))
+  } finally {
+    uploadingItemId.value = undefined
   }
 }
 

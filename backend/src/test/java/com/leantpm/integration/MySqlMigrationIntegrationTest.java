@@ -37,7 +37,7 @@ class MySqlMigrationIntegrationTest {
     @Test
     void appliesEveryMigrationAndFoundationTable() throws Exception {
         assertThat(number("SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1"))
-                .isEqualTo(21);
+                .isEqualTo(22);
         assertThat(number("""
                 SELECT COUNT(*)
                 FROM information_schema.tables
@@ -108,9 +108,10 @@ class MySqlMigrationIntegrationTest {
                     'equipment_repair_collaborator',
                     'equipment_repair_material',
                     'equipment_repair_event',
-                    'equipment_fault_attachment'
+                    'equipment_fault_attachment',
+                    'mobile_photo_evidence'
                   )
-                """)).isEqualTo(66);
+                """)).isEqualTo(67);
     }
 
     @Test
@@ -453,6 +454,31 @@ class MySqlMigrationIntegrationTest {
                   AND table_name IN ('inspection_abnormal','maintenance_abnormal')
                   AND column_name = 'repair_order_id'
                 """)).isEqualTo(2);
+    }
+
+    @Test
+    void createsMobileEvidenceAndVersionPolicy() throws Exception {
+        assertThat(number("""
+                SELECT COUNT(*) FROM information_schema.columns
+                WHERE table_schema = DATABASE() AND table_name = 'mobile_photo_evidence'
+                  AND column_name IN (
+                    'original_attachment_id','watermarked_attachment_id',
+                    'captured_device_time','device_clock_offset_seconds',
+                    'latitude','longitude','watermark_text',
+                    'original_sha256','watermarked_sha256'
+                  )
+                """)).isEqualTo(9);
+        assertThat(number("""
+                SELECT COUNT(*) FROM system_parameter
+                WHERE tenant_id = 1 AND parameter_key IN (
+                  'mobile.photo-location-required',
+                  'mobile.photo-clock-skew-warning-seconds',
+                  'mobile.android-min-version-code',
+                  'mobile.android-latest-version-name',
+                  'mobile.android-download-url',
+                  'mobile.android-release-notes'
+                ) AND status = 1 AND deleted = 0
+                """)).isEqualTo(6);
     }
 
     @Test

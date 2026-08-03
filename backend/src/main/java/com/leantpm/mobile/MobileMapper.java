@@ -16,6 +16,11 @@ public interface MobileMapper {
             @Param("parameterKey") String parameterKey
     );
 
+    String stringParameter(
+            @Param("tenantId") long tenantId,
+            @Param("parameterKey") String parameterKey
+    );
+
     MobileDtos.WorkCount inspectionCount(
             @Param("tenantId") long tenantId,
             @Param("userId") long userId

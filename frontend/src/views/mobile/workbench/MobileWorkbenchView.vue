@@ -34,6 +34,15 @@ const cards = computed(() => [
     show: auth.can('maintenance:my-task:view'),
   },
 ].filter((item) => item.show))
+
+const today = computed(() => cards.value.reduce((summary, card) => ({
+  due: summary.due + (card.data?.dueToday ?? 0),
+  completed: summary.completed + (card.data?.completedToday ?? 0),
+  overdue: summary.overdue + (card.data?.overdue ?? 0),
+}), { due: 0, completed: 0, overdue: 0 }))
+const completionRate = computed(() => today.value.due
+  ? Math.min(100, Math.round(today.value.completed * 100 / today.value.due))
+  : 100)
 </script>
 
 <template>
@@ -42,6 +51,12 @@ const cards = computed(() => [
       <p>{{ greeting }}</p>
       <h1>{{ auth.displayName }}</h1>
       <span>今天的现场任务已为你汇总</span>
+    </section>
+
+    <section class="today-board">
+      <div><span>今日完成度</span><strong>{{ completionRate }}%</strong></div>
+      <el-progress :percentage="completionRate" :stroke-width="10" :show-text="false" />
+      <div class="board-metrics"><span>今日 {{ today.due }}</span><span>已完成 {{ today.completed }}</span><span class="danger">逾期 {{ today.overdue }}</span></div>
     </section>
 
     <section class="quick-grid">
@@ -55,7 +70,7 @@ const cards = computed(() => [
         <el-icon><Bell /></el-icon><strong>异常消息</strong><span>{{ mobile.messages.length }} 条待关注</span>
       </button>
       <button type="button" @click="router.push('/mobile/profile')">
-        <el-icon><Document /></el-icon><strong>本地草稿</strong><span>{{ mobile.draftCount }} 份待同步</span>
+        <el-icon><Document /></el-icon><strong>本地队列</strong><span>{{ mobile.draftCount }} 份草稿 · {{ mobile.queuedPhotoCount }} 张照片</span>
       </button>
     </section>
 
@@ -91,6 +106,11 @@ const cards = computed(() => [
 .welcome-card h1 { margin: 4px 0 10px; font-size: 26px; }
 .welcome-card span { opacity: .78; font-size: 13px; }
 .quick-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.today-board { display: grid; gap: 10px; padding: 18px; border-radius: 18px; background: white; box-shadow: 0 6px 20px rgba(23, 58, 69, .07); }
+.today-board > div:first-child { display: flex; align-items: center; justify-content: space-between; }
+.today-board strong { color: #08708a; font-size: 24px; }
+.board-metrics { display: flex; justify-content: space-between; color: #71838b; font-size: 12px; }
+.board-metrics .danger { color: #d94c4c; }
 .quick-grid button {
   display: grid; min-height: 112px; padding: 16px; text-align: left;
   border: 0; border-radius: 18px; color: #213b47; background: white;

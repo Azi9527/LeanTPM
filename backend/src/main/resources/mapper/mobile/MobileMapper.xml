@@ -83,6 +83,16 @@
         LIMIT 1
     </select>
 
+    <select id="stringParameter" resultType="string">
+        SELECT parameter_value
+        FROM system_parameter
+        WHERE tenant_id = #{tenantId}
+          AND parameter_key = #{parameterKey}
+          AND status = 1
+          AND deleted = 0
+        LIMIT 1
+    </select>
+
     <select id="inspectionCount"
             resultType="com.leantpm.mobile.MobileDtos$WorkCount">
         SELECT COALESCE(SUM(planned_date = CURRENT_DATE()), 0) AS due_today,

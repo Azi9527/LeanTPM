@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { App as CapacitorApp } from '@capacitor/app'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
@@ -21,6 +22,18 @@ const savingServer = ref(false)
 const password = reactive({ currentPassword: '', newPassword: '', confirmPassword: '' })
 const serverUrl = ref(serverBaseUrl())
 const forceChange = computed(() => auth.user?.mustChangePassword || route.query.changePassword === '1')
+const appInfo = reactive({ version: 'Web', build: '0' })
+const upgradeRequired = computed(() => nativeContainer
+  && Number(appInfo.build) < (mobile.bootstrap?.androidVersion.minimumVersionCode ?? 1))
+
+onMounted(async () => {
+  if (!nativeContainer) return
+  try {
+    const info = await CapacitorApp.getInfo()
+    appInfo.version = info.version
+    appInfo.build = info.build
+  } catch { /* Web fallback keeps defaults. */ }
+})
 
 async function changePassword() {
   if (!password.currentPassword || password.newPassword.length < 6) {
@@ -71,6 +84,11 @@ async function signOut() {
   await auth.signOut()
   await router.replace('/login?redirect=/mobile/workbench')
 }
+
+function downloadUpgrade() {
+  const url = mobile.bootstrap?.androidVersion.downloadUrl
+  if (url) window.open(url, '_blank', 'noopener,noreferrer')
+}
 </script>
 
 <template>
@@ -92,8 +110,19 @@ async function signOut() {
     <section class="settings-card">
       <h2>安全与草稿</h2>
       <div class="setting-row"><span>本地加密草稿</span><strong>{{ mobile.draftCount }} 份</strong></div>
+      <div class="setting-row"><span>待上传水印照片</span><strong>{{ mobile.queuedPhotoCount }} 张</strong></div>
       <div class="setting-row"><span>当前网络</span><strong>{{ mobile.online ? '在线' : '离线' }}</strong></div>
       <div class="setting-row"><span>运行容器</span><strong>{{ nativeContainer ? 'Android APK' : '手机浏览器' }}</strong></div>
+      <el-button v-if="mobile.online && (mobile.draftCount || mobile.queuedPhotoCount)" :loading="mobile.syncing" plain @click="mobile.syncPending">立即同步</el-button>
+    </section>
+
+    <section class="settings-card">
+      <h2>版本与升级</h2>
+      <div class="setting-row"><span>当前版本</span><strong>{{ appInfo.version }} ({{ appInfo.build }})</strong></div>
+      <div class="setting-row"><span>最新版本</span><strong>{{ mobile.bootstrap?.androidVersion.latestVersionName || '-' }}</strong></div>
+      <el-alert v-if="upgradeRequired" title="当前版本已低于系统最低要求，请升级后继续使用" type="error" :closable="false" />
+      <p>{{ mobile.bootstrap?.androidVersion.releaseNotes }}</p>
+      <el-button v-if="mobile.bootstrap?.androidVersion.downloadUrl" type="primary" @click="downloadUpgrade">下载最新版</el-button>
     </section>
 
     <section class="settings-card">

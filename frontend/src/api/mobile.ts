@@ -27,9 +27,44 @@ export interface MobileBootstrap {
   serverTime: string
   draftRetentionDays: number
   maxUploadMb: number
+  photoPolicy: {
+    locationRequired: boolean
+    clockSkewWarningSeconds: number
+  }
+  androidVersion: {
+    minimumVersionCode: number
+    latestVersionName: string
+    downloadUrl: string
+    releaseNotes: string
+  }
   inspection: MobileWorkCount
   maintenance: MobileWorkCount
   messages: MobileMessage[]
+}
+
+export interface PhotoEvidencePayload {
+  workflowType: 'INSPECTION' | 'MAINTENANCE'
+  taskId: number
+  taskItemId: number
+  originalAttachmentId: number
+  watermarkedAttachmentId: number
+  capturedDeviceTime: string
+  serverReferenceTime: string
+  deviceClockOffsetSeconds: number
+  latitude?: number
+  longitude?: number
+  locationAccuracyMeters?: number
+  locationProvider?: string
+  addressText?: string
+  watermarkText: string
+}
+
+export interface PhotoEvidence extends PhotoEvidencePayload {
+  id: number
+  receivedServerTime: string
+  clockSkewWarning: boolean
+  originalSha256: string
+  watermarkedSha256: string
 }
 
 export interface MobileEquipment {
@@ -70,4 +105,11 @@ export const mobileApi = {
   bootstrap: () => getData<MobileBootstrap>('/mobile/bootstrap'),
   equipment: (token: string) =>
     getData<MobileEquipmentContext>(`/mobile/equipment/${token}`),
+  registerPhotoEvidence: async (payload: PhotoEvidencePayload, idempotencyKey: string) => {
+    const response = await http.post<ApiResponse<PhotoEvidence>>('/mobile/photo-evidence', payload, {
+      headers: { 'Idempotency-Key': idempotencyKey },
+    })
+    return response.data.data
+  },
+  photoEvidence: (id: number) => getData<PhotoEvidence>(`/mobile/photo-evidence/${id}`),
 }

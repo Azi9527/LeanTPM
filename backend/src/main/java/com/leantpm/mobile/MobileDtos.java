@@ -1,5 +1,13 @@
 package com.leantpm.mobile;
 
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
+
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -35,9 +43,65 @@ public final class MobileDtos {
             LocalDateTime serverTime,
             int draftRetentionDays,
             int maxUploadMb,
+            PhotoPolicy photoPolicy,
+            AndroidVersionPolicy androidVersion,
             WorkCount inspection,
             WorkCount maintenance,
             List<MessageItem> messages
+    ) {
+    }
+
+    public record PhotoPolicy(
+            boolean locationRequired,
+            int clockSkewWarningSeconds
+    ) {
+    }
+
+    public record AndroidVersionPolicy(
+            int minimumVersionCode,
+            String latestVersionName,
+            String downloadUrl,
+            String releaseNotes
+    ) {
+    }
+
+    public record RegisterPhotoEvidenceRequest(
+            @NotBlank @Pattern(regexp = "^(INSPECTION|MAINTENANCE)$") String workflowType,
+            long taskId,
+            long taskItemId,
+            long originalAttachmentId,
+            long watermarkedAttachmentId,
+            @NotNull LocalDateTime capturedDeviceTime,
+            @NotNull LocalDateTime serverReferenceTime,
+            int deviceClockOffsetSeconds,
+            @DecimalMin("-90") @DecimalMax("90") BigDecimal latitude,
+            @DecimalMin("-180") @DecimalMax("180") BigDecimal longitude,
+            @DecimalMin("0") BigDecimal locationAccuracyMeters,
+            @Size(max = 32) String locationProvider,
+            @Size(max = 300) String addressText,
+            @NotBlank @Size(max = 1000) String watermarkText
+    ) {
+    }
+
+    public record PhotoEvidence(
+            long id,
+            String workflowType,
+            long taskId,
+            long taskItemId,
+            long originalAttachmentId,
+            long watermarkedAttachmentId,
+            LocalDateTime capturedDeviceTime,
+            LocalDateTime receivedServerTime,
+            int deviceClockOffsetSeconds,
+            boolean clockSkewWarning,
+            BigDecimal latitude,
+            BigDecimal longitude,
+            BigDecimal locationAccuracyMeters,
+            String locationProvider,
+            String addressText,
+            String watermarkText,
+            String originalSha256,
+            String watermarkedSha256
     ) {
     }
 
