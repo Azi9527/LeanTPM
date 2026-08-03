@@ -6,6 +6,8 @@ import AppMenuItem from '@/components/navigation/AppMenuItem.vue'
 import { useAuthStore } from '@/stores/auth'
 import { errorMessage } from '@/utils/http'
 import type { MenuItem } from '@/types/api'
+import BrandLogo from '@/components/branding/BrandLogo.vue'
+import { useBranding } from '@/branding/branding'
 
 interface TreeMenu extends MenuItem {
   children?: TreeMenu[]
@@ -14,13 +16,14 @@ interface TreeMenu extends MenuItem {
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const branding = useBranding()
 const collapsed = ref(false)
 const mobileMenuOpen = ref(false)
 const changingPassword = ref(false)
 const passwordDialogVisible = ref(false)
 const passwordForm = ref({ currentPassword: '', newPassword: '', confirmPassword: '' })
 
-const title = computed(() => (route.meta.title as string) || 'LeanTPM')
+const title = computed(() => (route.meta.title as string) || branding.systemName)
 const treeMenus = computed<TreeMenu[]>(() => {
   const items = (auth.user?.menus || []).filter((item) => item.menuType !== 'BUTTON')
   const byId = new Map<number, TreeMenu>()
@@ -73,10 +76,10 @@ function navigate(index: string) {
   <div class="app-layout">
     <aside class="sidebar" :class="{ collapsed }">
       <div class="brand">
-        <span class="brand-mark">LT</span>
+        <BrandLogo compact :height="38" light />
         <span v-if="!collapsed" class="brand-copy">
-          <strong>LeanTPM</strong>
-          <small>精益设备管理</small>
+          <strong>{{ branding.shortName }}</strong>
+          <small>{{ branding.subtitle }}</small>
         </span>
       </div>
       <el-scrollbar class="menu-scroll">
@@ -104,7 +107,7 @@ function navigate(index: string) {
           <el-icon><Menu /></el-icon>
         </button>
         <div>
-          <span class="topbar-eyebrow">LeanTPM /</span>
+          <span class="topbar-eyebrow">{{ branding.shortName }} /</span>
           <strong>{{ title }}</strong>
         </div>
         <div class="topbar-actions">
@@ -147,8 +150,8 @@ function navigate(index: string) {
 
     <el-drawer v-model="mobileMenuOpen" direction="ltr" size="82%" :with-header="false" class="mobile-drawer">
       <div class="brand drawer-brand">
-        <span class="brand-mark">LT</span>
-        <span class="brand-copy"><strong>LeanTPM</strong><small>精益设备管理</small></span>
+        <BrandLogo compact :height="38" light />
+        <span class="brand-copy"><strong>{{ branding.shortName }}</strong><small>{{ branding.subtitle }}</small></span>
       </div>
       <el-menu :default-active="activeMenu" @select="navigate">
         <app-menu-item v-for="item in treeMenus" :key="item.id" :item="item" />
@@ -206,7 +209,7 @@ function navigate(index: string) {
   width: 246px;
   color: #fff;
   background:
-    radial-gradient(circle at 15% 0%, rgba(30, 151, 178, 0.32), transparent 35%),
+    radial-gradient(circle at 15% 0%, rgba(var(--tpm-primary-rgb), 0.34), transparent 35%),
     var(--tpm-sidebar);
   transition: width 0.2s ease;
 
@@ -224,22 +227,6 @@ function navigate(index: string) {
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.brand-mark {
-  display: grid;
-  flex: 0 0 38px;
-  place-items: center;
-  width: 38px;
-  height: 38px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 8px;
-  color: #fff;
-  background: linear-gradient(145deg, #1688a6, #0a607d);
-  box-shadow: inset 0 1px rgba(255, 255, 255, 0.18);
-  font-size: 14px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-}
-
 .brand-copy {
   display: flex;
   flex-direction: column;
@@ -252,7 +239,7 @@ function navigate(index: string) {
 
   small {
     margin-top: 2px;
-    color: #92b2be;
+    color: rgba(255, 255, 255, .62);
     font-size: 10px;
     letter-spacing: 0.12em;
   }
@@ -274,8 +261,8 @@ function navigate(index: string) {
   }
 
   :deep(.el-menu-item.is-active) {
-    background: linear-gradient(90deg, rgba(22, 136, 166, 0.95), rgba(22, 136, 166, 0.55));
-    box-shadow: inset 3px 0 #f3a712;
+    background: linear-gradient(90deg, rgba(var(--tpm-primary-rgb), 0.96), rgba(var(--tpm-primary-rgb), 0.52));
+    box-shadow: inset 3px 0 var(--tpm-secondary);
   }
 }
 
@@ -287,7 +274,7 @@ function navigate(index: string) {
   min-height: 52px;
   border: 0;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
-  color: #92b2be;
+  color: rgba(255, 255, 255, .62);
   background: transparent;
   cursor: pointer;
 }

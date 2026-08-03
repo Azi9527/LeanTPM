@@ -11,9 +11,23 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Set;
+import java.util.regex.Pattern;
 
 @Service
 public class ParameterService {
+    private static final String BRANDING_LOGO_KEY = "branding.logo-url";
+    private static final Set<String> BRANDING_COLOR_KEYS = Set.of(
+            "branding.primary-color",
+            "branding.secondary-color",
+            "branding.neutral-color"
+    );
+    private static final Pattern HEX_COLOR = Pattern.compile("^#[0-9a-fA-F]{6}$");
+    private static final Pattern IMAGE_DATA_URL = Pattern.compile(
+            "^data:image/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$"
+    );
+    private static final int STANDARD_VALUE_MAX_LENGTH = 2000;
+    private static final int LOGO_VALUE_MAX_LENGTH = 700000;
     private final FoundationMapper mapper;
     private final ChangeLogService changeLogService;
 
@@ -35,6 +49,7 @@ public class ParameterService {
     public long create(FoundationDtos.SaveParameterRequest request) {
         var current = SecurityUtils.currentUser();
         FoundationDtos.SaveParameterRequest normalized = normalize(request);
+        validateLengthAndBranding(normalized.parameterKey(), normalized.parameterValue());
         validateValue(normalized.valueType(), normalized.parameterValue());
         if (mapper.countParameterKey(current.tenantId(), normalized.parameterKey()) > 0) {
             throw new BusinessException("PARAMETER_KEY_EXISTS", "参数键已存在", HttpStatus.CONFLICT);
@@ -62,6 +77,7 @@ public class ParameterService {
             throw new BusinessException("PARAMETER_KEY_IMMUTABLE", "参数键创建后不可修改");
         }
         FoundationDtos.SaveParameterRequest normalized = normalize(request);
+        validateLengthAndBranding(normalized.parameterKey(), normalized.parameterValue());
         validateValue(normalized.valueType(), normalized.parameterValue());
         if (normalized.version() == null
                 || mapper.updateParameter(current.tenantId(), id, normalized, current.userId()) == 0) {
@@ -134,6 +150,29 @@ public class ParameterService {
             }
         } catch (IllegalArgumentException exception) {
             throw new BusinessException("PARAMETER_VALUE_INVALID", "参数值与所选类型不匹配");
+        }
+    }
+
+    private void validateLengthAndBranding(String key, String value) {
+        int maxLength = BRANDING_LOGO_KEY.equals(key)
+                ? LOGO_VALUE_MAX_LENGTH
+                : STANDARD_VALUE_MAX_LENGTH;
+        if (value.length() > maxLength) {
+            throw new BusinessException(
+                    "PARAMETER_VALUE_TOO_LONG",
+                    BRANDING_LOGO_KEY.equals(key) ? "Logo 图片不能超过 512KB" : "参数值不能超过 2000 个字符"
+            );
+        }
+        if (BRANDING_COLOR_KEYS.contains(key) && !HEX_COLOR.matcher(value).matches()) {
+            throw new BusinessException("BRANDING_COLOR_INVALID", "品牌颜色必须使用 #RRGGBB 格式");
+        }
+        if (BRANDING_LOGO_KEY.equals(key)
+                && !value.startsWith("/")
+                && !IMAGE_DATA_URL.matcher(value).matches()) {
+            throw new BusinessException(
+                    "BRANDING_LOGO_INVALID",
+                    "Logo 仅支持系统内路径或 PNG、JPEG、WebP 图片"
+            );
         }
     }
 

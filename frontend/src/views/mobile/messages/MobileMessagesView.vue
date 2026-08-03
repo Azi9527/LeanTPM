@@ -59,10 +59,10 @@ async function acknowledge(message: (typeof mobile.messages)[number]) {
 .messages-page { display: grid; gap: 12px; }
 header { display: flex; align-items: center; justify-content: space-between; padding: 4px 4px 10px; }
 header p, header h1 { margin: 0; }
-header p { color: #178198; font-size: 11px; font-weight: 800; letter-spacing: .14em; }
+header p { color: var(--tpm-primary); font-size: 11px; font-weight: 800; letter-spacing: .14em; }
 header h1 { margin-top: 4px; font-size: 26px; }
 .message-card { display: grid; grid-template-columns: 42px 1fr auto; align-items: center; gap: 12px; padding: 16px; border-radius: 17px; background: white; box-shadow: 0 6px 20px rgba(23, 58, 69, .06); }
-.message-card.unread { border-left: 4px solid #178198; }
+.message-card.unread { border-left: 4px solid var(--tpm-primary); }
 .severity { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 13px; color: #a86a0f; background: #fff3db; }
 .severity.danger { color: #ca4242; background: #ffeded; }
 .message-card strong, .message-card p { display: block; margin: 0; }

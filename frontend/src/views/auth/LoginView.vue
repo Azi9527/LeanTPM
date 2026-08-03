@@ -6,10 +6,13 @@ import { captcha as fetchCaptcha, type CaptchaChallenge } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 import { errorMessage } from '@/utils/http'
 import { nativeContainer } from '@/mobile/secureVault'
+import BrandLogo from '@/components/branding/BrandLogo.vue'
+import { useBranding } from '@/branding/branding'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const branding = useBranding()
 const formRef = ref<FormInstance>()
 const loginBoxRef = ref<HTMLElement>()
 const loading = ref(false)
@@ -98,7 +101,7 @@ onMounted(loadCaptcha)
     <section class="login-story">
       <div class="story-grid" aria-hidden="true"></div>
       <div class="story-content">
-        <div class="story-brand"><span>LT</span> LeanTPM</div>
+        <div class="story-brand"><BrandLogo :height="64" light /></div>
         <p class="eyebrow">LEAN EQUIPMENT OPERATIONS</p>
         <h1>让每一台设备<br />都有清晰的运行脉络</h1>
         <p class="story-lead">从设备档案、点检维保到 OEE 分析，构建可追踪、可执行、可持续改善的设备管理闭环。</p>
@@ -113,10 +116,10 @@ onMounted(loadCaptcha)
     </section>
 
     <section class="login-panel">
-      <div class="mobile-brand"><span>LT</span><strong>LeanTPM</strong></div>
+      <div class="mobile-brand"><BrandLogo :height="54" /></div>
       <div ref="loginBoxRef" class="login-box" @input.capture="syncCredentialInputEvent">
         <p class="login-eyebrow">欢迎回来</p>
-        <h2>登录 LeanTPM</h2>
+        <h2>登录 {{ branding.shortName }}</h2>
         <p class="login-description">使用企业分配的账号进入设备管理平台</p>
         <el-form ref="formRef" :model="form" :rules="rules" label-position="top" @submit.prevent="submit">
           <el-form-item label="账号" prop="username">
@@ -182,7 +185,7 @@ onMounted(loadCaptcha)
           <el-icon><Connection /></el-icon>配置企业服务地址
         </el-button>
       </div>
-      <footer>© 2026 LeanTPM · 精益设备管理系统</footer>
+      <footer>© 2026 {{ branding.shortName }} · {{ branding.subtitle }}</footer>
     </section>
   </main>
 </template>
@@ -202,8 +205,8 @@ onMounted(loadCaptcha)
   padding: 8vw;
   color: #fff;
   background:
-    radial-gradient(circle at 75% 30%, rgba(17, 144, 172, 0.4), transparent 26%),
-    linear-gradient(145deg, #062938 0%, #0a5068 62%, #0b6882 100%);
+    radial-gradient(circle at 75% 30%, rgba(var(--tpm-secondary-rgb), 0.42), transparent 26%),
+    linear-gradient(145deg, var(--tpm-sidebar) 0%, var(--tpm-primary-strong) 65%, var(--tpm-primary) 100%);
 }
 
 .story-grid {
@@ -240,22 +243,12 @@ onMounted(loadCaptcha)
   align-items: center;
   gap: 10px;
   margin-bottom: clamp(70px, 14vh, 150px);
-  font-size: 18px;
-  font-weight: 750;
-
-  span,
-  .mobile-brand span {
-    padding: 9px 7px;
-    border: 1px solid rgba(255, 255, 255, 0.36);
-    border-radius: 7px;
-    background: rgba(255, 255, 255, 0.1);
-    font-size: 13px;
-  }
+  width: min(420px, 80%);
 }
 
 .eyebrow,
 .login-eyebrow {
-  color: #65d0e4;
+  color: var(--tpm-secondary-soft);
   font-size: 11px;
   font-weight: 750;
   letter-spacing: 0.2em;
@@ -270,7 +263,7 @@ h1 {
 
 .story-lead {
   max-width: 540px;
-  color: #bed7df;
+  color: rgba(255, 255, 255, .76);
   font-size: 17px;
   line-height: 1.9;
 }
@@ -279,7 +272,7 @@ h1 {
   display: flex;
   align-items: center;
   margin-top: 54px;
-  color: #83acb9;
+  color: rgba(255, 255, 255, .6);
   font-size: 12px;
 
   span.active {
@@ -305,7 +298,7 @@ h1 {
   padding: 14px 18px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 10px;
-  background: rgba(4, 31, 42, 0.46);
+    background: rgba(var(--tpm-neutral-rgb), 0.48);
   backdrop-filter: blur(10px);
 
   div {
@@ -319,7 +312,7 @@ h1 {
 
   small {
     margin-top: 3px;
-    color: #91b5c0;
+    color: rgba(255, 255, 255, .66);
     font-size: 10px;
   }
 }
@@ -328,8 +321,8 @@ h1 {
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: #36d399;
-  box-shadow: 0 0 0 5px rgba(54, 211, 153, 0.12);
+  background: var(--tpm-secondary);
+  box-shadow: 0 0 0 5px rgba(var(--tpm-secondary-rgb), 0.18);
 }
 
 .login-panel {
@@ -458,13 +451,7 @@ footer {
     display: flex;
     align-items: center;
     align-self: flex-start;
-    gap: 9px;
-    color: var(--tpm-primary-strong);
-
-    span {
-      color: #fff;
-      background: var(--tpm-primary);
-    }
+    width: min(280px, 74vw);
   }
 
   .login-box {

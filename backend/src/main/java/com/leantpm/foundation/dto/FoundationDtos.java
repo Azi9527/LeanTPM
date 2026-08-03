@@ -34,7 +34,7 @@ public final class FoundationDtos {
             @Pattern(regexp = "^[a-z][a-z0-9]*(\\.[a-z0-9][a-z0-9-]*)+$", message = "必须使用小写点分键名")
             String parameterKey,
             @NotBlank @Size(max = 100) String parameterName,
-            @NotNull @Size(max = 2000) String parameterValue,
+            @NotNull @Size(max = 700000) String parameterValue,
             @NotBlank
             @Pattern(regexp = "STRING|BOOLEAN|INTEGER|DECIMAL", message = "不支持的参数类型")
             String valueType,
@@ -45,6 +45,28 @@ public final class FoundationDtos {
             @Size(max = 500) String description,
             @NotNull Boolean enabled,
             Integer version
+    ) {
+    }
+
+    public record BrandingSettings(
+            String systemName,
+            String shortName,
+            String subtitle,
+            String logoUrl,
+            String primaryColor,
+            String secondaryColor,
+            String neutralColor
+    ) {
+    }
+
+    public record SaveBrandingRequest(
+            @NotBlank @Size(max = 60) String systemName,
+            @NotBlank @Size(max = 30) String shortName,
+            @NotBlank @Size(max = 40) String subtitle,
+            @NotBlank @Size(max = 700000) String logoUrl,
+            @NotBlank @Pattern(regexp = "^#[0-9a-fA-F]{6}$") String primaryColor,
+            @NotBlank @Pattern(regexp = "^#[0-9a-fA-F]{6}$") String secondaryColor,
+            @NotBlank @Pattern(regexp = "^#[0-9a-fA-F]{6}$") String neutralColor
     ) {
     }
 

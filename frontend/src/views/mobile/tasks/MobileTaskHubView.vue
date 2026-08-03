@@ -55,7 +55,7 @@ const workflows = computed(() => [
 .task-hub { display: grid; gap: 16px; }
 header { padding: 4px 4px 8px; }
 header p, header h1, header span { margin: 0; }
-header p { color: #16839a; font-size: 11px; font-weight: 800; letter-spacing: .14em; }
+header p { color: var(--tpm-primary); font-size: 11px; font-weight: 800; letter-spacing: .14em; }
 header h1 { margin: 5px 0; font-size: 26px; }
 header span { color: #74868e; font-size: 13px; }
 .workflow-card {
@@ -64,13 +64,13 @@ header span { color: #74868e; font-size: 13px; }
   text-align: left; color: inherit; background: white;
   box-shadow: 0 8px 26px rgba(23, 58, 69, .08);
 }
-.workflow-icon { display: grid; width: 54px; height: 54px; place-items: center; border-radius: 17px; color: #08718a; background: #e8f6f8; font-size: 26px; }
+.workflow-icon { display: grid; width: 54px; height: 54px; place-items: center; border-radius: 17px; color: var(--tpm-primary); background: var(--tpm-primary-soft); font-size: 26px; }
 .workflow-copy h2, .workflow-copy p { margin: 0; }
 .workflow-copy p { margin-top: 6px; color: #7b8d94; line-height: 1.55; font-size: 12px; }
 .workflow-metrics { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, 1fr); padding-top: 16px; border-top: 1px solid #edf1f2; }
 .workflow-metrics div { display: grid; text-align: center; }
 .workflow-metrics b { font-size: 22px; }
 .workflow-metrics span { color: #86969c; font-size: 11px; }
-.workflow-metrics .danger b { color: #d94d4d; }
+.workflow-metrics .danger b { color: var(--tpm-danger); }
 .arrow { align-self: center; color: #95a4aa; }
 </style>

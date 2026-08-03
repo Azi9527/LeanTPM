@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { FullScreen, Refresh } from '@element-plus/icons-vue'
 import type { OrganizationRow } from '@/api/masterData'
+import { useBranding } from '@/branding/branding'
+
+const branding = useBranding()
 
 defineProps<{
   title: string
@@ -19,7 +22,7 @@ const emit = defineEmits<{ refresh: []; fullscreen: [] }>()
 <template>
   <header class="dashboard-header">
     <div class="brand">
-      <span class="eyebrow">LEAN TPM · VISUAL COMMAND CENTER</span>
+      <span class="eyebrow">{{ branding.shortName }} · VISUAL COMMAND CENTER</span>
       <h1>{{ title }}</h1>
       <p>{{ subtitle }}</p>
     </div>

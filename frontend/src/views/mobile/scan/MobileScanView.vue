@@ -62,9 +62,9 @@ async function resolveManual() {
 .scan-frame {
   position: relative; display: grid; width: min(58vw, 230px); aspect-ratio: 1;
   margin: 10px 0 22px; place-items: center; border-radius: 24px;
-  color: #1591aa; background: linear-gradient(145deg, #effafb, #e4f4f7);
+  color: var(--tpm-primary); background: linear-gradient(145deg, var(--tpm-primary-soft), #fff);
 }
-.scan-frame > span { position: absolute; width: 38px; height: 38px; border-color: #08718a; }
+.scan-frame > span { position: absolute; width: 38px; height: 38px; border-color: var(--tpm-primary); }
 .scan-frame > span:nth-child(1) { top: 12px; left: 12px; border-top: 4px solid; border-left: 4px solid; border-radius: 8px 0 0; }
 .scan-frame > span:nth-child(2) { top: 12px; right: 12px; border-top: 4px solid; border-right: 4px solid; border-radius: 0 8px 0 0; }
 .scan-frame > span:nth-child(3) { bottom: 12px; left: 12px; border-bottom: 4px solid; border-left: 4px solid; border-radius: 0 0 0 8px; }

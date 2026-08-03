@@ -20,7 +20,8 @@ const cards = computed(() => [
   {
     type: '点检',
     icon: 'CircleCheck',
-    color: '#167a93',
+    color: 'var(--tpm-primary)',
+    background: 'var(--tpm-primary-soft)',
     data: mobile.bootstrap?.inspection,
     path: '/mobile/inspection',
     show: auth.can('inspection:my-task:view'),
@@ -28,7 +29,8 @@ const cards = computed(() => [
   {
     type: '维保',
     icon: 'Tools',
-    color: '#b56b16',
+    color: 'var(--tpm-secondary)',
+    background: 'var(--tpm-secondary-soft)',
     data: mobile.bootstrap?.maintenance,
     path: '/mobile/maintenance',
     show: auth.can('maintenance:my-task:view'),
@@ -81,7 +83,7 @@ const completionRate = computed(() => today.value.due
       class="work-card"
       @click="router.push(card.path)"
     >
-      <div class="work-icon" :style="{ background: `${card.color}16`, color: card.color }">
+      <div class="work-icon" :style="{ background: card.background, color: card.color }">
         <el-icon><component :is="card.icon" /></el-icon>
       </div>
       <div class="work-copy"><strong>{{ card.type }}任务</strong><span>今日 {{ card.data?.dueToday ?? 0 }} 项</span></div>
@@ -99,8 +101,8 @@ const completionRate = computed(() => today.value.due
 .mobile-page { display: grid; gap: 16px; }
 .welcome-card {
   padding: 22px; border-radius: 20px; color: white;
-  background: linear-gradient(135deg, #0a5268, #128aa3);
-  box-shadow: 0 14px 34px rgba(8, 94, 116, .22);
+  background: linear-gradient(135deg, var(--tpm-sidebar), var(--tpm-primary));
+  box-shadow: 0 14px 34px rgba(var(--tpm-primary-rgb), .22);
 }
 .welcome-card p, .welcome-card h1 { margin: 0; }
 .welcome-card h1 { margin: 4px 0 10px; font-size: 26px; }
@@ -108,15 +110,15 @@ const completionRate = computed(() => today.value.due
 .quick-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
 .today-board { display: grid; gap: 10px; padding: 18px; border-radius: 18px; background: white; box-shadow: 0 6px 20px rgba(23, 58, 69, .07); }
 .today-board > div:first-child { display: flex; align-items: center; justify-content: space-between; }
-.today-board strong { color: #08708a; font-size: 24px; }
+.today-board strong { color: var(--tpm-primary); font-size: 24px; }
 .board-metrics { display: flex; justify-content: space-between; color: #71838b; font-size: 12px; }
-.board-metrics .danger { color: #d94c4c; }
+.board-metrics .danger { color: var(--tpm-danger); }
 .quick-grid button {
   display: grid; min-height: 112px; padding: 16px; text-align: left;
   border: 0; border-radius: 18px; color: #213b47; background: white;
   box-shadow: 0 6px 20px rgba(23, 58, 69, .07);
 }
-.quick-grid .el-icon { margin-bottom: 10px; color: #08708a; font-size: 26px; }
+.quick-grid .el-icon { margin-bottom: 10px; color: var(--tpm-primary); font-size: 26px; }
 .quick-grid span { margin-top: 3px; color: #7c8e95; font-size: 12px; }
 .section-title h2, .section-title p { margin: 0; }
 .section-title p { margin-top: 3px; color: #7b8b92; font-size: 12px; }
@@ -133,6 +135,6 @@ const completionRate = computed(() => today.value.due
 .work-numbers div { display: grid; text-align: center; }
 .work-numbers b { font-size: 20px; }
 .work-numbers span { color: #87969c; font-size: 11px; }
-.work-numbers .danger b { color: #d94c4c; }
+.work-numbers .danger b { color: var(--tpm-danger); }
 .arrow { color: #9aa8ad; }
 </style>

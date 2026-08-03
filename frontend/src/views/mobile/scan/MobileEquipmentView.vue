@@ -85,9 +85,9 @@ function dateTime(value?: string): string {
 .section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
 .section-head h2, .section-head p { margin: 0; }
 .section-head p { margin-top: 4px; color: #85949a; font-size: 12px; }
-.section-head b { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 50%; color: #08718a; background: #e9f6f8; }
+.section-head b { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 50%; color: var(--tpm-primary); background: var(--tpm-primary-soft); }
 .task-link { display: grid; width: 100%; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; padding: 14px 0; border: 0; border-top: 1px solid #edf1f2; text-align: left; background: transparent; }
-.task-type { padding: 7px; border-radius: 10px; color: #0b7189; background: #e9f7f9; font-size: 12px; }
+.task-type { padding: 7px; border-radius: 10px; color: var(--tpm-primary); background: var(--tpm-primary-soft); font-size: 12px; }
 .task-type.maintenance { color: #a25b10; background: #fff3e5; }
 .task-link p, .task-link small { margin: 3px 0 0; color: #7d8d94; font-size: 12px; }
 </style>

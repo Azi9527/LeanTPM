@@ -37,7 +37,7 @@ class MySqlMigrationIntegrationTest {
     @Test
     void appliesEveryMigrationAndFoundationTable() throws Exception {
         assertThat(number("SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1"))
-                .isEqualTo(22);
+                .isEqualTo(23);
         assertThat(number("""
                 SELECT COUNT(*)
                 FROM information_schema.tables
@@ -479,6 +479,32 @@ class MySqlMigrationIntegrationTest {
                   'mobile.android-release-notes'
                 ) AND status = 1 AND deleted = 0
                 """)).isEqualTo(6);
+    }
+
+    @Test
+    void seedsConfigurableCustomerBranding() throws Exception {
+        assertThat(number("""
+                SELECT COUNT(*) FROM system_parameter
+                WHERE tenant_id = 1 AND parameter_key IN (
+                  'branding.short-name',
+                  'branding.subtitle',
+                  'branding.logo-url',
+                  'branding.primary-color',
+                  'branding.secondary-color',
+                  'branding.neutral-color'
+                ) AND group_code = 'BRANDING' AND built_in = 1
+                  AND status = 1 AND deleted = 0
+                """)).isEqualTo(6);
+        assertThat(text("""
+                SELECT parameter_value FROM system_parameter
+                WHERE tenant_id = 1 AND parameter_key = 'branding.primary-color'
+                """)).isEqualTo("#c4000a");
+        assertThat(text("""
+                SELECT data_type FROM information_schema.columns
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'system_parameter'
+                  AND column_name = 'parameter_value'
+                """)).isEqualTo("mediumtext");
     }
 
     @Test

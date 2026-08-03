@@ -5,11 +5,14 @@ import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { useMobileStore } from '@/stores/mobile'
 import { errorMessage } from '@/utils/http'
+import BrandLogo from '@/components/branding/BrandLogo.vue'
+import { useBranding } from '@/branding/branding'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const mobile = useMobileStore()
+const branding = useBranding()
 
 const items = computed(() => [
   { path: '/mobile/workbench', label: '工作台', icon: 'House', show: auth.can('mobile:workbench:view') },
@@ -44,8 +47,8 @@ onMounted(async () => {
   <div class="mobile-app">
     <header class="mobile-topbar">
       <div class="mobile-brand">
-        <span>LT</span>
-        <div><strong>LeanTPM</strong><small>现场作业</small></div>
+        <BrandLogo compact :height="38" light />
+        <div><strong>{{ branding.shortName }}</strong><small>现场作业</small></div>
       </div>
       <div class="network-pill" :class="{ offline: !mobile.online }">
         <i></i>{{ mobile.online ? '在线' : '离线' }}
@@ -112,15 +115,10 @@ onMounted(async () => {
   min-height: 64px;
   padding: max(10px, env(safe-area-inset-top)) 18px 10px;
   color: white;
-  background: linear-gradient(135deg, #073848, #0b657d);
-  box-shadow: 0 8px 24px rgba(5, 49, 63, .18);
+  background: linear-gradient(135deg, var(--tpm-sidebar), var(--tpm-primary-strong));
+  box-shadow: 0 8px 24px rgba(var(--tpm-neutral-rgb), .18);
 }
 .mobile-brand { display: flex; align-items: center; gap: 10px; }
-.mobile-brand > span {
-  display: grid; width: 38px; height: 38px; place-items: center;
-  border-radius: 12px; font-weight: 800;
-  background: rgba(255, 255, 255, .16);
-}
 .mobile-brand div { display: grid; }
 .mobile-brand small { opacity: .7; font-size: 11px; }
 .network-pill {
@@ -146,7 +144,7 @@ onMounted(async () => {
   font: inherit; font-size: 11px;
 }
 .mobile-bottom-nav .el-icon { font-size: 22px; }
-.mobile-bottom-nav button.active { color: #08708a; font-weight: 700; }
+.mobile-bottom-nav button.active { color: var(--tpm-primary); font-weight: 700; }
 @media (min-width: 760px) {
   .mobile-app { max-width: 760px; margin: 0 auto; box-shadow: 0 0 40px rgba(3, 42, 54, .12); }
   .mobile-bottom-nav { right: auto; left: 50%; width: 760px; transform: translateX(-50%); }

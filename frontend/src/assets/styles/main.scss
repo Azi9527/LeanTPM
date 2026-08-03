@@ -1,16 +1,22 @@
 :root {
-  --tpm-primary: #0b5f7a;
-  --tpm-primary-strong: #083f56;
-  --tpm-primary-soft: #e5f2f5;
-  --tpm-accent: #f3a712;
-  --tpm-success: #1b9c78;
-  --tpm-danger: #df4b4b;
-  --tpm-text: #1d2935;
+  --tpm-primary: #c4000a;
+  --tpm-primary-strong: #950008;
+  --tpm-primary-soft: #fae6e7;
+  --tpm-primary-rgb: 196, 0, 10;
+  --tpm-secondary: #1c7d50;
+  --tpm-secondary-strong: #165f3d;
+  --tpm-secondary-soft: #e3efe9;
+  --tpm-secondary-rgb: 28, 125, 80;
+  --tpm-accent: #1c7d50;
+  --tpm-success: #1c7d50;
+  --tpm-danger: #c4000a;
+  --tpm-text: #3e3a39;
   --tpm-text-secondary: #647383;
   --tpm-border: #dce3e8;
   --tpm-bg: #f2f5f7;
   --tpm-card: #ffffff;
-  --tpm-sidebar: #092f40;
+  --tpm-sidebar: #2f2c2b;
+  --tpm-neutral-rgb: 62, 58, 57;
   --el-color-primary: var(--tpm-primary);
   --el-color-success: var(--tpm-success);
   --el-color-warning: var(--tpm-accent);
@@ -36,7 +42,7 @@ body,
 body {
   min-height: 100vh;
   background:
-    linear-gradient(135deg, rgba(11, 95, 122, 0.035), transparent 35%),
+    linear-gradient(135deg, rgba(var(--tpm-primary-rgb), 0.035), transparent 35%),
     var(--tpm-bg);
 }
 

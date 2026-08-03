@@ -8,6 +8,7 @@ import router from './router'
 import { initializeMobileRuntime } from './mobile/runtime'
 import { initializeHttpStorage } from './utils/http'
 import { consumeNotificationLaunchRoute } from './mobile/localAlerts'
+import { initializeBranding } from './branding/branding'
 import './assets/styles/main.scss'
 
 function renderStartupFailure(error: unknown) {
@@ -27,6 +28,7 @@ function renderStartupFailure(error: unknown) {
 async function bootstrap() {
   try {
     await initializeHttpStorage()
+    await initializeBranding()
     await initializeMobileRuntime()
 
     const app = createApp(App)

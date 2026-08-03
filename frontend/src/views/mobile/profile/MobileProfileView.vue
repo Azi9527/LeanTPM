@@ -12,6 +12,7 @@ import {
   setServerBaseUrl,
 } from '@/utils/http'
 import { nativeContainer } from '@/mobile/secureVault'
+import { initializeBranding } from '@/branding/branding'
 
 const route = useRoute()
 const router = useRouter()
@@ -71,6 +72,7 @@ async function saveServer() {
   try {
     await clearTokens()
     await setServerBaseUrl(serverUrl.value)
+    await initializeBranding()
     ElMessage.success('服务地址已保存，请重新登录')
     await router.replace('/login?redirect=/mobile/workbench')
   } catch (error) {
@@ -148,7 +150,7 @@ function downloadUpgrade() {
 .profile-page { display: grid; gap: 16px; }
 .identity-card, .settings-card { padding: 20px; border-radius: 20px; background: white; box-shadow: 0 7px 24px rgba(23, 58, 69, .07); }
 .identity-card { display: flex; align-items: center; gap: 14px; }
-.avatar { display: grid; width: 56px; height: 56px; place-items: center; border-radius: 18px; color: white; background: linear-gradient(135deg, #0a5368, #1691aa); font-size: 24px; font-weight: 800; }
+.avatar { display: grid; width: 56px; height: 56px; place-items: center; border-radius: 18px; color: white; background: linear-gradient(135deg, var(--tpm-primary-strong), var(--tpm-primary)); font-size: 24px; font-weight: 800; }
 .identity-card h1, .identity-card p { margin: 0; }
 .identity-card p { margin-top: 5px; color: #788991; font-size: 12px; }
 .settings-card { display: grid; gap: 12px; }

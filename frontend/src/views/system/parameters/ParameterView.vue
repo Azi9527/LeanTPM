@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, type UploadFile } from 'element-plus'
 import { systemApi, type ParameterRow } from '@/api/system'
+import {
+  applyBranding,
+  DEFAULT_BRANDING,
+  type BrandingSettings,
+} from '@/branding/branding'
 import { useAuthStore } from '@/stores/auth'
 import { errorMessage } from '@/utils/http'
 
@@ -10,10 +15,13 @@ const loading = ref(false)
 const saving = ref(false)
 const loadError = ref('')
 const rows = ref<ParameterRow[]>([])
+const configurationRows = ref<ParameterRow[]>([])
 const keyword = ref('')
 const groupCode = ref('')
 const dialogVisible = ref(false)
 const editing = ref<ParameterRow | null>(null)
+const brandingSaving = ref(false)
+const brandForm = reactive<BrandingSettings>({ ...DEFAULT_BRANDING })
 const form = reactive({
   parameterKey: '',
   parameterName: '',
@@ -32,14 +40,95 @@ async function load() {
   loading.value = true
   loadError.value = ''
   try {
-    rows.value = await systemApi.parameters({
-      keyword: keyword.value || undefined,
-      groupCode: groupCode.value || undefined,
-    })
+    const [filteredRows, allRows] = await Promise.all([
+      systemApi.parameters({
+        keyword: keyword.value || undefined,
+        groupCode: groupCode.value || undefined,
+      }),
+      systemApi.parameters(),
+    ])
+    rows.value = filteredRows
+    configurationRows.value = allRows
+    hydrateBrandingForm()
   } catch (error) {
     loadError.value = errorMessage(error)
   } finally {
     loading.value = false
+  }
+}
+
+function hydrateBrandingForm() {
+  const value = (key: string, fallback: string) =>
+    configurationRows.value.find((row) => row.parameterKey === key)?.parameterValue || fallback
+  Object.assign(brandForm, {
+    systemName: value('system.name', DEFAULT_BRANDING.systemName),
+    shortName: value('branding.short-name', DEFAULT_BRANDING.shortName),
+    subtitle: value('branding.subtitle', DEFAULT_BRANDING.subtitle),
+    logoUrl: value('branding.logo-url', DEFAULT_BRANDING.logoUrl),
+    primaryColor: value('branding.primary-color', DEFAULT_BRANDING.primaryColor),
+    secondaryColor: value('branding.secondary-color', DEFAULT_BRANDING.secondaryColor),
+    neutralColor: value('branding.neutral-color', DEFAULT_BRANDING.neutralColor),
+  })
+}
+
+async function handleLogoChange(file: UploadFile) {
+  const raw = file.raw
+  if (!raw) return
+  if (!['image/png', 'image/jpeg', 'image/webp'].includes(raw.type)) {
+    ElMessage.warning('Logo 仅支持 PNG、JPEG 或 WebP 图片')
+    return
+  }
+  if (raw.size > 512 * 1024) {
+    ElMessage.warning('Logo 图片不能超过 512KB')
+    return
+  }
+  brandForm.logoUrl = await readDataUrl(raw)
+}
+
+function readDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+}
+
+function resetBranding() {
+  Object.assign(brandForm, DEFAULT_BRANDING)
+}
+
+async function saveBranding() {
+  const required = [brandForm.systemName, brandForm.shortName, brandForm.subtitle, brandForm.logoUrl]
+  if (required.some((value) => !value.trim())) {
+    ElMessage.warning('请完整填写品牌名称、简称、副标题和 Logo')
+    return
+  }
+  if (![brandForm.primaryColor, brandForm.secondaryColor, brandForm.neutralColor]
+    .every((value) => /^#[0-9a-f]{6}$/i.test(value))) {
+    ElMessage.warning('主题色必须使用 #RRGGBB 格式')
+    return
+  }
+
+  brandingSaving.value = true
+  try {
+    const normalized = {
+      systemName: brandForm.systemName.trim(),
+      shortName: brandForm.shortName.trim(),
+      subtitle: brandForm.subtitle.trim(),
+      logoUrl: brandForm.logoUrl.trim(),
+      primaryColor: brandForm.primaryColor.trim().toLowerCase(),
+      secondaryColor: brandForm.secondaryColor.trim().toLowerCase(),
+      neutralColor: brandForm.neutralColor.trim().toLowerCase(),
+    }
+    await systemApi.updateBranding(normalized)
+    applyBranding(normalized)
+    ElMessage.success('品牌 Logo 与主题色已保存并立即生效')
+    await load()
+  } catch (error) {
+    ElMessage.error(errorMessage(error, '品牌配置保存失败'))
+  } finally {
+    brandingSaving.value = false
   }
 }
 
@@ -122,6 +211,64 @@ async function remove(row: ParameterRow) {
       </div>
     </header>
 
+    <section class="surface-card branding-card">
+      <div class="branding-heading">
+        <div>
+          <h2>品牌与主题</h2>
+          <p>统一调整登录页、后台、移动作业端和安卓 App 的 Logo、名称与主题色。</p>
+        </div>
+        <el-tag type="success" effect="plain">即时预览</el-tag>
+      </div>
+      <div class="branding-grid">
+        <div class="branding-preview" :style="{
+          '--preview-primary': brandForm.primaryColor,
+          '--preview-secondary': brandForm.secondaryColor,
+          '--preview-neutral': brandForm.neutralColor,
+        }">
+          <div class="preview-logo"><img :src="brandForm.logoUrl" alt="品牌 Logo 预览" /></div>
+          <strong>{{ brandForm.systemName }}</strong>
+          <span>{{ brandForm.subtitle }}</span>
+          <button type="button">主题按钮</button>
+          <div class="preview-colors">
+            <i :style="{ background: brandForm.primaryColor }"></i>
+            <i :style="{ background: brandForm.secondaryColor }"></i>
+            <i :style="{ background: brandForm.neutralColor }"></i>
+          </div>
+        </div>
+        <el-form label-position="top" class="branding-form">
+          <el-form-item label="系统名称"><el-input v-model="brandForm.systemName" maxlength="60" /></el-form-item>
+          <el-form-item label="品牌简称"><el-input v-model="brandForm.shortName" maxlength="30" /></el-form-item>
+          <el-form-item label="品牌副标题"><el-input v-model="brandForm.subtitle" maxlength="40" /></el-form-item>
+          <el-form-item label="品牌 Logo" class="logo-field">
+            <div class="logo-actions">
+              <el-upload
+                accept="image/png,image/jpeg,image/webp"
+                :auto-upload="false"
+                :show-file-list="false"
+                :on-change="handleLogoChange"
+              >
+                <el-button>选择图片</el-button>
+              </el-upload>
+              <span>PNG/JPEG/WebP，最大 512KB，建议透明或白底横版 Logo</span>
+            </div>
+          </el-form-item>
+          <el-form-item label="主品牌色">
+            <div class="color-field"><el-color-picker v-model="brandForm.primaryColor" /><el-input v-model="brandForm.primaryColor" maxlength="7" /></div>
+          </el-form-item>
+          <el-form-item label="辅助品牌色">
+            <div class="color-field"><el-color-picker v-model="brandForm.secondaryColor" /><el-input v-model="brandForm.secondaryColor" maxlength="7" /></div>
+          </el-form-item>
+          <el-form-item label="中性品牌色">
+            <div class="color-field"><el-color-picker v-model="brandForm.neutralColor" /><el-input v-model="brandForm.neutralColor" maxlength="7" /></div>
+          </el-form-item>
+          <div v-if="auth.can('system:parameter:manage')" class="branding-actions">
+            <el-button @click="resetBranding">恢复宝山默认值</el-button>
+            <el-button type="primary" :loading="brandingSaving" @click="saveBranding">保存品牌配置</el-button>
+          </div>
+        </el-form>
+      </div>
+    </section>
+
     <section class="surface-card query-bar">
       <el-input
         v-model="keyword"
@@ -162,6 +309,9 @@ async function remove(row: ParameterRow) {
             <el-tag v-if="row.valueType === 'BOOLEAN'" :type="row.parameterValue === 'true' ? 'success' : 'info'">
               {{ row.parameterValue === 'true' ? '开启' : '关闭' }}
             </el-tag>
+            <span v-else-if="row.parameterKey === 'branding.logo-url'" class="mono">
+              {{ row.parameterValue.startsWith('data:') ? '已上传自定义 Logo' : row.parameterValue }}
+            </span>
             <span v-else class="mono">{{ row.parameterValue }}</span>
           </template>
         </el-table-column>
@@ -242,7 +392,36 @@ async function remove(row: ParameterRow) {
 
 <style scoped lang="scss">
 .result-count { color: var(--tpm-text-secondary); font-size: 12px; }
+.branding-card { padding: 20px; }
+.branding-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.branding-heading h2 { margin: 0 0 5px; font-size: 18px; }
+.branding-heading p { margin: 0; color: var(--tpm-text-secondary); font-size: 13px; }
+.branding-grid { display: grid; grid-template-columns: minmax(240px, .72fr) minmax(480px, 1.6fr); gap: 24px; }
+.branding-preview {
+  display: flex; overflow: hidden; align-items: flex-start; flex-direction: column; min-height: 280px;
+  padding: 24px; border-radius: 16px; color: #fff;
+  background: linear-gradient(145deg, var(--preview-neutral), color-mix(in srgb, var(--preview-primary) 48%, var(--preview-neutral)));
+}
+.preview-logo { display: flex; align-items: center; width: 100%; min-height: 76px; padding: 9px; border-radius: 10px; background: #fff; }
+.preview-logo img { display: block; width: 100%; max-height: 66px; object-fit: contain; }
+.branding-preview > strong { margin-top: 22px; font-size: 22px; }
+.branding-preview > span { margin-top: 4px; opacity: .72; }
+.branding-preview button { margin-top: auto; padding: 9px 18px; border: 0; border-radius: 7px; color: #fff; background: var(--preview-primary); }
+.preview-colors { display: flex; gap: 7px; margin-top: 14px; }
+.preview-colors i { width: 22px; height: 6px; border-radius: 99px; }
+.branding-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
+.logo-field, .branding-actions { grid-column: 1 / -1; }
+.logo-actions { display: flex; align-items: center; gap: 12px; }
+.logo-actions span { color: var(--tpm-text-secondary); font-size: 12px; }
+.color-field { display: grid; grid-template-columns: 40px 1fr; gap: 8px; width: 100%; }
+.branding-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .parameter-form { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
 .full-row { grid-column: 1 / -1; }
-@media (max-width: 640px) { .parameter-form { grid-template-columns: 1fr; } .full-row { grid-column: auto; } }
+@media (max-width: 900px) { .branding-grid { grid-template-columns: 1fr; } }
+@media (max-width: 640px) {
+  .branding-form, .parameter-form { grid-template-columns: 1fr; }
+  .logo-field, .branding-actions, .full-row { grid-column: auto; }
+  .logo-actions { align-items: flex-start; flex-direction: column; }
+  .branding-actions { display: grid; grid-template-columns: 1fr 1fr; }
+}
 </style>

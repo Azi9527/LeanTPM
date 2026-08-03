@@ -1,5 +1,6 @@
 import { http } from '@/utils/http'
 import type { ApiResponse, MenuItem, PageResult } from '@/types/api'
+import type { BrandingSettings } from '@/branding/branding'
 
 export interface UserRow {
   id: number
@@ -286,6 +287,7 @@ export const systemApi = {
   createParameter: (data: object) => http.post('/system/parameters', data),
   updateParameter: (id: number, data: object) => http.put(`/system/parameters/${id}`, data),
   deleteParameter: (id: number) => http.delete(`/system/parameters/${id}`),
+  updateBranding: (data: BrandingSettings) => http.put('/system/branding', data),
 
   numberRules: (params?: { keyword?: string }) =>
     getData<NumberRuleRow[]>('/system/number-rules', params),

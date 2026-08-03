@@ -82,4 +82,16 @@ class SecurityHeadersMySqlIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("UP"));
     }
+
+    @Test
+    void exposesPublicCustomerBrandingWithoutAuthentication() throws Exception {
+        mockMvc.perform(get("/api/v1/public/branding").secure(true))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.systemName").value("宝山矿业设备管理系统"))
+                .andExpect(jsonPath("$.data.shortName").value("宝山矿业"))
+                .andExpect(jsonPath("$.data.logoUrl").value("/branding/baoshan-mining-logo.png"))
+                .andExpect(jsonPath("$.data.primaryColor").value("#c4000a"))
+                .andExpect(jsonPath("$.data.secondaryColor").value("#1c7d50"))
+                .andExpect(jsonPath("$.data.neutralColor").value("#3e3a39"));
+    }
 }

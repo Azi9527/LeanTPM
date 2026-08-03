@@ -3,11 +3,14 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { equipmentApi, type PublicEquipmentView } from '@/api/equipment'
 import { errorMessage } from '@/utils/http'
+import BrandLogo from '@/components/branding/BrandLogo.vue'
+import { useBranding } from '@/branding/branding'
 
 const route = useRoute()
 const loading = ref(true)
 const error = ref('')
 const equipment = ref<PublicEquipmentView | null>(null)
+const branding = useBranding()
 
 const statusLabels: Record<string, string> = {
   NOT_ENABLED: '未启用',
@@ -48,10 +51,10 @@ async function load() {
 <template>
   <main class="mobile-page">
     <header class="brand">
-      <span class="brand-mark">TPM</span>
+      <BrandLogo compact :height="44" />
       <div>
-        <strong>LeanTPM</strong>
-        <small>精益设备管理</small>
+        <strong>{{ branding.shortName }}</strong>
+        <small>{{ branding.subtitle }}</small>
       </div>
     </header>
 
@@ -105,7 +108,7 @@ async function load() {
   padding: 20px;
   color: #172033;
   background:
-    radial-gradient(circle at 100% 0, rgba(56, 189, 248, .2), transparent 38%),
+    radial-gradient(circle at 100% 0, rgba(var(--tpm-secondary-rgb), .2), transparent 38%),
     linear-gradient(180deg, #eef7fb, #f7fafc 48%, #edf2f7);
 }
 
@@ -115,18 +118,6 @@ async function load() {
   align-items: center;
   max-width: 520px;
   margin: 0 auto 22px;
-}
-
-.brand-mark {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  color: #fff;
-  background: #075985;
-  font-weight: 800;
-  font-size: 13px;
 }
 
 .brand strong,
