@@ -28,7 +28,6 @@ export interface MobileBootstrap {
   draftRetentionDays: number
   maxUploadMb: number
   photoPolicy: {
-    locationRequired: boolean
     clockSkewWarningSeconds: number
   }
   androidVersion: {
@@ -51,11 +50,7 @@ export interface PhotoEvidencePayload {
   capturedDeviceTime: string
   serverReferenceTime: string
   deviceClockOffsetSeconds: number
-  latitude?: number
-  longitude?: number
-  locationAccuracyMeters?: number
-  locationProvider?: string
-  addressText?: string
+  faultLocationText: string
   watermarkText: string
 }
 
@@ -65,6 +60,11 @@ export interface PhotoEvidence extends PhotoEvidencePayload {
   clockSkewWarning: boolean
   originalSha256: string
   watermarkedSha256: string
+  latitude?: number
+  longitude?: number
+  locationAccuracyMeters?: number
+  locationProvider?: string
+  addressText?: string
 }
 
 export interface MobileEquipment {

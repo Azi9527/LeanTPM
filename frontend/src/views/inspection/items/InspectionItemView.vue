@@ -35,6 +35,11 @@ const form = reactive({
   resultOptionsText: '',
   required: true,
   photoRequired: false,
+  photoMinCount: 0,
+  photoMaxCount: 9,
+  photoMaxSizeMb: 10,
+  photoAllowedTypes: 'image/jpeg,image/png',
+  photoCompressionQuality: 82,
   numericRequired: false,
   skipAllowed: false,
   abnormalSeverity: 'MEDIUM',
@@ -97,6 +102,11 @@ function open(row?: ItemRow) {
         resultOptionsText: parseOptions(row.resultOptionsJson).join('\n'),
         required: row.requiredFlag,
         photoRequired: row.photoRequiredFlag,
+        photoMinCount: row.photoMinCount,
+        photoMaxCount: row.photoMaxCount,
+        photoMaxSizeMb: row.photoMaxSizeMb,
+        photoAllowedTypes: row.photoAllowedTypes,
+        photoCompressionQuality: row.photoCompressionQuality,
         numericRequired: row.numericRequiredFlag,
         skipAllowed: row.skipAllowedFlag,
         abnormalSeverity: row.abnormalSeverity,
@@ -124,6 +134,11 @@ function open(row?: ItemRow) {
         resultOptionsText: '',
         required: true,
         photoRequired: false,
+        photoMinCount: 0,
+        photoMaxCount: 9,
+        photoMaxSizeMb: 10,
+        photoAllowedTypes: 'image/jpeg,image/png',
+        photoCompressionQuality: 82,
         numericRequired: false,
         skipAllowed: false,
         abnormalSeverity: 'MEDIUM',
@@ -142,6 +157,11 @@ async function save() {
     ElMessage.warning('请完整填写编码、名称、点检内容和标准')
     return
   }
+  if (form.photoMinCount > form.photoMaxCount) {
+    ElMessage.warning('最少照片数不能大于最多照片数')
+    return
+  }
+  if (form.photoRequired && form.photoMinCount < 1) form.photoMinCount = 1
   saving.value = true
   try {
     const payload = {
@@ -247,6 +267,11 @@ function parseOptions(value?: string): string[] {
         <el-form-item label="异常等级"><el-select v-model="form.abnormalSeverity"><el-option label="低" value="LOW" /><el-option label="中" value="MEDIUM" /><el-option label="高" value="HIGH" /><el-option label="紧急" value="CRITICAL" /></el-select></el-form-item>
         <el-form-item label="异常建议"><el-input v-model="form.abnormalAdvice" /></el-form-item>
         <el-form-item label="异常默认停机"><el-switch v-model="form.abnormalDefaultStop" /><small class="block">任务执行时可调整，调整后必须填写原因</small></el-form-item>
+        <el-form-item label="最少照片数"><el-input-number v-model="form.photoMinCount" :min="0" :max="20" /></el-form-item>
+        <el-form-item label="最多照片数"><el-input-number v-model="form.photoMaxCount" :min="1" :max="20" /></el-form-item>
+        <el-form-item label="单张上限（MB）"><el-input-number v-model="form.photoMaxSizeMb" :min="1" :max="100" /></el-form-item>
+        <el-form-item label="压缩质量"><el-slider v-model="form.photoCompressionQuality" :min="40" :max="95" show-input /></el-form-item>
+        <el-form-item label="允许图片类型" class="full"><el-input v-model="form.photoAllowedTypes" placeholder="image/jpeg,image/png" /></el-form-item>
         <el-form-item label="安全说明" class="full"><el-input v-model="form.safetyNotes" type="textarea" /></el-form-item>
         <el-form-item label="执行规则" class="full">
           <el-checkbox v-model="form.required">必填</el-checkbox>

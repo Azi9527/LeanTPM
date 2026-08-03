@@ -47,7 +47,6 @@ public class MobileService {
                         10, 1, 100
                 ),
                 new MobileDtos.PhotoPolicy(
-                        booleanParameter(current.tenantId(), "mobile.photo-location-required", true),
                         parameter(current.tenantId(), "mobile.photo-clock-skew-warning-seconds", 300, 0, 86400)
                 ),
                 new MobileDtos.AndroidVersionPolicy(
@@ -84,10 +83,6 @@ public class MobileService {
             throw new BusinessException("MOBILE_EVIDENCE_FILES_REQUIRED", "原图和水印图必须分别上传");
         }
         assertTaskAccess(request.workflowType(), request.taskId(), request.taskItemId());
-        if (booleanParameter(current.tenantId(), "mobile.photo-location-required", true)
-                && (request.latitude() == null || request.longitude() == null)) {
-            throw new BusinessException("MOBILE_LOCATION_REQUIRED", "现场照片必须包含有效定位");
-        }
         MobileDtos.PhotoEvidence existing = findEvidenceByWatermarkedAttachment(
                 current.tenantId(), request.watermarkedAttachmentId()
         );
@@ -104,16 +99,16 @@ public class MobileService {
                      captured_device_time, server_reference_time,
                      device_clock_offset_seconds, clock_skew_warning,
                      latitude, longitude, location_accuracy_meters,
-                     location_provider, address_text, watermark_text,
+                     location_provider, address_text, fault_location_text, watermark_text,
                      original_sha256, watermarked_sha256, created_by, updated_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, current.tenantId(), request.workflowType(), request.taskId(), request.taskItemId(),
                 request.originalAttachmentId(), request.watermarkedAttachmentId(),
                 request.capturedDeviceTime(), request.serverReferenceTime(),
                 request.deviceClockOffsetSeconds(),
                 Math.abs((long) request.deviceClockOffsetSeconds()) > threshold,
-                request.latitude(), request.longitude(), request.locationAccuracyMeters(),
-                clean(request.locationProvider()), clean(request.addressText()), request.watermarkText().trim(),
+                null, null, null, null, null, request.faultLocationText().trim(),
+                request.watermarkText().trim(),
                 original.sha256(), watermarked.sha256(), current.userId(), current.userId());
         long id = jdbc.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
         return evidence(current.tenantId(), id);
@@ -277,7 +272,8 @@ public class MobileService {
                        evidence.captured_device_time, evidence.received_server_time,
                        evidence.device_clock_offset_seconds, evidence.clock_skew_warning,
                        evidence.latitude, evidence.longitude, evidence.location_accuracy_meters,
-                       evidence.location_provider, evidence.address_text, evidence.watermark_text,
+                       evidence.location_provider, evidence.address_text,
+                       evidence.fault_location_text, evidence.watermark_text,
                        evidence.original_sha256, evidence.watermarked_sha256
                 FROM mobile_photo_evidence evidence
                 """;
@@ -294,7 +290,8 @@ public class MobileService {
                 rs.getInt("device_clock_offset_seconds"), rs.getBoolean("clock_skew_warning"),
                 rs.getBigDecimal("latitude"), rs.getBigDecimal("longitude"),
                 rs.getBigDecimal("location_accuracy_meters"), rs.getString("location_provider"),
-                rs.getString("address_text"), rs.getString("watermark_text"),
+                rs.getString("address_text"), rs.getString("fault_location_text"),
+                rs.getString("watermark_text"),
                 rs.getString("original_sha256"), rs.getString("watermarked_sha256")
         );
     }

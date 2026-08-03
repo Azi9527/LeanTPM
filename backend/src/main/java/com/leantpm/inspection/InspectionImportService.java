@@ -318,6 +318,8 @@ public class InspectionImportService {
                 input.inspectionTool(), input.inspectionStandard(), input.standardValue(),
                 input.minimumValue(), input.maximumValue(), input.unit(), input.resultType(),
                 input.resultOptions(), input.required(), input.photoRequired(),
+                Boolean.TRUE.equals(input.photoRequired()) ? 1 : 0, 9, 10,
+                "image/jpeg,image/png", 82,
                 input.numericRequired(), input.skipAllowed(), input.abnormalSeverity(),
                 input.abnormalAdvice(), true, input.standardMinutes(), input.safetyNotes(),
                 input.enabled(), input.description(), version

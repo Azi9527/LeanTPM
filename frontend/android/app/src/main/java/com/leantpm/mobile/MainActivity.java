@@ -11,7 +11,6 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(SecureVaultPlugin.class);
-        registerPlugin(FieldLocationPlugin.class);
         registerPlugin(LocalAlertsPlugin.class);
         super.onCreate(savedInstanceState);
     }

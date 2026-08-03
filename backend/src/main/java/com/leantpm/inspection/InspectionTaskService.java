@@ -524,7 +524,8 @@ public class InspectionTaskService {
         }
         if (mapper.countInvalidResultAttachments(current.tenantId(), id) > 0) {
             throw new BusinessException(
-                    "INSPECTION_RESULT_PHOTO_REQUIRED", "存在未上传必需照片的点检项目"
+                    "INSPECTION_RESULT_PHOTO_INVALID",
+                    "点检照片数量、大小或文件类型不符合项目配置"
             );
         }
         mapper.submitResults(current.tenantId(), id);
@@ -1010,7 +1011,9 @@ public class InspectionTaskService {
                 item.inspectionContent(), item.inspectionMethod(), item.inspectionTool(),
                 item.inspectionStandard(), item.standardValue(), item.minimumValue(),
                 item.maximumValue(), item.unit(), item.resultType(), item.resultOptionsJson(),
-                item.requiredFlag(), item.photoRequiredFlag(), item.numericRequiredFlag(),
+                item.requiredFlag(), item.photoRequiredFlag(), item.photoMinCount(),
+                item.photoMaxCount(), item.photoMaxSizeMb(), item.photoAllowedTypes(),
+                item.photoCompressionQuality(), item.numericRequiredFlag(),
                 item.skipAllowedFlag(), item.abnormalSeverity(), item.abnormalAdvice(),
                 item.abnormalDefaultStopFlag(), item.standardMinutes(), item.safetyNotes(),
                 item.sortOrder(), result

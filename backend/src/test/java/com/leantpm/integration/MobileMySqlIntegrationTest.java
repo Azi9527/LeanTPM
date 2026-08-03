@@ -80,7 +80,6 @@ class MobileMySqlIntegrationTest {
         MobileDtos.Bootstrap bootstrap = service.bootstrap();
         assertThat(bootstrap.draftRetentionDays()).isEqualTo(7);
         assertThat(bootstrap.maxUploadMb()).isEqualTo(10);
-        assertThat(bootstrap.photoPolicy().locationRequired()).isTrue();
         assertThat(bootstrap.photoPolicy().clockSkewWarningSeconds()).isEqualTo(300);
         assertThat(bootstrap.androidVersion().minimumVersionCode()).isEqualTo(2);
         assertThat(bootstrap.inspection()).isNotNull();
@@ -133,9 +132,9 @@ class MobileMySqlIntegrationTest {
         jdbc.update("""
                 INSERT INTO inspection_task_item
                     (id, tenant_id, task_id, item_code, item_name, item_category,
-                     inspection_content, inspection_standard, result_type)
+                     inspection_part, inspection_content, inspection_standard, result_type)
                 VALUES (?, 1, ?, 'PHOTO-IT', '现场照片', '外观',
-                        '拍摄设备现场照片', '照片清晰并带水印', 'PHOTO')
+                        '主轴箱', '拍摄设备现场照片', '照片清晰并带水印', 'PHOTO')
                 """, taskItemId, taskId);
         insertAttachment(9601L, "original.jpeg", "a".repeat(64));
         insertAttachment(9602L, "watermarked.jpeg", "b".repeat(64));
@@ -144,9 +143,8 @@ class MobileMySqlIntegrationTest {
                 new MobileDtos.RegisterPhotoEvidenceRequest(
                         "INSPECTION", taskId, taskItemId, 9601L, 9602L,
                         captured, captured.minusSeconds(12), 12,
-                        new BigDecimal("34.7466111"), new BigDecimal("113.6253000"),
-                        new BigDecimal("8.50"), "gps", null,
-                        "VIZ-CNC-01\n拍摄 2026-08-03 18:00:00\n定位 34.746611, 113.625300"
+                        "主轴箱",
+                        "宝山矿业\nVIZ-CNC-01\n服务时间 2026-08-03 18:00:00\n故障位置/部位 主轴箱"
                 );
 
         MobileDtos.PhotoEvidence created = service.registerPhotoEvidence(request);
@@ -156,8 +154,9 @@ class MobileMySqlIntegrationTest {
         assertThat(created.clockSkewWarning()).isFalse();
         assertThat(created.originalSha256()).isEqualTo("a".repeat(64));
         assertThat(created.watermarkedSha256()).isEqualTo("b".repeat(64));
-        assertThat(service.photoEvidence(created.id()).latitude())
-                .isEqualByComparingTo("34.7466111");
+        assertThat(service.photoEvidence(created.id()).faultLocationText())
+                .isEqualTo("主轴箱");
+        assertThat(service.photoEvidence(created.id()).latitude()).isNull();
     }
 
     private void insertAttachment(long id, String name, String sha256) {

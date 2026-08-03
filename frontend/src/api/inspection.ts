@@ -38,6 +38,11 @@ export interface ItemRow {
   resultOptionsJson?: string
   requiredFlag: boolean
   photoRequiredFlag: boolean
+  photoMinCount: number
+  photoMaxCount: number
+  photoMaxSizeMb: number
+  photoAllowedTypes: string
+  photoCompressionQuality: number
   numericRequiredFlag: boolean
   skipAllowedFlag: boolean
   abnormalSeverity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
@@ -259,6 +264,11 @@ export interface TaskItemRow {
   resultOptionsJson?: string
   requiredFlag: boolean
   photoRequiredFlag: boolean
+  photoMinCount: number
+  photoMaxCount: number
+  photoMaxSizeMb: number
+  photoAllowedTypes: string
+  photoCompressionQuality: number
   numericRequiredFlag: boolean
   skipAllowedFlag: boolean
   abnormalSeverity: string

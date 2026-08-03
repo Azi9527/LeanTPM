@@ -295,6 +295,13 @@ class InspectionMySqlIntegrationTest {
         assertThat(detail.items())
                 .extracting(InspectionDtos.TaskItemRow::sourceItemId)
                 .containsExactly(1L, 2L, 3L);
+        assertThat(detail.items()).allSatisfy(item -> {
+            assertThat(item.photoMinCount()).isGreaterThanOrEqualTo(0);
+            assertThat(item.photoMaxCount()).isEqualTo(9);
+            assertThat(item.photoMaxSizeMb()).isEqualTo(10);
+            assertThat(item.photoAllowedTypes()).isEqualTo("image/jpeg,image/png");
+            assertThat(item.photoCompressionQuality()).isEqualTo(82);
+        });
 
         List<InspectionDtos.SaveResultRequest> results = detail.items().stream()
                 .map(item -> switch (item.resultType()) {

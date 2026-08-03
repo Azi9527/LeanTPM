@@ -226,6 +226,22 @@ public class AttachmentService {
         }
     }
 
+    @Transactional
+    public DownloadedAttachment loadAudited(long id) {
+        DownloadedAttachment download = load(id);
+        changeLogService.record(
+                "ATTACHMENT", id, "DOWNLOAD", null,
+                Map.of(
+                        "businessType", download.record().businessType() == null
+                                ? "" : download.record().businessType(),
+                        "businessId", download.record().businessId() == null
+                                ? 0L : download.record().businessId(),
+                        "originalName", download.record().originalName()
+                )
+        );
+        return download;
+    }
+
     private void ensureInsideRoot(Path path) {
         if (!path.startsWith(root)) {
             throw new BusinessException("INVALID_FILE_PATH", "非法文件路径");

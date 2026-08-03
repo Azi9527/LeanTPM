@@ -24,6 +24,7 @@ import { enqueuePhoto } from '@/mobile/photoQueue'
 import { uploadPhotoEvidence } from '@/mobile/photoEvidence'
 import { useAuthStore } from '@/stores/auth'
 import { useMobileStore } from '@/stores/mobile'
+import { useBranding } from '@/branding/branding'
 import { errorMessage } from '@/utils/http'
 
 interface ResultDraft {
@@ -51,6 +52,7 @@ interface SavePayload {
 const route = useRoute()
 const auth = useAuthStore()
 const mobile = useMobileStore()
+const branding = useBranding()
 const loading = ref(false)
 const saving = ref(false)
 const uploadingItemId = ref<number>()
@@ -278,16 +280,24 @@ async function save(submit: boolean) {
 }
 
 async function upload(itemId: number, file: File) {
+  const item = detail.value?.items.find((candidate) => candidate.id === itemId)
+  if (!item) return
   if (!mobile.online) {
     ElMessage.warning('当前离线，附件需恢复网络后上传；文字结果已自动保存')
     return
   }
-  if (file.size > mobile.maxUploadMb * 1024 * 1024) {
-    ElMessage.warning(`单个附件不能超过 ${mobile.maxUploadMb} MB`)
+  if (drafts[itemId].attachmentIds.length >= item.photoMaxCount) {
+    ElMessage.warning(`该项目最多上传 ${item.photoMaxCount} 张照片`)
     return
   }
-  if (file.type && !file.type.startsWith('image/')) {
-    ElMessage.warning('现场照片仅支持图片文件')
+  const maxSizeMb = Math.min(mobile.maxUploadMb, item.photoMaxSizeMb)
+  if (file.size > maxSizeMb * 1024 * 1024) {
+    ElMessage.warning(`单张照片不能超过 ${maxSizeMb} MB`)
+    return
+  }
+  const allowedTypes = item.photoAllowedTypes.split(',').map((value) => value.trim().toLowerCase())
+  if (!file.type || !allowedTypes.includes(file.type.toLowerCase())) {
+    ElMessage.warning(`仅支持 ${item.photoAllowedTypes}`)
     return
   }
   uploadingItemId.value = itemId
@@ -321,9 +331,13 @@ async function capture(itemId: number) {
   try {
     const item = detail.value.items.find((candidate) => candidate.id === itemId)
     if (!item) return
+    if (drafts[itemId].attachmentIds.length >= item.photoMaxCount) {
+      ElMessage.warning(`该项目最多上传 ${item.photoMaxCount} 张照片`)
+      return
+    }
     const capture = await capturePhotoEvidence(
       `inspection-${detail.value.task.taskCode}-${itemId}`,
-      mobile.maxUploadMb,
+      Math.min(mobile.maxUploadMb, item.photoMaxSizeMb),
       {
         workflowType: 'INSPECTION', taskId: detail.value.task.id, taskItemId: itemId,
         taskCode: detail.value.task.taskCode,
@@ -332,7 +346,9 @@ async function capture(itemId: number) {
         itemName: item.itemName,
         executorName: auth.displayName,
         serverTime: mobile.estimatedServerTime(),
-        locationRequired: mobile.bootstrap.photoPolicy.locationRequired,
+        brandName: branding.shortName,
+        faultLocationText: item.inspectionPart || detail.value.task.locationName || item.itemName,
+        photoCompressionQuality: item.photoCompressionQuality,
       },
     )
     if (!mobile.online) {
@@ -354,7 +370,7 @@ async function capture(itemId: number) {
     })
     if (uploaded.evidence.clockSkewWarning) {
       ElMessage.warning('设备时间与服务端偏差较大，照片已标记时钟告警')
-    } else ElMessage.success('定位时间水印照片已上传')
+    } else ElMessage.success('设备位置水印照片已上传')
   } catch (error) {
     ElMessage.warning(errorMessage(error, '拍照已取消'))
   } finally {
@@ -442,13 +458,13 @@ function dueClass(row: TaskRow) {
               <div v-if="executable" class="result-controls">
                 <el-checkbox v-model="drafts[item.id].abnormal" @change="(value: boolean) => toggleAbnormal(item, value)">标记异常</el-checkbox>
                 <el-checkbox v-if="item.skipAllowedFlag" v-model="drafts[item.id].skipped">跳过本项</el-checkbox>
-                <el-upload :show-file-list="false" :auto-upload="true" :http-request="uploadHandler(item.id)">
+                <el-upload :show-file-list="false" :auto-upload="true" :accept="item.photoAllowedTypes" :http-request="uploadHandler(item.id)">
                   <el-button :loading="uploadingItemId === item.id" plain>{{ item.photoRequiredFlag ? '拍照/上传（必需）' : '上传附件' }}</el-button>
                 </el-upload>
                 <el-button :loading="uploadingItemId === item.id" plain @click="capture(item.id)">
                   <el-icon><Camera /></el-icon>现场拍照
                 </el-button>
-                <span v-if="drafts[item.id].attachmentIds.length">已上传 {{ drafts[item.id].attachmentIds.length }} 个</span>
+                <span>照片 {{ drafts[item.id].attachmentIds.length }}/{{ item.photoMaxCount }}，至少 {{ item.photoMinCount }} 张</span>
               </div>
               <div v-if="attachmentsForItem(item.id).length" class="item-attachments">
                 <div class="attachment-title">现场附件（{{ attachmentsForItem(item.id).length }}）</div>

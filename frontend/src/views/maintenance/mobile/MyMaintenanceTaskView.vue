@@ -16,6 +16,7 @@ import { enqueuePhoto } from '@/mobile/photoQueue'
 import { uploadPhotoEvidence } from '@/mobile/photoEvidence'
 import { useAuthStore } from '@/stores/auth'
 import { useMobileStore } from '@/stores/mobile'
+import { useBranding } from '@/branding/branding'
 import { errorMessage } from '@/utils/http'
 
 interface ResultDraft {
@@ -45,6 +46,7 @@ type AttachmentKind = 'beforeAttachmentIds' | 'afterAttachmentIds' | 'attachment
 const route = useRoute()
 const auth = useAuthStore()
 const mobile = useMobileStore()
+const branding = useBranding()
 const loading = ref(false)
 const saving = ref(false)
 const uploadingItemId = ref<number>()
@@ -360,7 +362,9 @@ async function capture(itemId: number, kind: AttachmentKind) {
         itemName: item.itemName,
         executorName: auth.displayName,
         serverTime: mobile.estimatedServerTime(),
-        locationRequired: mobile.bootstrap.photoPolicy.locationRequired,
+        brandName: branding.shortName,
+        faultLocationText: item.maintenancePart || detail.value.task.locationName || item.itemName,
+        photoCompressionQuality: 82,
       },
     )
     if (!mobile.online) {
@@ -375,7 +379,7 @@ async function capture(itemId: number, kind: AttachmentKind) {
     drafts[itemId][kind].push(uploaded.attachmentId)
     if (uploaded.evidence.clockSkewWarning) {
       ElMessage.warning('设备时间与服务端偏差较大，照片已标记时钟告警')
-    } else ElMessage.success('定位时间水印照片已上传')
+    } else ElMessage.success('设备位置水印照片已上传')
   } catch (error) {
     ElMessage.warning(errorMessage(error, '拍照已取消'))
   } finally {

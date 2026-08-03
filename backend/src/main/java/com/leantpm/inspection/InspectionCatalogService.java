@@ -460,6 +460,16 @@ public class InspectionCatalogService {
                     "INSPECTION_ITEM_OPTIONS_REQUIRED", "选择型结果必须配置选项"
             );
         }
+        if (request.photoMinCount() > request.photoMaxCount()) {
+            throw new BusinessException(
+                    "INSPECTION_ITEM_PHOTO_COUNT_INVALID", "最少照片数不能大于最多照片数"
+            );
+        }
+        if (Boolean.TRUE.equals(request.photoRequired()) && request.photoMinCount() < 1) {
+            throw new BusinessException(
+                    "INSPECTION_ITEM_PHOTO_REQUIRED_INVALID", "必须拍照时最少照片数不能小于 1"
+            );
+        }
     }
 
     private void validateScheme(
@@ -563,6 +573,11 @@ public class InspectionCatalogService {
                         : request.resultOptions().stream().map(String::trim).distinct().toList(),
                 request.required(),
                 request.photoRequired(),
+                request.photoMinCount(),
+                request.photoMaxCount(),
+                request.photoMaxSizeMb(),
+                request.photoAllowedTypes().trim().toLowerCase(Locale.ROOT),
+                request.photoCompressionQuality(),
                 request.numericRequired(),
                 request.skipAllowed(),
                 request.abnormalSeverity().trim().toUpperCase(Locale.ROOT),

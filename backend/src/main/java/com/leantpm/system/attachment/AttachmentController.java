@@ -77,7 +77,7 @@ public class AttachmentController {
     @GetMapping("/{id}/content")
     @PreAuthorize("hasAuthority('system:attachment:view')")
     public ResponseEntity<org.springframework.core.io.Resource> content(@PathVariable long id) {
-        var download = service.load(id);
+        var download = service.loadAudited(id);
         String contentType = download.record().contentType() == null
                 ? MediaType.APPLICATION_OCTET_STREAM_VALUE
                 : download.record().contentType();

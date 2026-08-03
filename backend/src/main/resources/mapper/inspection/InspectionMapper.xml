@@ -70,7 +70,9 @@
         inspection_content, inspection_method, inspection_tool, inspection_standard,
         standard_value, minimum_value, maximum_value, unit, result_type,
         CAST(result_options AS CHAR) AS result_options_json,
-        required_flag, photo_required_flag, numeric_required_flag, skip_allowed_flag,
+        required_flag, photo_required_flag, photo_min_count, photo_max_count,
+        photo_max_size_mb, photo_allowed_types, photo_compression_quality,
+        numeric_required_flag, skip_allowed_flag,
         abnormal_severity, abnormal_advice, abnormal_default_stop_flag,
         standard_minutes, safety_notes,
         status, description, version
@@ -106,7 +108,9 @@
             (tenant_id, item_code, item_name, item_category, inspection_part,
              inspection_content, inspection_method, inspection_tool, inspection_standard,
              standard_value, minimum_value, maximum_value, unit, result_type,
-             result_options, required_flag, photo_required_flag, numeric_required_flag,
+             result_options, required_flag, photo_required_flag, photo_min_count,
+             photo_max_count, photo_max_size_mb, photo_allowed_types,
+             photo_compression_quality, numeric_required_flag,
              skip_allowed_flag, abnormal_severity, abnormal_advice,
              abnormal_default_stop_flag, standard_minutes,
              safety_notes, status, description, created_by, updated_by)
@@ -116,7 +120,10 @@
              #{request.inspectionTool}, #{request.inspectionStandard}, #{request.standardValue},
              #{request.minimumValue}, #{request.maximumValue}, #{request.unit},
              #{request.resultType}, CAST(#{resultOptionsJson} AS JSON),
-             #{request.required}, #{request.photoRequired}, #{request.numericRequired},
+             #{request.required}, #{request.photoRequired}, #{request.photoMinCount},
+             #{request.photoMaxCount}, #{request.photoMaxSizeMb},
+             #{request.photoAllowedTypes}, #{request.photoCompressionQuality},
+             #{request.numericRequired},
              #{request.skipAllowed}, #{request.abnormalSeverity}, #{request.abnormalAdvice},
              #{request.abnormalDefaultStop},
              #{request.standardMinutes}, #{request.safetyNotes}, #{request.enabled},
@@ -142,6 +149,11 @@
             unit = #{request.unit}, result_type = #{request.resultType},
             result_options = CAST(#{resultOptionsJson} AS JSON),
             required_flag = #{request.required}, photo_required_flag = #{request.photoRequired},
+            photo_min_count = #{request.photoMinCount},
+            photo_max_count = #{request.photoMaxCount},
+            photo_max_size_mb = #{request.photoMaxSizeMb},
+            photo_allowed_types = #{request.photoAllowedTypes},
+            photo_compression_quality = #{request.photoCompressionQuality},
             numeric_required_flag = #{request.numericRequired},
             skip_allowed_flag = #{request.skipAllowed},
             abnormal_severity = #{request.abnormalSeverity},
@@ -677,6 +689,8 @@
              inspection_part, inspection_content, inspection_method, inspection_tool,
              inspection_standard, standard_value, minimum_value, maximum_value, unit,
              result_type, result_options, required_flag, photo_required_flag,
+             photo_min_count, photo_max_count, photo_max_size_mb,
+             photo_allowed_types, photo_compression_quality,
              numeric_required_flag, skip_allowed_flag, abnormal_severity,
              abnormal_advice, abnormal_default_stop_flag,
              standard_minutes, safety_notes, sort_order)
@@ -687,6 +701,13 @@
                item.result_type, item.result_options,
                COALESCE(relation.required_override, item.required_flag),
                COALESCE(relation.photo_required_override, item.photo_required_flag),
+               CASE
+                   WHEN relation.photo_required_override = 0 THEN 0
+                   WHEN relation.photo_required_override = 1 THEN GREATEST(item.photo_min_count, 1)
+                   ELSE item.photo_min_count
+               END,
+               item.photo_max_count, item.photo_max_size_mb,
+               item.photo_allowed_types, item.photo_compression_quality,
                item.numeric_required_flag,
                COALESCE(relation.skip_allowed_override, item.skip_allowed_flag),
                item.abnormal_severity, item.abnormal_advice,
@@ -995,7 +1016,9 @@
                inspection_part, inspection_content, inspection_method, inspection_tool,
                inspection_standard, standard_value, minimum_value, maximum_value,
                unit, result_type, CAST(result_options AS CHAR) AS result_options_json,
-               required_flag, photo_required_flag, numeric_required_flag,
+               required_flag, photo_required_flag, photo_min_count, photo_max_count,
+               photo_max_size_mb, photo_allowed_types, photo_compression_quality,
+               numeric_required_flag,
                skip_allowed_flag, abnormal_severity, abnormal_advice,
                abnormal_default_stop_flag, standard_minutes, safety_notes, sort_order
         FROM inspection_task_item
@@ -1008,7 +1031,9 @@
                inspection_part, inspection_content, inspection_method, inspection_tool,
                inspection_standard, standard_value, minimum_value, maximum_value,
                unit, result_type, CAST(result_options AS CHAR) AS result_options_json,
-               required_flag, photo_required_flag, numeric_required_flag,
+               required_flag, photo_required_flag, photo_min_count, photo_max_count,
+               photo_max_size_mb, photo_allowed_types, photo_compression_quality,
+               numeric_required_flag,
                skip_allowed_flag, abnormal_severity, abnormal_advice,
                abnormal_default_stop_flag, standard_minutes, safety_notes, sort_order
         FROM inspection_task_item
@@ -1346,12 +1371,27 @@
         JOIN inspection_task_result result
           ON result.tenant_id = item.tenant_id AND result.task_item_id = item.id
         WHERE item.tenant_id = #{tenantId} AND item.task_id = #{taskId}
-          AND item.photo_required_flag = 1
-          AND NOT EXISTS (
-              SELECT 1 FROM inspection_attachment attachment
-              WHERE attachment.tenant_id = result.tenant_id
-                AND attachment.task_result_id = result.id
-                AND attachment.attachment_type = 'RESULT_PHOTO'
+          AND (
+              (SELECT COUNT(*) FROM inspection_attachment attachment
+               WHERE attachment.tenant_id = result.tenant_id
+                 AND attachment.task_result_id = result.id
+                 AND attachment.attachment_type = 'RESULT_PHOTO')
+                  NOT BETWEEN item.photo_min_count AND item.photo_max_count
+              OR EXISTS (
+                  SELECT 1
+                  FROM inspection_attachment relation
+                  JOIN system_attachment attachment
+                    ON attachment.tenant_id = relation.tenant_id
+                   AND attachment.id = relation.attachment_id
+                   AND attachment.deleted = 0
+                  WHERE relation.tenant_id = result.tenant_id
+                    AND relation.task_result_id = result.id
+                    AND relation.attachment_type = 'RESULT_PHOTO'
+                    AND (
+                        attachment.file_size > item.photo_max_size_mb * 1024 * 1024
+                        OR FIND_IN_SET(LOWER(COALESCE(attachment.content_type, '')), item.photo_allowed_types) = 0
+                    )
+              )
           )
     </select>
 

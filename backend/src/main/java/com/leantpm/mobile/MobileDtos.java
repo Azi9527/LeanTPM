@@ -52,7 +52,6 @@ public final class MobileDtos {
     }
 
     public record PhotoPolicy(
-            boolean locationRequired,
             int clockSkewWarningSeconds
     ) {
     }
@@ -74,11 +73,7 @@ public final class MobileDtos {
             @NotNull LocalDateTime capturedDeviceTime,
             @NotNull LocalDateTime serverReferenceTime,
             int deviceClockOffsetSeconds,
-            @DecimalMin("-90") @DecimalMax("90") BigDecimal latitude,
-            @DecimalMin("-180") @DecimalMax("180") BigDecimal longitude,
-            @DecimalMin("0") BigDecimal locationAccuracyMeters,
-            @Size(max = 32) String locationProvider,
-            @Size(max = 300) String addressText,
+            @NotBlank @Size(max = 300) String faultLocationText,
             @NotBlank @Size(max = 1000) String watermarkText
     ) {
     }
@@ -99,6 +94,7 @@ public final class MobileDtos {
             BigDecimal locationAccuracyMeters,
             String locationProvider,
             String addressText,
+            String faultLocationText,
             String watermarkText,
             String originalSha256,
             String watermarkedSha256
