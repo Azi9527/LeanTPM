@@ -1309,7 +1309,8 @@
         abnormal.abnormal_status, abnormal.responsible_user_id,
         responsible.real_name AS responsible_user_name, abnormal.due_time,
         abnormal.temporary_action, abnormal.final_result,
-        abnormal.requested_equipment_status, closer.real_name AS closed_by_name,
+        abnormal.requested_equipment_status, abnormal.repair_order_id,
+        closer.real_name AS closed_by_name,
         abnormal.closed_time, verifier.real_name AS verified_by_name,
         abnormal.verified_time, abnormal.verification_comment,
         abnormal.created_time, abnormal.version

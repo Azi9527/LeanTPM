@@ -74,9 +74,9 @@ public class EquipmentService {
             Map.entry("MAINTENANCE", Set.of("IDLE", "FAULT", "OFFLINE")),
             Map.entry("INSPECTION", Set.of("IDLE", "FAULT", "OFFLINE")),
             Map.entry("FAULT", Set.of("REPAIR", "STOPPED", "OFFLINE")),
-            Map.entry("REPAIR", Set.of("IDLE", "FAULT", "OFFLINE")),
-            Map.entry("STOPPED", Set.of("IDLE", "MAINTENANCE", "REPAIR", "SCRAPPED", "OFFLINE")),
-            Map.entry("OFFLINE", Set.of("IDLE", "COMMISSIONING")),
+            Map.entry("REPAIR", Set.of("IDLE", "RUNNING", "FAULT", "STOPPED", "OFFLINE")),
+            Map.entry("STOPPED", Set.of("IDLE", "MAINTENANCE", "REPAIR", "FAULT", "SCRAPPED", "OFFLINE")),
+            Map.entry("OFFLINE", Set.of("IDLE", "COMMISSIONING", "FAULT")),
             Map.entry("SCRAPPED", Set.of())
     );
 

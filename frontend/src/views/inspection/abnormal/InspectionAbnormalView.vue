@@ -141,6 +141,16 @@ async function verify(row: AbnormalRow, passed: boolean) {
   }
 }
 
+async function toRepair(row: AbnormalRow) {
+  try {
+    await inspectionApi.abnormalToRepair(row.id)
+    ElMessage.success('已创建独立维修工单')
+    await load()
+  } catch (error) {
+    ElMessage.error(errorMessage(error, '异常转维修工单失败'))
+  }
+}
+
 async function loadAttachmentContent(attachmentId: number) {
   if (!selected.value) throw new Error('尚未选择点检异常')
   return inspectionApi.abnormalAttachmentContent(selected.value.id, attachmentId)
@@ -165,10 +175,12 @@ async function loadAttachmentContent(attachmentId: number) {
         <el-table-column prop="responsibleUserName" label="责任人" width="110"><template #default="{ row }">{{ row.responsibleUserName || '待分派' }}</template></el-table-column>
         <el-table-column prop="dueTime" label="期限" min-width="170" />
         <el-table-column label="状态" width="100"><template #default="{ row }"><el-tag :type="statusMeta[row.abnormalStatus].type">{{ statusMeta[row.abnormalStatus].label }}</el-tag></template></el-table-column>
-        <el-table-column label="操作" width="210" fixed="right">
+        <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row)">查看</el-button>
             <el-button v-if="auth.can('inspection:abnormal:handle') && ['OPEN','PROCESSING'].includes(row.abnormalStatus)" link type="primary" @click="openHandle(row)">处理</el-button>
+            <el-button v-if="auth.can('fault:repair:create') && !row.repairOrderId && row.abnormalStatus !== 'CLOSED'" link type="warning" @click="toRepair(row)">转维修</el-button>
+            <el-tag v-else-if="row.repairOrderId" size="small" type="success">已转维修</el-tag>
             <template v-if="auth.can('inspection:abnormal:verify') && row.abnormalStatus === 'PENDING_VERIFY'">
               <el-button link type="success" @click="verify(row, true)">通过</el-button>
               <el-button link type="warning" @click="verify(row, false)">退回</el-button>

@@ -56,7 +56,7 @@ try {
     }
 
     if (-not $SkipMySql) {
-        Invoke-ReleaseStep 'MySQL V1-V20 integration tests' {
+        Invoke-ReleaseStep 'MySQL V1-V21 integration tests' {
             & (Join-Path $PSScriptRoot 'run-mysql-integration.ps1') `
                 -MySqlHost $MySqlHost `
                 -MySqlPort $MySqlPort `

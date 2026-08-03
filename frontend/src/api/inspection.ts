@@ -274,6 +274,7 @@ export interface AbnormalRow {
   temporaryAction?: string
   finalResult?: string
   requestedEquipmentStatus?: string
+  repairOrderId?: number
   closedByName?: string
   closedTime?: string
   verifiedByName?: string
@@ -466,6 +467,7 @@ export const inspectionApi = {
   },
   handleAbnormal: (id: number, data: object) =>
     http.put(`/inspection/abnormalities/${id}`, data),
+  abnormalToRepair: (id: number) => http.post(`/inspection/abnormalities/${id}/repair-order`),
   verifyAbnormal: (id: number, data: object) =>
     http.post(`/inspection/abnormalities/${id}/verify`, data),
   statistics: () => getData<Statistics>('/inspection/statistics'),

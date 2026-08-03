@@ -541,6 +541,7 @@ public final class MaintenanceDtos {
             String temporaryAction,
             String finalResult,
             String requestedEquipmentStatus,
+            Long repairOrderId,
             String closedByName,
             LocalDateTime closedTime,
             String verifiedByName,

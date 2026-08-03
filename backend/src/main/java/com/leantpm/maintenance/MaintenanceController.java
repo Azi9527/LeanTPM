@@ -3,6 +3,7 @@ package com.leantpm.maintenance;
 import com.leantpm.common.api.ApiResponse;
 import com.leantpm.common.api.PageResult;
 import com.leantpm.common.idempotency.Idempotent;
+import com.leantpm.fault.FaultService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -28,13 +29,16 @@ import java.util.Map;
 public class MaintenanceController {
     private final MaintenanceCatalogService catalogService;
     private final MaintenanceTaskService taskService;
+    private final FaultService faultService;
 
     public MaintenanceController(
             MaintenanceCatalogService catalogService,
-            MaintenanceTaskService taskService
+            MaintenanceTaskService taskService,
+            FaultService faultService
     ) {
         this.catalogService = catalogService;
         this.taskService = taskService;
+        this.faultService = faultService;
     }
 
     @GetMapping("/items")
@@ -374,6 +378,13 @@ public class MaintenanceController {
     ) {
         taskService.verifyAbnormal(id, request);
         return ApiResponse.success();
+    }
+
+    @PostMapping("/abnormalities/{id}/repair-order")
+    @Idempotent
+    @PreAuthorize("hasAuthority('maintenance:abnormal:handle') and hasAuthority('fault:repair:create')")
+    public ApiResponse<Map<String, Long>> abnormalToRepair(@PathVariable long id) {
+        return ApiResponse.success(Map.of("id", faultService.createFromMaintenanceAbnormal(id)));
     }
 
     @GetMapping("/statistics")

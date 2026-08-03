@@ -54,6 +54,30 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '发送记录', permission: 'notification:delivery:view' },
       },
       {
+        path: 'faults/reports',
+        name: 'FaultReports',
+        component: () => import('@/views/faults/FaultReportView.vue'),
+        meta: { title: '故障报修', permission: 'fault:report:view' },
+      },
+      {
+        path: 'faults/repairs',
+        name: 'RepairOrders',
+        component: () => import('@/views/faults/RepairOrderView.vue'),
+        meta: { title: '维修工单', permission: 'fault:repair:view' },
+      },
+      {
+        path: 'faults/my-repairs',
+        name: 'MyRepairs',
+        component: () => import('@/views/faults/RepairOrderView.vue'),
+        meta: { title: '我的维修', permission: 'fault:repair:execute' },
+      },
+      {
+        path: 'faults/statistics',
+        name: 'FaultStatistics',
+        component: () => import('@/views/faults/FaultStatisticsView.vue'),
+        meta: { title: '故障统计', permission: 'fault:statistics:view' },
+      },
+      {
         path: 'system/users',
         name: 'SystemUsers',
         component: () => import('@/views/system/users/UserListView.vue'),

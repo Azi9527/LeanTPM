@@ -290,6 +290,7 @@ export interface AbnormalRow {
   temporaryAction?: string
   finalResult?: string
   requestedEquipmentStatus?: string
+  repairOrderId?: number
   closedByName?: string
   closedTime?: string
   verifiedByName?: string
@@ -423,6 +424,7 @@ export const maintenanceApi = {
     getData<PageResult<AbnormalRow>>('/maintenance/abnormalities', params),
   handleAbnormal: (id: number, data: object) =>
     http.put(`/maintenance/abnormalities/${id}`, data),
+  abnormalToRepair: (id: number) => http.post(`/maintenance/abnormalities/${id}/repair-order`),
   verifyAbnormal: (id: number, data: object) =>
     http.post(`/maintenance/abnormalities/${id}/verify`, data),
   statistics: () => getData<Statistics>('/maintenance/statistics'),

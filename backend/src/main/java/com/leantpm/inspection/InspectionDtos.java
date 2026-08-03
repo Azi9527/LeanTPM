@@ -543,6 +543,7 @@ public final class InspectionDtos {
             String temporaryAction,
             String finalResult,
             String requestedEquipmentStatus,
+            Long repairOrderId,
             String closedByName,
             LocalDateTime closedTime,
             String verifiedByName,

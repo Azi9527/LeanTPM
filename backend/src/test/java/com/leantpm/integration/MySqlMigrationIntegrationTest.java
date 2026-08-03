@@ -37,7 +37,7 @@ class MySqlMigrationIntegrationTest {
     @Test
     void appliesEveryMigrationAndFoundationTable() throws Exception {
         assertThat(number("SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1"))
-                .isEqualTo(20);
+                .isEqualTo(21);
         assertThat(number("""
                 SELECT COUNT(*)
                 FROM information_schema.tables
@@ -102,9 +102,15 @@ class MySqlMigrationIntegrationTest {
                     'notification_rule',
                     'notification_message',
                     'notification_delivery',
-                    'notification_escalation'
+                    'notification_escalation',
+                    'equipment_fault_report',
+                    'equipment_repair_order',
+                    'equipment_repair_collaborator',
+                    'equipment_repair_material',
+                    'equipment_repair_event',
+                    'equipment_fault_attachment'
                   )
-                """)).isEqualTo(60);
+                """)).isEqualTo(66);
     }
 
     @Test
@@ -426,6 +432,27 @@ class MySqlMigrationIntegrationTest {
                 WHERE tenant_id = 1 AND id IN (70, 71, 72, 73, 721, 731)
                   AND status = 1 AND deleted = 0
                 """)).isEqualTo(6);
+    }
+
+    @Test
+    void seedsFaultRepairNumberRulesMenusAndAbnormalLinks() throws Exception {
+        assertThat(number("""
+                SELECT COUNT(*) FROM system_number_rule
+                WHERE tenant_id = 1 AND rule_code IN ('FAULT_REPORT', 'REPAIR_ORDER')
+                  AND status = 1 AND deleted = 0
+                """)).isEqualTo(2);
+        assertThat(number("""
+                SELECT COUNT(*) FROM system_menu
+                WHERE tenant_id = 1 AND id IN (
+                  74,741,742,743,744,7411,7412,7413,7421,7422,7423,7424
+                ) AND status = 1 AND deleted = 0
+                """)).isEqualTo(12);
+        assertThat(number("""
+                SELECT COUNT(*) FROM information_schema.columns
+                WHERE table_schema = DATABASE()
+                  AND table_name IN ('inspection_abnormal','maintenance_abnormal')
+                  AND column_name = 'repair_order_id'
+                """)).isEqualTo(2);
     }
 
     @Test
