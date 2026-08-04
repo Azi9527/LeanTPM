@@ -1,0 +1,216 @@
+<template>
+	<view class="page">
+		<view v-if="loading && !detail" class="loading">正在加载点检任务…</view>
+		<view v-if="error && !detail" class="error" @click="load">{{ error }} · 点击重试</view>
+		<template v-if="detail">
+			<view class="task-hero">
+				<view class="task-line"><text class="code">{{ detail.task.taskCode }}</text><text class="status">{{ statusLabel(detail.task.taskStatus) }}</text></view>
+				<text class="equipment">{{ detail.task.equipmentName }}</text>
+				<text class="scheme">{{ detail.task.schemeNameSnapshot }}</text>
+				<view class="task-meta"><text>截止 {{ dateTime(detail.task.dueTime) }}</text><text>{{ detail.task.locationName }}</text></view>
+				<text v-if="detail.task.assigneeName" class="assignee">主执行：{{ detail.task.assigneeName }}；所有协作人均可提交，任一人提交即完成任务</text>
+			</view>
+
+			<view v-if="detail.task.taskStatus === 'PENDING_REVIEW'" class="notice warning">结果已提交，等待复核</view>
+			<view v-if="detail.task.taskStatus === 'COMPLETED'" class="notice success">任务已完成，当前为只读结果</view>
+
+			<view v-for="(item, index) in detail.items" :key="item.id" class="item-card">
+				<view class="item-title"><text class="index">{{ index + 1 }}</text><view><text class="name">{{ item.itemName }} <text v-if="item.requiredFlag" class="required">必填</text></text><text class="content">{{ item.inspectionContent }}</text></view></view>
+				<view class="standard"><text class="standard-label">标准：</text>{{ item.inspectionStandard }}<text v-if="hasRange(item)">（{{ item.minimumValue ?? '—' }} ~ {{ item.maximumValue ?? '—' }} {{ item.unit || '' }}）</text></view>
+				<view v-if="item.safetyNotes" class="safety">⚠ {{ item.safetyNotes }}</view>
+
+				<template v-if="drafts[item.id]">
+					<view v-if="['NORMAL_ABNORMAL', 'PASS_FAIL'].includes(item.resultType)" class="choice-row">
+						<view v-for="choice in qualitativeChoices(item.resultType)" :key="choice.value" :class="['choice', { selected: drafts[item.id].resultCode === choice.value, bad: choice.bad && drafts[item.id].resultCode === choice.value }]" @click="selectQualitative(item, choice)">{{ choice.label }}</view>
+					</view>
+					<view v-else-if="item.resultType === 'NUMBER'" class="number-row">
+						<input class="number-input" type="digit" :disabled="!executable" :value="drafts[item.id].numericValue" placeholder="输入测量值" @input="updateNumber(item, $event)" />
+						<text>{{ item.unit || '' }}</text>
+					</view>
+					<textarea v-else-if="item.resultType === 'TEXT'" class="textarea" :disabled="!executable" :value="drafts[item.id].textValue" maxlength="2000" placeholder="输入点检结果" @input="drafts[item.id].textValue = eventValue($event)" />
+					<picker v-else-if="item.resultType === 'SINGLE_CHOICE'" :disabled="!executable" :range="options(item)" @change="selectSingle(item, $event)"><view class="picker">{{ drafts[item.id].selectedValue || '请选择结果' }}<text>⌄</text></view></picker>
+					<view v-else-if="item.resultType === 'MULTIPLE_CHOICE'" class="multi-row">
+						<view v-for="option in options(item)" :key="option" :class="['multi', { selected: drafts[item.id].selectedValues.includes(option) }]" @click="toggleMultiple(item, option)">{{ option }}</view>
+					</view>
+					<view v-else class="unsupported">该结果类型将在附件功能中处理</view>
+
+					<view v-if="executable" class="flags">
+						<view :class="['flag', { active: drafts[item.id].abnormal }]" @click="toggleAbnormal(item)">异常</view>
+						<view v-if="item.skipAllowedFlag" :class="['flag', { active: drafts[item.id].skipped }]" @click="toggleSkip(item)">跳过本项</view>
+						<view class="flag photo" @click="comingPhoto(item)">{{ item.photoRequiredFlag ? '拍照（必需）' : '附件' }} {{ drafts[item.id].attachmentIds.length }}/{{ item.photoMaxCount }}</view>
+					</view>
+
+					<template v-if="drafts[item.id].abnormal">
+						<textarea class="textarea abnormal-text" :disabled="!executable" :value="drafts[item.id].abnormalDescription" maxlength="1000" placeholder="请描述异常现象" @input="drafts[item.id].abnormalDescription = eventValue($event)" />
+						<view class="stop-row" @click="toggleStop(item)"><text>设备需要停机</text><switch color="#c4000a" :disabled="!executable" :checked="drafts[item.id].equipmentStopRequired" @change="changeStop(item, $event)" /></view>
+						<textarea v-if="Boolean(drafts[item.id].equipmentStopRequired) !== Boolean(item.abnormalDefaultStopFlag)" class="textarea reason" :disabled="!executable" :value="drafts[item.id].stopOverrideReason" maxlength="500" placeholder="与默认停机规则不同，请填写调整原因" @input="drafts[item.id].stopOverrideReason = eventValue($event)" />
+					</template>
+					<input v-if="drafts[item.id].skipped" class="skip-reason" :disabled="!executable" :value="drafts[item.id].skipReason" placeholder="请填写跳过原因" @input="drafts[item.id].skipReason = eventValue($event)" />
+				</template>
+			</view>
+
+			<view v-if="executable" class="remark-card">
+				<text>执行备注</text><textarea :value="executionRemark" maxlength="1000" placeholder="可填写本次点检补充说明" @input="executionRemark = eventValue($event)" />
+			</view>
+			<view v-if="executable" class="bottom-space" />
+			<view v-if="executable" class="actions">
+				<button :loading="saving" class="draft" @click="save(false)">保存草稿</button>
+				<button :loading="saving" class="submit" @click="save(true)">提交点检</button>
+			</view>
+		</template>
+	</view>
+</template>
+
+<script setup>
+	import { computed, reactive, ref } from 'vue'
+	import { onLoad, onPullDownRefresh } from '@dcloudio/uni-app'
+	import { inspectionApi } from '../../api/inspection.js'
+	import { createIdempotencyKey } from '../../utils/idempotency.js'
+	import { errorMessage, isConflict } from '../../utils/errors.js'
+	import { buildInspectionPayload, inferAbnormal, initialResultDraft, resultOptions, validateInspectionResults } from '../../utils/inspection-results.js'
+
+	const taskId = ref(0)
+	const detail = ref(null)
+	const drafts = reactive({})
+	const executionRemark = ref('')
+	const loading = ref(false)
+	const saving = ref(false)
+	const error = ref('')
+	const submitKey = ref('')
+	const executable = computed(() => detail.value && ['PENDING', 'IN_PROGRESS', 'OVERDUE'].includes(detail.value.task.taskStatus))
+	const labels = { PENDING: '待执行', IN_PROGRESS: '执行中', PENDING_REVIEW: '待复核', COMPLETED: '已完成', OVERDUE: '已逾期', CANCELLED: '已取消', VOIDED: '已作废' }
+
+	onLoad((query) => { taskId.value = Number(query?.id || 0); submitKey.value = createIdempotencyKey(`inspection-${taskId.value}`); load() })
+	onPullDownRefresh(async () => { try { await load() } finally { uni.stopPullDownRefresh() } })
+
+	function eventValue(event) { return String(event?.detail?.value ?? '') }
+	function statusLabel(value) { return labels[value] || value }
+	function dateTime(value) { return value ? String(value).replace('T', ' ').slice(0, 16) : '—' }
+	function hasRange(item) { return item.minimumValue !== null && item.minimumValue !== undefined || item.maximumValue !== null && item.maximumValue !== undefined }
+	function options(item) { return resultOptions(item) }
+	function qualitativeChoices(type) { return type === 'PASS_FAIL' ? [{ label: '合格', value: 'PASS' }, { label: '不合格', value: 'FAIL', bad: true }] : [{ label: '正常', value: 'NORMAL' }, { label: '异常', value: 'ABNORMAL', bad: true }] }
+
+	async function load() {
+		if (!taskId.value || loading.value) return
+		loading.value = true; error.value = ''
+		try {
+			const result = await inspectionApi.task(taskId.value)
+			detail.value = result
+			executionRemark.value = result.task.executionRemark || ''
+			for (const key of Object.keys(drafts)) delete drafts[key]
+			for (const item of result.items) drafts[item.id] = initialResultDraft(item)
+		} catch (cause) { error.value = errorMessage(cause, '点检任务加载失败') }
+		finally { loading.value = false }
+	}
+
+	function selectQualitative(item, choice) {
+		if (!executable.value) return
+		const draft = drafts[item.id]
+		draft.resultCode = choice.value
+		draft.abnormal = Boolean(choice.bad)
+		draft.equipmentStopRequired = draft.abnormal ? Boolean(item.abnormalDefaultStopFlag) : false
+		if (!draft.abnormal) { draft.abnormalDescription = ''; draft.stopOverrideReason = '' }
+	}
+	function updateNumber(item, event) {
+		const draft = drafts[item.id]
+		draft.numericValue = eventValue(event)
+		const abnormal = inferAbnormal(item, draft)
+		if (abnormal) { draft.abnormal = true; draft.equipmentStopRequired = Boolean(item.abnormalDefaultStopFlag) }
+	}
+	function selectSingle(item, event) { drafts[item.id].selectedValue = options(item)[Number(event.detail.value)] || '' }
+	function toggleMultiple(item, option) {
+		if (!executable.value) return
+		const values = drafts[item.id].selectedValues
+		const index = values.indexOf(option)
+		if (index >= 0) values.splice(index, 1); else values.push(option)
+	}
+	function toggleAbnormal(item) {
+		if (!executable.value) return
+		const draft = drafts[item.id]
+		draft.abnormal = !draft.abnormal
+		draft.equipmentStopRequired = draft.abnormal ? Boolean(item.abnormalDefaultStopFlag) : false
+	}
+	function toggleSkip(item) {
+		if (!executable.value) return
+		drafts[item.id].skipped = !drafts[item.id].skipped
+	}
+	function changeStop(item, event) { if (executable.value) drafts[item.id].equipmentStopRequired = Boolean(event.detail.value) }
+	function toggleStop() { /* switch handles the value; row click is intentionally inert */ }
+	function comingPhoto(item) { uni.showToast({ title: item.photoRequiredFlag ? '照片与附件功能在下一批接入' : '附件功能在下一批接入', icon: 'none' }) }
+
+	async function save(submit) {
+		if (!detail.value || saving.value) return
+		if (submit) {
+			const validation = validateInspectionResults(detail.value.items, drafts)
+			if (validation) return uni.showModal({ title: '无法提交', content: validation, showCancel: false })
+		}
+		saving.value = true
+		try {
+			const payload = buildInspectionPayload(detail.value.task, detail.value.items, drafts, executionRemark.value)
+			if (submit) await inspectionApi.submitTask(taskId.value, payload, submitKey.value)
+			else await inspectionApi.saveDraft(taskId.value, payload)
+			uni.showToast({ title: submit ? '点检结果已提交' : '草稿已保存', icon: 'success' })
+			if (submit) submitKey.value = createIdempotencyKey(`inspection-${taskId.value}`)
+			await load()
+		} catch (cause) {
+			if (isConflict(cause)) {
+				uni.showModal({ title: '任务状态已变化', content: '其他执行人员可能已完成该任务，将刷新为最新结果。', showCancel: false })
+				await load()
+			} else uni.showModal({ title: submit ? '提交失败' : '保存失败', content: errorMessage(cause), showCancel: false })
+		} finally { saving.value = false }
+	}
+</script>
+
+<style>
+	.page { min-height: 100vh; padding: 23rpx 24rpx 50rpx; background: #f4f7f5; }
+	.loading, .error { padding: 80rpx 24rpx; color: #839089; text-align: center; font-size: 25rpx; }
+	.error { color: #a00008; }
+	.task-hero { padding: 32rpx; border-radius: 26rpx; color: #fff; background: linear-gradient(140deg, #193f31, #1c7d50); }
+	.task-line, .task-meta, .stop-row { display: flex; align-items: center; justify-content: space-between; gap: 18rpx; }
+	.code { font-family: monospace; font-size: 22rpx; opacity: .75; }
+	.status { padding: 8rpx 16rpx; border-radius: 20rpx; background: rgba(255,255,255,.18); font-size: 21rpx; }
+	.equipment, .scheme, .assignee { display: block; }
+	.equipment { margin-top: 17rpx; font-size: 37rpx; font-weight: 800; }
+	.scheme { margin-top: 7rpx; font-size: 23rpx; opacity: .77; }
+	.task-meta { margin-top: 23rpx; font-size: 21rpx; opacity: .72; }
+	.assignee { margin-top: 19rpx; padding-top: 18rpx; border-top: 1rpx solid rgba(255,255,255,.16); font-size: 21rpx; line-height: 1.5; opacity: .78; }
+	.notice { margin-top: 18rpx; padding: 22rpx; border-radius: 17rpx; font-size: 24rpx; }
+	.notice.warning { color: #8d5d06; background: #fff4df; }
+	.notice.success { color: #126e43; background: #e7f6ee; }
+	.item-card { margin-top: 19rpx; padding: 28rpx; border-radius: 23rpx; background: #fff; box-shadow: 0 10rpx 32rpx rgba(25,53,42,.06); }
+	.item-title { display: flex; gap: 17rpx; }
+	.index { display: flex; width: 50rpx; height: 50rpx; align-items: center; justify-content: center; flex: 0 0 auto; border-radius: 50%; color: #fff; background: #1c7d50; font-size: 24rpx; }
+	.name, .content { display: block; }
+	.name { color: #203d31; font-size: 29rpx; font-weight: 750; }
+	.required { color: #1c7d50; font-size: 19rpx; }
+	.content { margin-top: 8rpx; color: #6e7b75; font-size: 23rpx; line-height: 1.5; }
+	.standard { margin-top: 22rpx; padding: 20rpx; border-radius: 15rpx; color: #4e5d56; background: #f3f6f4; font-size: 23rpx; line-height: 1.55; }
+	.standard-label { color: #263f35; font-weight: 700; }
+	.safety { margin-top: 15rpx; padding: 17rpx; border-radius: 14rpx; color: #9a680d; background: #fff5e3; font-size: 22rpx; }
+	.choice-row { display: grid; grid-template-columns: 1fr 1fr; gap: 15rpx; margin-top: 23rpx; }
+	.choice { padding: 21rpx; border: 2rpx solid #dce5e0; border-radius: 15rpx; color: #68756f; text-align: center; font-size: 26rpx; }
+	.choice.selected { border-color: #1c7d50; color: #166f47; background: #e9f6ef; }
+	.choice.selected.bad { border-color: #c4000a; color: #a00008; background: #fff0f0; }
+	.number-row { display: flex; align-items: center; gap: 16rpx; margin-top: 23rpx; }
+	.number-input, .skip-reason { box-sizing: border-box; height: 82rpx; padding: 0 20rpx; border: 2rpx solid #dce5e0; border-radius: 15rpx; font-size: 26rpx; }
+	.number-input { flex: 1; }
+	.textarea { box-sizing: border-box; width: 100%; height: 135rpx; margin-top: 22rpx; padding: 18rpx; border: 2rpx solid #dce5e0; border-radius: 15rpx; font-size: 24rpx; }
+	.picker { display: flex; height: 82rpx; align-items: center; justify-content: space-between; margin-top: 22rpx; padding: 0 20rpx; border: 2rpx solid #dce5e0; border-radius: 15rpx; font-size: 25rpx; }
+	.multi-row, .flags { display: flex; flex-wrap: wrap; gap: 12rpx; margin-top: 22rpx; }
+	.multi, .flag { padding: 13rpx 18rpx; border: 2rpx solid #dce5e0; border-radius: 13rpx; color: #68756f; font-size: 22rpx; }
+	.multi.selected, .flag.active { border-color: #1c7d50; color: #166e46; background: #e9f6ef; }
+	.flag.photo { margin-left: auto; color: #1c7d50; }
+	.abnormal-text { border-color: #efb2b5; background: #fffafa; }
+	.stop-row { margin-top: 16rpx; padding: 19rpx; border-radius: 15rpx; color: #68494a; background: #fff2f2; font-size: 24rpx; }
+	.reason { height: 110rpx; }
+	.skip-reason { width: 100%; margin-top: 16rpx; }
+	.unsupported { margin-top: 20rpx; color: #8b9690; }
+	.remark-card { margin-top: 20rpx; padding: 26rpx; border-radius: 23rpx; background: #fff; }
+	.remark-card > text { color: #273f35; font-size: 27rpx; font-weight: 700; }
+	.remark-card textarea { box-sizing: border-box; width: 100%; height: 120rpx; margin-top: 15rpx; padding: 15rpx; border: 2rpx solid #dce5e0; border-radius: 14rpx; font-size: 24rpx; }
+	.bottom-space { height: calc(125rpx + env(safe-area-inset-bottom)); }
+	.actions { position: fixed; z-index: 20; right: 0; bottom: 0; left: 0; display: grid; grid-template-columns: 1fr 1.4fr; gap: 16rpx; padding: 18rpx 24rpx calc(18rpx + env(safe-area-inset-bottom)); border-top: 1rpx solid #e3e9e6; background: rgba(255,255,255,.97); }
+	.actions button { margin: 0; border-radius: 16rpx; font-size: 27rpx; }
+	.draft { color: #1c7d50; background: #e9f5ef; }
+	.submit { color: #fff; background: #1c7d50; }
+</style>

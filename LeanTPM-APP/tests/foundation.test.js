@@ -12,6 +12,7 @@ const { normalizeServerBaseUrl } = await import('../utils/server.js')
 const { createIdempotencyKey } = await import('../utils/idempotency.js')
 const { normalizeBranding } = await import('../utils/branding.js')
 const { extractEquipmentToken, requireEquipmentToken } = await import('../utils/equipment-token.js')
+const { initialResultDraft, inferAbnormal, validateInspectionResults, buildInspectionPayload } = await import('../utils/inspection-results.js')
 const { ApiError, errorMessage, isConflict } = await import('../utils/errors.js')
 
 test('normalizes enterprise server URLs', () => {
@@ -40,6 +41,23 @@ test('extracts LeanTPM equipment tokens from labels and URLs', () => {
 	assert.equal(extractEquipmentToken(`https://example.test/m/e/${token}?source=label`), token)
 	assert.equal(extractEquipmentToken('not-a-label'), null)
 	assert.throws(() => requireEquipmentToken('bad'), /LeanTPM/)
+})
+
+test('validates qualitative and quantitative inspection results', () => {
+	const items = [
+		{ id: 1, itemName: '防护罩', resultType: 'PASS_FAIL', abnormalDefaultStopFlag: false },
+		{ id: 2, itemName: '油压', resultType: 'NUMBER', minimumValue: 30, maximumValue: 80, abnormalDefaultStopFlag: true }
+	]
+	const drafts = { 1: initialResultDraft(items[0]), 2: initialResultDraft(items[1]) }
+	assert.match(validateInspectionResults(items, drafts), /防护罩/)
+	drafts[1].resultCode = 'PASS'
+	drafts[2].numericValue = 90
+	drafts[2].abnormal = inferAbnormal(items[1], drafts[2])
+	drafts[2].abnormalDescription = '超过上限'
+	assert.equal(validateInspectionResults(items, drafts), '')
+	const payload = buildInspectionPayload({ version: 3 }, items, drafts, '现场完成')
+	assert.equal(payload.taskVersion, 3)
+	assert.equal(payload.results[1].numericValue, 90)
 })
 
 test('preserves API conflict semantics', () => {
