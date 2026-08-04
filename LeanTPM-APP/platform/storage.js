@@ -28,8 +28,12 @@ function storage() {
 	// In WeChat Mini Program builds `uni` is injected as a module-level runtime
 	// variable and is not guaranteed to be exposed on `globalThis`.
 	if (typeof uni !== 'undefined' && uni) return uni
+	// Keep a native WeChat fallback so storage remains available even when a
+	// compiler/runtime version does not export the uni facade from vendor.js.
+	if (typeof wx !== 'undefined' && wx?.setStorageSync) return wx
 	if (globalThis?.uni) return globalThis.uni
-	throw new Error('uni storage is unavailable')
+	if (globalThis?.wx?.setStorageSync) return globalThis.wx
+	throw new Error('存储运行时不可用（build 20260804.2）')
 }
 
 export function getStored(key, fallback = null) {
