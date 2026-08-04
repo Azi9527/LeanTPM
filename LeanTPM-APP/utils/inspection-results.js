@@ -80,7 +80,7 @@ export function buildInspectionPayload(task, items, drafts, executionRemark = ''
 				stopOverrideReason: draft.stopOverrideReason || null,
 				skipped: Boolean(draft.skipped),
 				skipReason: draft.skipReason || null,
-				attachmentIds: draft.attachmentIds || [],
+				attachmentIds: (draft.attachmentIds || []).filter((id) => Number.isSafeInteger(Number(id)) && Number(id) > 0).map(Number),
 				version: draft.version
 			}
 		})

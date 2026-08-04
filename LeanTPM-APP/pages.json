@@ -81,6 +81,13 @@
       }
     },
     {
+      "path": "pages/abnormal/index",
+      "style": {
+        "navigationBarTitleText": "点检异常",
+        "enablePullDownRefresh": true
+      }
+    },
+    {
       "path": "pages/index/index",
       "style": {
         "navigationBarTitleText": "LeanTPM"

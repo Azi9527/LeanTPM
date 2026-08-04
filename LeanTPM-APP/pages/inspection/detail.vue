@@ -37,7 +37,13 @@
 					<view v-if="executable" class="flags">
 						<view :class="['flag', { active: drafts[item.id].abnormal }]" @click="toggleAbnormal(item)">异常</view>
 						<view v-if="item.skipAllowedFlag" :class="['flag', { active: drafts[item.id].skipped }]" @click="toggleSkip(item)">跳过本项</view>
-						<view class="flag photo" @click="comingPhoto(item)">{{ item.photoRequiredFlag ? '拍照（必需）' : '附件' }} {{ drafts[item.id].attachmentIds.length }}/{{ item.photoMaxCount }}</view>
+						<view class="flag photo" @click="capturePhoto(item)">{{ uploadingItemId === item.id ? '处理中…' : (item.photoRequiredFlag ? '拍照（必需）' : '拍照/附件') }} {{ drafts[item.id].attachmentIds.length }}/{{ item.photoMaxCount }}</view>
+					</view>
+					<view v-if="attachmentsForItem(item.id).length" class="attachments">
+						<text class="attachments-title">现场附件（{{ attachmentsForItem(item.id).length }}）</text>
+						<view v-for="attachment in attachmentsForItem(item.id)" :key="attachment.id" class="attachment" @click="previewAttachment(attachment)">
+							<view><text>{{ attachment.originalName }}</text><text>{{ fileSize(attachment.fileSize) }} · {{ attachment.createdTime ? dateTime(attachment.createdTime) : '待同步' }}</text></view><text>{{ String(attachment.id).startsWith('queued:') ? '待上传' : '查看' }}</text>
+						</view>
 					</view>
 
 					<template v-if="drafts[item.id].abnormal">
@@ -58,13 +64,23 @@
 				<button :loading="saving" class="submit" @click="save(true)">提交点检</button>
 			</view>
 		</template>
+		<canvas canvas-id="inspectionWatermark" id="inspectionWatermark" class="watermark-canvas" />
 	</view>
 </template>
 
 <script setup>
-	import { computed, reactive, ref } from 'vue'
-	import { onLoad, onPullDownRefresh } from '@dcloudio/uni-app'
+	import { computed, getCurrentInstance, reactive, ref, watch } from 'vue'
+	import { onLoad, onPullDownRefresh, onUnload } from '@dcloudio/uni-app'
 	import { inspectionApi } from '../../api/inspection.js'
+	import { downloadFile } from '../../api/request.js'
+	import { connected } from '../../platform/network.js'
+	import { chooseCameraPhoto, persistTempFile, renderWatermark, watermarkLines } from '../../platform/photo.js'
+	import { uploadPhotoEvidence, newPhotoQueueId } from '../../services/photo-evidence.js'
+	import { syncPendingWork } from '../../services/offline-sync.js'
+	import { brandingState } from '../../stores/branding.js'
+	import { mobileState } from '../../stores/mobile.js'
+	import { listQueuedPhotos, loadDraftEnvelope, queuePhoto, removeDraftEnvelope, saveDraftEnvelope } from '../../stores/offline.js'
+	import { displayName } from '../../stores/session.js'
 	import { createIdempotencyKey } from '../../utils/idempotency.js'
 	import { errorMessage, isConflict } from '../../utils/errors.js'
 	import { buildInspectionPayload, inferAbnormal, initialResultDraft, resultOptions, validateInspectionResults } from '../../utils/inspection-results.js'
@@ -77,11 +93,22 @@
 	const saving = ref(false)
 	const error = ref('')
 	const submitKey = ref('')
+	const taskAttachments = ref([])
+	const localAttachments = ref([])
+	const uploadingItemId = ref(0)
+	const pendingSubmit = ref(false)
+	const localSavedAt = ref('')
+	const restoring = ref(false)
+	const page = getCurrentInstance()?.proxy
+	let autosaveTimer = null
 	const executable = computed(() => detail.value && ['PENDING', 'IN_PROGRESS', 'OVERDUE'].includes(detail.value.task.taskStatus))
 	const labels = { PENDING: '待执行', IN_PROGRESS: '执行中', PENDING_REVIEW: '待复核', COMPLETED: '已完成', OVERDUE: '已逾期', CANCELLED: '已取消', VOIDED: '已作废' }
 
 	onLoad((query) => { taskId.value = Number(query?.id || 0); submitKey.value = createIdempotencyKey(`inspection-${taskId.value}`); load() })
 	onPullDownRefresh(async () => { try { await load() } finally { uni.stopPullDownRefresh() } })
+	onUnload(() => { if (autosaveTimer) clearTimeout(autosaveTimer); persistLocal(pendingSubmit.value) })
+	watch(drafts, scheduleLocalSave, { deep: true })
+	watch(executionRemark, scheduleLocalSave)
 
 	function eventValue(event) { return String(event?.detail?.value ?? '') }
 	function statusLabel(value) { return labels[value] || value }
@@ -94,13 +121,47 @@
 		if (!taskId.value || loading.value) return
 		loading.value = true; error.value = ''
 		try {
+			restoring.value = true
 			const result = await inspectionApi.task(taskId.value)
 			detail.value = result
 			executionRemark.value = result.task.executionRemark || ''
 			for (const key of Object.keys(drafts)) delete drafts[key]
 			for (const item of result.items) drafts[item.id] = initialResultDraft(item)
+			try { taskAttachments.value = await inspectionApi.taskAttachments(taskId.value) } catch { taskAttachments.value = [] }
+			localAttachments.value = listQueuedPhotos().filter((item) => item.workflow === 'inspection' && item.taskId === taskId.value).map((item) => ({ id: `queued:${item.id}`, taskItemId: item.taskItemId, originalName: '离线现场照片.jpg', fileSize: 0, createdTime: item.createdAt, localPath: item.watermarkedPath, contentType: 'image/jpeg' }))
+			const local = loadDraftEnvelope('inspection', taskId.value)
+			if (local && local.taskVersion === result.task.version) {
+				applyLocalPayload(local.payload)
+				pendingSubmit.value = Boolean(local.pendingSubmit)
+				submitKey.value = local.idempotencyKey || submitKey.value
+				localSavedAt.value = local.updatedAt || ''
+				uni.showToast({ title: local.pendingSubmit ? '已恢复待提交草稿' : '已恢复本地草稿', icon: 'none' })
+			} else if (local) removeDraftEnvelope('inspection', taskId.value)
 		} catch (cause) { error.value = errorMessage(cause, '点检任务加载失败') }
-		finally { loading.value = false }
+		finally { restoring.value = false; loading.value = false }
+	}
+
+	function applyLocalPayload(payload) {
+		if (!payload) return
+		executionRemark.value = payload.executionRemark || ''
+		for (const result of payload.results || []) if (drafts[result.taskItemId]) Object.assign(drafts[result.taskItemId], result)
+	}
+
+	function scheduleLocalSave() {
+		if (restoring.value || !executable.value) return
+		if (autosaveTimer) clearTimeout(autosaveTimer)
+		autosaveTimer = setTimeout(() => persistLocal(pendingSubmit.value), 700)
+	}
+
+	function persistLocal(submit) {
+		if (!detail.value || !executable.value) return
+		const payload = buildInspectionPayload(detail.value.task, detail.value.items, drafts, executionRemark.value)
+		payload.results.forEach((result) => {
+			result.attachmentIds = (drafts[result.taskItemId]?.attachmentIds || []).slice()
+		})
+		const saved = saveDraftEnvelope({ workflow: 'inspection', taskId: taskId.value, taskVersion: detail.value.task.version, pendingSubmit: Boolean(submit), idempotencyKey: submitKey.value, payload })
+		pendingSubmit.value = Boolean(submit)
+		localSavedAt.value = saved.updatedAt
 	}
 
 	function selectQualitative(item, choice) {
@@ -136,7 +197,65 @@
 	}
 	function changeStop(item, event) { if (executable.value) drafts[item.id].equipmentStopRequired = Boolean(event.detail.value) }
 	function toggleStop() { /* switch handles the value; row click is intentionally inert */ }
-	function comingPhoto(item) { uni.showToast({ title: item.photoRequiredFlag ? '照片与附件功能在下一批接入' : '附件功能在下一批接入', icon: 'none' }) }
+	function attachmentsForItem(itemId) {
+		return taskAttachments.value.filter((item) => item.taskItemId === itemId).concat(localAttachments.value.filter((item) => item.taskItemId === itemId))
+	}
+	function fileSize(value) {
+		const bytes = Number(value || 0)
+		return bytes > 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`
+	}
+
+	async function capturePhoto(item) {
+		if (!executable.value || uploadingItemId.value) return
+		if (drafts[item.id].attachmentIds.length >= Number(item.photoMaxCount || 10)) return uni.showToast({ title: `最多 ${item.photoMaxCount} 张`, icon: 'none' })
+		uploadingItemId.value = item.id
+		try {
+			const originalPath = await chooseCameraPhoto()
+			if (!originalPath) return
+			const capturedAt = new Date()
+			const lines = watermarkLines({ brandName: brandingState.shortName, equipmentName: detail.value.task.equipmentName, equipmentCode: detail.value.task.equipmentCode, taskCode: detail.value.task.taskCode, itemName: item.itemName, executorName: displayName(), faultLocationText: item.inspectionPart || detail.value.task.locationName || item.itemName, capturedAt: capturedAt.toLocaleString() })
+			const watermarkedPath = await renderWatermark({ src: originalPath, canvasId: 'inspectionWatermark', page, lines })
+			const serverTime = mobileState.bootstrap?.serverTime || capturedAt.toISOString()
+			const serverDate = new Date(serverTime)
+			const id = newPhotoQueueId(taskId.value, item.id)
+			const record = {
+				id, workflow: 'inspection', taskId: taskId.value, taskItemId: item.id,
+				originalPath, watermarkedPath,
+				metadata: {
+					workflowType: 'INSPECTION', taskId: taskId.value, taskItemId: item.id,
+					capturedDeviceTime: capturedAt.toISOString(), serverReferenceTime: serverTime,
+					deviceClockOffsetSeconds: Number.isNaN(serverDate.getTime()) ? 0 : Math.round((capturedAt.getTime() - serverDate.getTime()) / 1000),
+					faultLocationText: item.inspectionPart || detail.value.task.locationName || item.itemName,
+					watermarkText: lines.join('\n')
+				}
+			}
+			if (!connected.value) {
+				record.originalPath = await persistTempFile(originalPath)
+				record.watermarkedPath = await persistTempFile(watermarkedPath)
+				queuePhoto(record)
+				drafts[item.id].attachmentIds.push(`queued:${id}`)
+				localAttachments.value.push({ id: `queued:${id}`, taskItemId: item.id, originalName: `现场照片-${capturedAt.getTime()}.jpg`, fileSize: 0, createdTime: capturedAt.toISOString(), localPath: record.watermarkedPath, contentType: 'image/jpeg' })
+				persistLocal(false)
+				uni.showToast({ title: '照片已加入离线队列', icon: 'success' })
+			} else {
+				const uploaded = await uploadPhotoEvidence(record)
+				drafts[item.id].attachmentIds.push(uploaded.attachmentId)
+				localAttachments.value.push({ id: uploaded.attachmentId, taskItemId: item.id, originalName: uploaded.attachment.originalName || `现场照片-${capturedAt.getTime()}.jpg`, fileSize: uploaded.attachment.fileSize, createdTime: uploaded.attachment.createdTime, localPath: watermarkedPath, contentType: 'image/jpeg' })
+				uni.showToast({ title: uploaded.evidence?.clockSkewWarning ? '照片已上传，设备时钟有偏差' : '水印照片已上传', icon: 'none' })
+			}
+		} catch (cause) {
+			if (!String(cause?.errMsg || cause?.message || '').includes('cancel')) uni.showToast({ title: errorMessage(cause, '拍照处理失败'), icon: 'none' })
+		} finally { uploadingItemId.value = 0 }
+	}
+
+	async function previewAttachment(attachment) {
+		try {
+			if (attachment.localPath) return uni.previewImage({ urls: [attachment.localPath], current: attachment.localPath })
+			const path = await downloadFile(`/inspection/tasks/${taskId.value}/attachments/${attachment.id}/content`)
+			if (String(attachment.contentType || '').startsWith('image/')) uni.previewImage({ urls: [path], current: path })
+			else uni.openDocument({ filePath: path, showMenu: true, fail: () => uni.showToast({ title: '当前设备无法打开该附件', icon: 'none' }) })
+		} catch (cause) { uni.showToast({ title: errorMessage(cause, '附件打开失败'), icon: 'none' }) }
+	}
 
 	async function save(submit) {
 		if (!detail.value || saving.value) return
@@ -146,17 +265,39 @@
 		}
 		saving.value = true
 		try {
-			const payload = buildInspectionPayload(detail.value.task, detail.value.items, drafts, executionRemark.value)
+			let payload = buildInspectionPayload(detail.value.task, detail.value.items, drafts, executionRemark.value)
+			persistLocal(submit)
+			if (!connected.value) {
+				uni.showToast({ title: submit ? '已离线排队，联网后自动提交' : '草稿已保存在本机', icon: 'none' })
+				return
+			}
+			if (listQueuedPhotos().some((item) => item.workflow === 'inspection' && item.taskId === taskId.value)) {
+				await syncPendingWork()
+				if (listQueuedPhotos().some((item) => item.workflow === 'inspection' && item.taskId === taskId.value)) {
+					uni.showToast({ title: '照片尚未同步，请检查网络后重试', icon: 'none' })
+					return
+				}
+				const updated = loadDraftEnvelope('inspection', taskId.value)
+				if (!updated && submit) {
+					uni.showToast({ title: '照片及点检结果已同步', icon: 'success' })
+					await load()
+					return
+				}
+				if (updated) { applyLocalPayload(updated.payload); payload = buildInspectionPayload(detail.value.task, detail.value.items, drafts, executionRemark.value) }
+			}
 			if (submit) await inspectionApi.submitTask(taskId.value, payload, submitKey.value)
 			else await inspectionApi.saveDraft(taskId.value, payload)
 			uni.showToast({ title: submit ? '点检结果已提交' : '草稿已保存', icon: 'success' })
 			if (submit) submitKey.value = createIdempotencyKey(`inspection-${taskId.value}`)
+			removeDraftEnvelope('inspection', taskId.value)
+			pendingSubmit.value = false
+			localSavedAt.value = ''
 			await load()
 		} catch (cause) {
 			if (isConflict(cause)) {
 				uni.showModal({ title: '任务状态已变化', content: '其他执行人员可能已完成该任务，将刷新为最新结果。', showCancel: false })
 				await load()
-			} else uni.showModal({ title: submit ? '提交失败' : '保存失败', content: errorMessage(cause), showCancel: false })
+			} else uni.showModal({ title: submit ? '提交失败' : '保存失败', content: `${errorMessage(cause)}；本地草稿仍保留`, showCancel: false })
 		} finally { saving.value = false }
 	}
 </script>
@@ -200,6 +341,11 @@
 	.multi, .flag { padding: 13rpx 18rpx; border: 2rpx solid #dce5e0; border-radius: 13rpx; color: #68756f; font-size: 22rpx; }
 	.multi.selected, .flag.active { border-color: #1c7d50; color: #166e46; background: #e9f6ef; }
 	.flag.photo { margin-left: auto; color: #1c7d50; }
+	.attachments { margin-top: 18rpx; padding: 17rpx; border-radius: 14rpx; background: #f4f7f5; }
+	.attachments-title { display: block; margin-bottom: 10rpx; color: #506158; font-size: 23rpx; font-weight: 700; }
+	.attachment { display: flex; align-items: center; justify-content: space-between; gap: 14rpx; padding: 15rpx 0; border-top: 1rpx solid #e3e9e6; color: #1c7d50; font-size: 22rpx; }
+	.attachment view text { display: block; color: #45574e; }
+	.attachment view text:last-child { margin-top: 5rpx; color: #8c9691; font-size: 19rpx; }
 	.abnormal-text { border-color: #efb2b5; background: #fffafa; }
 	.stop-row { margin-top: 16rpx; padding: 19rpx; border-radius: 15rpx; color: #68494a; background: #fff2f2; font-size: 24rpx; }
 	.reason { height: 110rpx; }
@@ -213,4 +359,5 @@
 	.actions button { margin: 0; border-radius: 16rpx; font-size: 27rpx; }
 	.draft { color: #1c7d50; background: #e9f5ef; }
 	.submit { color: #fff; background: #1c7d50; }
+	.watermark-canvas { position: fixed; z-index: -10; left: -3000px; bottom: -3000px; width: 1600px; height: 2000px; opacity: 0; }
 </style>

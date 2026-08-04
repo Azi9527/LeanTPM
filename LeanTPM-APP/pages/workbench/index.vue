@@ -44,7 +44,7 @@
 			<view class="action-grid">
 				<view class="action primary" @click="openScan"><text class="action-icon">扫</text><text>设备扫码</text></view>
 				<view class="action" @click="openInspections"><text class="action-icon">检</text><text>我的点检</text></view>
-				<view class="action"><text class="action-icon danger-bg">异</text><text>点检异常</text></view>
+				<view class="action" @click="openAbnormalities"><text class="action-icon danger-bg">异</text><text>点检异常</text></view>
 				<view class="action" @click="openProfile"><text class="action-icon neutral-bg">我</text><text>个人报表</text></view>
 			</view>
 		</view>
@@ -98,6 +98,7 @@
 	function openProfile() { navigateTo(ROUTES.profile) }
 	function openScan() { navigateTo(ROUTES.scan) }
 	function openInspections() { navigateTo(ROUTES.inspectionTasks) }
+	function openAbnormalities() { navigateTo(ROUTES.abnormalities) }
 	function openEquipmentStatus(status) { navigateTo(routeWithQuery(ROUTES.equipmentStatus, { status })) }
 </script>
 

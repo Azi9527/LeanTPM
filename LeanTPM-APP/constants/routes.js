@@ -7,6 +7,7 @@ export const ROUTES = Object.freeze({
 	scan: '/pages/scan/index',
 	equipmentContext: '/pages/equipment/context',
 	inspectionTasks: '/pages/inspection/index',
+	abnormalities: '/pages/abnormal/index',
 	messages: '/pages/messages/index',
 	report: '/pages/report/index',
 	profile: '/pages/profile/index'

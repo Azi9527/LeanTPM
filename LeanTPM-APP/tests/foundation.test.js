@@ -13,6 +13,8 @@ const { createIdempotencyKey } = await import('../utils/idempotency.js')
 const { normalizeBranding } = await import('../utils/branding.js')
 const { extractEquipmentToken, requireEquipmentToken } = await import('../utils/equipment-token.js')
 const { initialResultDraft, inferAbnormal, validateInspectionResults, buildInspectionPayload } = await import('../utils/inspection-results.js')
+const { saveDraftEnvelope, loadDraftEnvelope, queuePhoto, attachQueuedPhotoToDraft, listQueuedPhotos, removeDraftEnvelope } = await import('../stores/offline.js')
+const { watermarkLines } = await import('../platform/photo.js')
 const { ApiError, errorMessage, isConflict } = await import('../utils/errors.js')
 
 test('normalizes enterprise server URLs', () => {
@@ -58,6 +60,22 @@ test('validates qualitative and quantitative inspection results', () => {
 	const payload = buildInspectionPayload({ version: 3 }, items, drafts, '现场完成')
 	assert.equal(payload.taskVersion, 3)
 	assert.equal(payload.results[1].numericValue, 90)
+})
+
+test('queues photos before pending drafts and writes attachment ids back', () => {
+	const envelope = saveDraftEnvelope({ workflow: 'inspection', taskId: 9, taskVersion: 2, pendingSubmit: true, idempotencyKey: 'submit-9', payload: { taskVersion: 2, results: [{ taskItemId: 12, attachmentIds: [] }] } })
+	queuePhoto({ id: 'photo-1', workflow: 'inspection', taskId: 9, taskItemId: 12, originalPath: 'a.jpg', watermarkedPath: 'b.jpg' })
+	assert.equal(listQueuedPhotos().length, 1)
+	assert.equal(attachQueuedPhotoToDraft(listQueuedPhotos()[0], 88), true)
+	assert.deepEqual(loadDraftEnvelope('inspection', 9).payload.results[0].attachmentIds, [88])
+	removeDraftEnvelope('inspection', 9)
+})
+
+test('builds a GPS-free equipment location watermark', () => {
+	const lines = watermarkLines({ brandName: '客户矿业', equipmentName: '循环泵', equipmentCode: 'P-01', taskCode: 'DJ-1', itemName: '油位', executorName: '操作工01', faultLocationText: '机加二线' })
+	assert.equal(lines.length, 5)
+	assert.match(lines.join(' '), /机加二线/)
+	assert.doesNotMatch(lines.join(' '), /GPS|经度|纬度/)
 })
 
 test('preserves API conflict semantics', () => {

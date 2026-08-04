@@ -7,7 +7,7 @@ import {
 	storeTokens
 } from '../api/request.js'
 import { ROUTES, reLaunchTo } from '../constants/routes.js'
-import { STORAGE_KEYS, getStored, setStored } from '../platform/storage.js'
+import { STORAGE_KEYS, clearBusinessStorage, getStored, setStored } from '../platform/storage.js'
 
 const state = reactive({
 	user: null,
@@ -86,6 +86,7 @@ export async function signOut() {
 		if (hasToken()) await authApi.logout()
 	} finally {
 		clearTokens()
+		clearBusinessStorage()
 		state.user = null
 		state.initialized = true
 	}

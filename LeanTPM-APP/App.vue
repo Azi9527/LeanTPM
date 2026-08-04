@@ -1,9 +1,11 @@
 <script>
 	import { initializeNetwork } from './platform/network.js'
+	import { initializeOfflineSync } from './services/offline-sync.js'
 
 	export default {
 		onLaunch: function() {
 			initializeNetwork()
+			initializeOfflineSync()
 		},
 		onShow: function() {
 			console.log('App Show')
