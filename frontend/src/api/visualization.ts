@@ -69,6 +69,15 @@ export interface WorkflowTrend {
   abnormal: number
 }
 
+export interface ReliabilityMetrics {
+  mttrSeconds?: number
+  mtbfSeconds?: number
+  mttfSeconds?: number
+  faultCount: number
+  completedRepairCount: number
+  runTimeHours?: number
+}
+
 export interface DashboardResult {
   generatedAt: string
   startDate: string
@@ -83,6 +92,7 @@ export interface DashboardResult {
   inspection: WorkflowMetrics
   maintenance: WorkflowMetrics
   workflowTrend: WorkflowTrend[]
+  reliability: ReliabilityMetrics
   oee: AnalysisResult
 }
 

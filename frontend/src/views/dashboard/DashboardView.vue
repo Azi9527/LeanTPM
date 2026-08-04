@@ -1,12 +1,38 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import { visualizationApi, type DashboardResult } from '@/api/visualization'
+import { inspectionApi, type TaskRow as InspectionTask } from '@/api/inspection'
+import { maintenanceApi, type TaskRow as MaintenanceTask } from '@/api/maintenance'
+import { notificationApi, type NotificationMessage } from '@/api/notification'
 import { useAuthStore } from '@/stores/auth'
-import { systemApi } from '@/api/system'
+
+type TodoItem = {
+  id: number
+  type: 'INSPECTION' | 'MAINTENANCE'
+  code: string
+  title: string
+  equipment: string
+  dueTime: string
+  status: string
+  overdue: boolean
+}
 
 const auth = useAuthStore()
-const userCount = ref<number | null>(null)
-const roleCount = ref<number | null>(null)
-const loading = ref(true)
+const router = useRouter()
+const loading = ref(false)
+const dashboard = ref<DashboardResult>()
+const todos = ref<TodoItem[]>([])
+const messages = ref<NotificationMessage[]>([])
+const lastUpdated = ref('')
+
+const today = new Date()
+const range = ref<[Date, Date]>([
+  new Date(today.getFullYear(), today.getMonth(), 1),
+  new Date(today.getFullYear(), today.getMonth() + 1, 0),
+])
+
 const greeting = computed(() => {
   const hour = new Date().getHours()
   if (hour < 11) return '早上好'
@@ -15,357 +41,406 @@ const greeting = computed(() => {
   return '晚上好'
 })
 
-onMounted(async () => {
+const canInspection = computed(() =>
+  auth.can('inspection:task:view') || auth.can('inspection:my-task:view'),
+)
+const canMaintenance = computed(() =>
+  auth.can('maintenance:task:view') || auth.can('maintenance:my-task:view'),
+)
+const canMessages = computed(() => auth.can('notification:message:view'))
+
+const abnormalEquipment = computed(() => {
+  const core = dashboard.value?.core
+  return core ? core.fault + core.repair + core.offline : 0
+})
+const normalEquipment = computed(() =>
+  Math.max((dashboard.value?.core.total ?? 0) - abnormalEquipment.value, 0),
+)
+const equipmentHealthRate = computed(() => {
+  const total = dashboard.value?.core.total ?? 0
+  return total ? normalEquipment.value / total : undefined
+})
+const taskDue = computed(() =>
+  (dashboard.value?.inspection.due ?? 0) + (dashboard.value?.maintenance.due ?? 0),
+)
+const taskCompleted = computed(() =>
+  (dashboard.value?.inspection.completed ?? 0) + (dashboard.value?.maintenance.completed ?? 0),
+)
+const taskCompletionRate = computed(() =>
+  taskDue.value ? taskCompleted.value / taskDue.value : undefined,
+)
+const inspectionOnTimeRate = computed(() => {
+  const inspection = dashboard.value?.inspection
+  return inspection?.completed ? inspection.onTimeRate : undefined
+})
+const oeeRate = computed(() => {
+  const summary = dashboard.value?.oee.summary
+  return summary?.recordCount ? summary.oeeRate : undefined
+})
+const openExceptionCount = computed(() =>
+  abnormalEquipment.value
+  + (dashboard.value?.inspection.abnormal ?? 0)
+  + (dashboard.value?.maintenance.abnormal ?? 0),
+)
+
+const metrics = computed(() => [
+  {
+    label: '设备正常率',
+    value: percent(equipmentHealthRate.value),
+    detail: `${normalEquipment.value} 台正常 / ${dashboard.value?.core.total ?? 0} 台设备`,
+    tone: 'green',
+    tip: '异常设备口径：故障、维修中和离线设备。',
+  },
+  {
+    label: '任务完成率',
+    value: percent(taskCompletionRate.value),
+    detail: `${taskCompleted.value} / ${taskDue.value} 项（点检 + 维保）`,
+    tone: 'green',
+    tip: '统计所选期间内应完成的点检与维保任务。',
+  },
+  {
+    label: '点检准时完成率',
+    value: percent(inspectionOnTimeRate.value),
+    detail: `${dashboard.value?.inspection.completed ?? 0} 项已完成`,
+    tone: 'blue',
+    tip: '完成时间不晚于任务截止时间的点检任务占比。',
+  },
+  {
+    label: 'OEE',
+    value: percent(oeeRate.value),
+    detail: `${dashboard.value?.oee.summary.recordCount ?? 0} 条已批准记录`,
+    tone: 'blue',
+    tip: '设备综合效率 = 时间开动率 × 性能开动率 × 合格品率。',
+  },
+  {
+    label: 'MTTR',
+    value: duration(dashboard.value?.reliability.mttrSeconds, 'hour'),
+    detail: `${dashboard.value?.reliability.completedRepairCount ?? 0} 张已关闭维修单`,
+    tone: 'amber',
+    tip: '平均修复时间：所选期间关闭维修单的平均有效维修时长。',
+  },
+  {
+    label: 'MTBF',
+    value: duration(dashboard.value?.reliability.mtbfSeconds, 'hour'),
+    detail: `${dashboard.value?.reliability.faultCount ?? 0} 次故障`,
+    tone: 'amber',
+    tip: '平均故障间隔：所选期间已批准运行时长 ÷ 有效故障次数。',
+  },
+  {
+    label: 'MTTF',
+    value: duration(dashboard.value?.reliability.mttfSeconds, 'day'),
+    detail: '投产至首次有效故障',
+    tone: 'amber',
+    tip: '平均失效前时间：首次故障落在所选期间的设备，从投产到首次故障的平均时长。',
+  },
+  {
+    label: '异常与逾期',
+    value: String(openExceptionCount.value
+      + (dashboard.value?.inspection.overdue ?? 0)
+      + (dashboard.value?.maintenance.overdue ?? 0)),
+    detail: `${abnormalEquipment.value} 台异常设备 · ${(dashboard.value?.inspection.overdue ?? 0) + (dashboard.value?.maintenance.overdue ?? 0)} 项逾期`,
+    tone: 'red',
+    tip: '设备异常、任务异常及逾期任务的运营提醒汇总。',
+  },
+])
+
+const statusRows = computed(() =>
+  (dashboard.value?.statusDistribution ?? [])
+    .filter((item) => item.equipmentCount > 0)
+    .sort((a, b) => b.equipmentCount - a.equipmentCount),
+)
+
+function dateText(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function percent(value?: number) {
+  return value === undefined || value === null ? '暂无数据' : `${(Number(value) * 100).toFixed(1)}%`
+}
+
+function duration(seconds?: number, unit: 'hour' | 'day' = 'hour') {
+  if (seconds === undefined || seconds === null || Number(seconds) < 0) return '暂无数据'
+  const divisor = unit === 'day' ? 86400 : 3600
+  return `${(Number(seconds) / divisor).toFixed(1)} ${unit === 'day' ? '天' : '小时'}`
+}
+
+function readableTime(value?: string) {
+  if (!value) return '时间未设置'
+  return new Date(value).toLocaleString('zh-CN', { hour12: false })
+}
+
+function statusText(status: string) {
+  const map: Record<string, string> = {
+    PENDING_ASSIGNMENT: '待派工', PENDING: '待执行', IN_PROGRESS: '执行中',
+    PAUSED: '已暂停', PENDING_CONFIRMATION: '待确认', OVERDUE: '已逾期',
+  }
+  return map[status] ?? status
+}
+
+function toTodo(task: InspectionTask | MaintenanceTask, type: TodoItem['type']): TodoItem {
+  const due = new Date(task.dueTime).getTime()
+  return {
+    id: task.id,
+    type,
+    code: task.taskCode,
+    title: type === 'INSPECTION' ? '点检任务' : '维保任务',
+    equipment: `${task.equipmentName}（${task.equipmentCode}）`,
+    dueTime: task.dueTime,
+    status: task.taskStatus,
+    overdue: task.taskStatus === 'OVERDUE' || (!Number.isNaN(due) && due < Date.now()),
+  }
+}
+
+async function loadDashboard() {
+  loading.value = true
   try {
-    const tasks: Promise<unknown>[] = []
-    if (auth.can('system:user:view')) {
-      tasks.push(systemApi.users({ page: 1, pageSize: 1 }).then((page) => (userCount.value = page.total)))
+    const [start, end] = range.value
+    dashboard.value = await visualizationApi.dashboard({
+      startDate: dateText(start),
+      endDate: dateText(end),
+      periodType: 'DAY',
+    })
+
+    const sideRequests: Promise<void>[] = []
+    if (canInspection.value) {
+      sideRequests.push(inspectionApi.tasks({ mineOnly: true, page: 1, pageSize: 50 })
+        .then((page) => {
+          const active = page.records.filter((task) =>
+            !['COMPLETED', 'CANCELLED', 'VOIDED'].includes(task.taskStatus),
+          )
+          todos.value = todos.value.filter((item) => item.type !== 'INSPECTION')
+            .concat(active.map((task) => toTodo(task, 'INSPECTION')))
+        }))
     }
-    if (auth.can('system:role:view')) {
-      tasks.push(systemApi.roles().then((roles) => (roleCount.value = roles.length)))
+    if (canMaintenance.value) {
+      sideRequests.push(maintenanceApi.tasks({ mineOnly: true, page: 1, pageSize: 50 })
+        .then((page) => {
+          const active = page.records.filter((task) =>
+            !['COMPLETED', 'CANCELLED', 'VOIDED'].includes(task.taskStatus),
+          )
+          todos.value = todos.value.filter((item) => item.type !== 'MAINTENANCE')
+            .concat(active.map((task) => toTodo(task, 'MAINTENANCE')))
+        }))
     }
-    await Promise.all(tasks)
+    if (canMessages.value) {
+      sideRequests.push(notificationApi.messages({ unreadOnly: true, page: 1, pageSize: 6 })
+        .then((page) => { messages.value = page.records }))
+    }
+    await Promise.allSettled(sideRequests)
+    todos.value = todos.value
+      .sort((a, b) => Number(b.overdue) - Number(a.overdue)
+        || new Date(a.dueTime).getTime() - new Date(b.dueTime).getTime())
+      .slice(0, 8)
+    lastUpdated.value = readableTime(dashboard.value.generatedAt)
+  } catch (error) {
+    ElMessage.error('工作台数据加载失败，请稍后重试')
+    console.error(error)
   } finally {
     loading.value = false
   }
-})
+}
 
-const stages = [
-  { name: '基础平台', detail: '认证、权限、字典、日志、附件', status: '已建设', progress: 100 },
-  { name: '设备基础', detail: '组织、位置、分类、台账、状态', status: '下一阶段', progress: 0 },
-  { name: '点检维保', detail: '方案、计划、任务、异常闭环', status: '待建设', progress: 0 },
-  { name: 'OEE 与大屏', detail: '效率损失与运行可视化', status: '待建设', progress: 0 },
-]
+function openTodo(item: TodoItem) {
+  const path = item.type === 'INSPECTION' ? '/inspection/my-tasks' : '/maintenance/my-tasks'
+  void router.push({ path, query: { taskId: item.id } })
+}
+
+function openMessage(item: NotificationMessage) {
+  const path = item.routePath?.startsWith('/') ? item.routePath : '/notifications'
+  void router.push(path)
+}
+
+onMounted(loadDashboard)
 </script>
 
 <template>
-  <div class="page-shell">
-    <section class="welcome-panel">
+  <div class="page-shell dashboard-page" v-loading="loading">
+    <header class="dashboard-header">
       <div>
         <p>{{ greeting }}，{{ auth.displayName }}</p>
-        <h1>设备管理，从可靠的基础开始</h1>
-        <span>当前第一阶段聚焦系统安全、权限与主数据治理能力。</span>
+        <h1>设备运营工作台</h1>
+        <span>聚焦我的待办、异常风险与设备绩效，所有指标均来自当前业务数据。</span>
       </div>
-      <div class="date-block">
-        <strong>{{ new Date().getDate() }}</strong>
-        <span>{{ new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long' }) }}</span>
+      <div class="header-actions">
+        <el-date-picker
+          v-model="range"
+          type="daterange"
+          range-separator="至"
+          start-placeholder="开始日期"
+          end-placeholder="结束日期"
+          :clearable="false"
+          @change="loadDashboard"
+        />
+        <el-button type="primary" @click="loadDashboard">刷新数据</el-button>
+        <small>更新于 {{ lastUpdated || '—' }}</small>
       </div>
-    </section>
+    </header>
 
-    <section class="metric-grid" v-loading="loading">
-      <article class="metric-card">
-        <div class="metric-icon teal"><el-icon><User /></el-icon></div>
-        <div><span>系统用户</span><strong>{{ userCount ?? '—' }}</strong><small>真实数据库账户</small></div>
-      </article>
-      <article class="metric-card">
-        <div class="metric-icon amber"><el-icon><Avatar /></el-icon></div>
-        <div><span>业务角色</span><strong>{{ roleCount ?? '—' }}</strong><small>RBAC 授权角色</small></div>
-      </article>
-      <article class="metric-card muted">
-        <div class="metric-icon slate"><el-icon><Monitor /></el-icon></div>
-        <div><span>设备台账</span><strong>待接入</strong><small>第二阶段建设</small></div>
-      </article>
-      <article class="metric-card muted">
-        <div class="metric-icon slate"><el-icon><TrendCharts /></el-icon></div>
-        <div><span>当前 OEE</span><strong>待接入</strong><small>第五阶段建设</small></div>
-      </article>
+    <section class="metric-grid">
+      <el-tooltip v-for="metric in metrics" :key="metric.label" :content="metric.tip" placement="top">
+        <article class="metric-card" :class="metric.tone">
+          <span>{{ metric.label }}</span>
+          <strong :class="{ empty: metric.value === '暂无数据' }">{{ metric.value }}</strong>
+          <small>{{ metric.detail }}</small>
+        </article>
+      </el-tooltip>
     </section>
 
     <section class="dashboard-grid">
-      <article class="surface-card stage-card">
+      <article class="surface-card todo-card">
         <div class="section-heading">
-          <div><span>建设路线</span><h2>V1 阶段进展</h2></div>
-          <el-tag effect="plain">阶段 1 / 7</el-tag>
+          <div><span>MY TODO</span><h2>我的待办</h2></div>
+          <el-tag type="danger" effect="plain">{{ todos.length }} 项待处理</el-tag>
         </div>
-        <div class="stage-list">
-          <div v-for="(stage, index) in stages" :key="stage.name" class="stage-row" :class="{ done: stage.progress === 100 }">
-            <span class="stage-index">{{ String(index + 1).padStart(2, '0') }}</span>
-            <div class="stage-copy"><strong>{{ stage.name }}</strong><small>{{ stage.detail }}</small></div>
-            <span class="stage-status">{{ stage.status }}</span>
-          </div>
+        <div v-if="todos.length" class="todo-list">
+          <button v-for="item in todos" :key="`${item.type}-${item.id}`" class="todo-row" @click="openTodo(item)">
+            <i :class="item.type.toLowerCase()">{{ item.type === 'INSPECTION' ? '检' : '保' }}</i>
+            <span class="todo-copy">
+              <strong>{{ item.equipment }}</strong>
+              <small>{{ item.code }} · 截止 {{ readableTime(item.dueTime) }}</small>
+            </span>
+            <el-tag :type="item.overdue ? 'danger' : 'warning'" size="small">{{ statusText(item.status) }}</el-tag>
+          </button>
         </div>
+        <el-empty v-else description="当前没有待办任务" :image-size="70" />
       </article>
 
-      <article class="surface-card capability-card">
+      <article class="surface-card message-card">
         <div class="section-heading">
-          <div><span>系统能力</span><h2>第一阶段基线</h2></div>
+          <div><span>EXCEPTION</span><h2>异常消息</h2></div>
+          <el-button v-if="canMessages" link type="primary" @click="router.push('/notifications')">全部消息</el-button>
         </div>
-        <div class="capability-list">
-          <div><el-icon><CircleCheckFilled /></el-icon><span><strong>身份安全</strong><small>JWT 双令牌与 BCrypt 密码</small></span></div>
-          <div><el-icon><CircleCheckFilled /></el-icon><span><strong>访问控制</strong><small>菜单、按钮、接口三级校验</small></span></div>
-          <div><el-icon><CircleCheckFilled /></el-icon><span><strong>数据治理</strong><small>字典、审计字段与乐观锁</small></span></div>
-          <div><el-icon><CircleCheckFilled /></el-icon><span><strong>过程留痕</strong><small>登录与关键操作日志</small></span></div>
+        <div class="exception-summary">
+          <div><strong>{{ abnormalEquipment }}</strong><span>异常设备</span></div>
+          <div><strong>{{ (dashboard?.inspection.overdue ?? 0) + (dashboard?.maintenance.overdue ?? 0) }}</strong><span>逾期任务</span></div>
+          <div><strong>{{ dashboard?.inspection.abnormal ?? 0 }}</strong><span>点检异常</span></div>
         </div>
-        <div class="foundation-note">
-          <span>FOUNDATION READY</span>
-          <p>设备主数据将在下一阶段沿当前租户、权限和审计基线扩展。</p>
+        <div v-if="messages.length" class="message-list">
+          <button v-for="item in messages" :key="item.id" @click="openMessage(item)">
+            <span class="severity-dot" :class="item.severity.toLowerCase()" />
+            <span><strong>{{ item.title }}</strong><small>{{ item.content }}</small></span>
+            <time>{{ readableTime(item.occurredTime) }}</time>
+          </button>
         </div>
+        <el-empty v-else description="暂无未读异常消息" :image-size="62" />
       </article>
+    </section>
+
+    <section class="surface-card status-card">
+      <div class="section-heading">
+        <div><span>EQUIPMENT HEALTH</span><h2>设备状态分布</h2></div>
+        <p>正常 {{ normalEquipment }} 台 · 异常 {{ abnormalEquipment }} 台</p>
+      </div>
+      <div class="health-bar" aria-label="设备正常异常比例">
+        <span class="normal" :style="{ width: `${(equipmentHealthRate ?? 0) * 100}%` }" />
+        <span class="abnormal" :style="{ width: `${100 - (equipmentHealthRate ?? 0) * 100}%` }" />
+      </div>
+      <div class="status-list">
+        <div v-for="item in statusRows" :key="item.statusCode">
+          <i :style="{ backgroundColor: item.displayColor }" />
+          <span>{{ item.statusName }}</span>
+          <strong>{{ item.equipmentCount }}</strong>
+          <small>{{ dashboard?.core.total ? `${(item.equipmentCount / dashboard.core.total * 100).toFixed(1)}%` : '—' }}</small>
+        </div>
+      </div>
     </section>
   </div>
 </template>
 
 <style scoped lang="scss">
-.welcome-panel {
-  position: relative;
+.dashboard-page { gap: 16px; }
+
+.dashboard-header {
   display: flex;
-  overflow: hidden;
   align-items: center;
   justify-content: space-between;
-  min-height: 168px;
-  padding: 30px 36px;
+  min-height: 145px;
+  padding: 26px 30px;
   border-radius: 14px;
   color: #fff;
-  background:
-    radial-gradient(circle at 85% 10%, rgba(55, 206, 224, 0.36), transparent 30%),
-    linear-gradient(110deg, #083f56, #0b6d88);
+  background: radial-gradient(circle at 82% 20%, rgb(90 174 126 / 42%), transparent 28%), linear-gradient(115deg, #123b2d, #1c7d50);
 
-  &::after {
-    position: absolute;
-    right: 11%;
-    width: 230px;
-    height: 230px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 50%;
-    content: "";
-    box-shadow: 0 0 0 46px rgba(255, 255, 255, 0.035);
-  }
-
-  p {
-    margin: 0 0 8px;
-    color: #9ed8e5;
-    font-size: 13px;
-  }
-
-  h1 {
-    margin: 0 0 10px;
-    font-size: 28px;
-    letter-spacing: -0.025em;
-  }
-
-  span {
-    color: #c1dde4;
-    font-size: 13px;
-  }
+  p { margin: 0 0 7px; color: #bfe1ce; font-size: 13px; }
+  h1 { margin: 0 0 8px; font-size: 27px; }
+  span { color: #d8eadf; font-size: 13px; }
 }
 
-.date-block {
-  position: relative;
-  z-index: 2;
-  display: flex;
+.header-actions {
+  display: grid;
+  grid-template-columns: minmax(260px, 330px) auto;
+  gap: 8px;
   align-items: center;
-  flex-direction: column;
-  min-width: 104px;
-
-  strong {
-    font-size: 48px;
-    font-weight: 300;
-    line-height: 1;
-  }
+  position: relative;
+  z-index: 1;
+  small { grid-column: 1 / -1; color: #c6ded0; text-align: right; }
 }
 
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 15px;
+  gap: 12px;
 }
 
 .metric-card {
-  display: flex;
-  align-items: center;
-  gap: 15px;
-  min-height: 112px;
-  padding: 20px;
+  min-height: 125px;
+  padding: 18px 20px;
   border: 1px solid var(--tpm-border);
+  border-top: 3px solid #1c7d50;
   border-radius: 12px;
   background: #fff;
-
-  > div:last-child {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    flex: 1;
-    gap: 4px 12px;
-  }
-
-  span {
-    color: var(--tpm-text-secondary);
-    font-size: 12px;
-  }
-
-  strong {
-    grid-row: 1 / span 2;
-    grid-column: 2;
-    align-self: center;
-    font-size: 27px;
-  }
-
-  small {
-    color: #9aa6ae;
-    font-size: 10px;
-  }
-
-  &.muted strong {
-    color: #84919a;
-    font-size: 16px;
-  }
+  span, small { display: block; color: var(--tpm-text-secondary); }
+  span { font-size: 13px; font-weight: 650; }
+  strong { display: block; margin: 9px 0 7px; color: #163528; font-size: 27px; line-height: 1; }
+  strong.empty { color: #8b9690; font-size: 19px; }
+  small { font-size: 11px; }
+  &.blue { border-top-color: #3685b5; }
+  &.amber { border-top-color: #d49a25; }
+  &.red { border-top-color: #c4000a; strong { color: #a90912; } }
 }
 
-.metric-icon {
-  display: grid;
-  flex: 0 0 48px;
-  place-items: center;
-  width: 48px;
-  height: 48px;
-  border-radius: 10px;
-  font-size: 22px;
-
-  &.teal { color: #0b7894; background: #e3f3f6; }
-  &.amber { color: #b87800; background: #fff3d9; }
-  &.slate { color: #71808a; background: #edf1f3; }
-}
-
-.dashboard-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(320px, 0.8fr);
-  gap: 16px;
-}
-
-.stage-card,
-.capability-card {
-  padding: 22px;
-}
+.dashboard-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(360px, .9fr); gap: 16px; }
+.todo-card, .message-card, .status-card { padding: 21px; }
 
 .section-heading {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  margin-bottom: 20px;
-
-  span {
-    color: var(--tpm-primary);
-    font-size: 10px;
-    font-weight: 750;
-    letter-spacing: 0.14em;
-  }
-
-  h2 {
-    margin: 4px 0 0;
-    font-size: 18px;
-  }
+  display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 15px;
+  span { color: var(--tpm-primary); font-size: 9px; font-weight: 800; letter-spacing: .13em; }
+  h2 { margin: 3px 0 0; color: #22332b; font-size: 18px; }
+  p { margin: 8px 0 0; color: var(--tpm-text-secondary); font-size: 12px; }
 }
 
-.stage-list {
-  display: grid;
-  gap: 7px;
+.todo-list, .message-list { display: grid; gap: 7px; }
+.todo-row, .message-list button {
+  width: 100%; border: 1px solid #e6ebe8; border-radius: 9px; background: #fff; cursor: pointer; text-align: left;
+  &:hover { border-color: #8cc4a5; background: #f6fbf8; }
 }
+.todo-row { display: flex; align-items: center; gap: 11px; padding: 10px 12px; }
+.todo-row > i { display: grid; flex: 0 0 34px; place-items: center; width: 34px; height: 34px; border-radius: 9px; color: #fff; background: #1c7d50; font-style: normal; font-weight: 750; }
+.todo-row > i.maintenance { background: #b77a16; }
+.todo-copy { display: grid; flex: 1; gap: 3px; min-width: 0; strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; } small { color: #849089; font-size: 11px; } }
 
-.stage-row {
-  display: grid;
-  grid-template-columns: 40px 1fr auto;
-  align-items: center;
-  gap: 10px;
-  padding: 13px 15px;
-  border: 1px solid var(--tpm-border);
-  border-radius: 8px;
+.exception-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+.exception-summary div { padding: 11px 8px; border-radius: 8px; text-align: center; background: #f6f8f7; strong { display: block; color: #b31c25; font-size: 21px; } span { color: #78837d; font-size: 11px; } }
+.message-list button { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 9px; align-items: center; padding: 9px 10px; }
+.message-list button > span:nth-child(2) { display: grid; gap: 2px; min-width: 0; strong, small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } strong { font-size: 12px; } small { color: #849089; font-size: 10px; } }
+.message-list time { color: #9aa39e; font-size: 9px; }
+.severity-dot { width: 7px; height: 7px; border-radius: 50%; background: #d49a25; &.high, &.critical { background: #c4000a; } &.low { background: #1c7d50; } }
 
-  &.done {
-    border-color: #addcd0;
-    background: #f2fbf8;
-  }
-}
+.health-bar { display: flex; overflow: hidden; height: 12px; margin-bottom: 18px; border-radius: 999px; background: #edf1ef; .normal { background: #1c7d50; } .abnormal { background: #c4000a; } }
+.status-list { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+.status-list > div { display: grid; grid-template-columns: auto 1fr auto; gap: 7px; align-items: center; padding: 11px; border: 1px solid #edf0ee; border-radius: 8px; i { width: 8px; height: 8px; border-radius: 50%; } span { font-size: 12px; } strong { font-size: 16px; } small { grid-column: 2 / -1; color: #8b9690; font-size: 10px; } }
 
-.stage-index {
-  color: #9aa6ae;
-  font: 12px "SFMono-Regular", Consolas, monospace;
-}
-
-.stage-copy {
-  display: flex;
-  flex-direction: column;
-
-  strong { font-size: 13px; }
-  small { margin-top: 3px; color: var(--tpm-text-secondary); font-size: 11px; }
-}
-
-.stage-status {
-  color: var(--tpm-text-secondary);
-  font-size: 11px;
-}
-
-.stage-row.done .stage-status {
-  color: var(--tpm-success);
-  font-weight: 700;
-}
-
-.capability-list {
-  display: grid;
-  gap: 18px;
-
-  > div {
-    display: flex;
-    gap: 12px;
-  }
-
-  .el-icon {
-    margin-top: 2px;
-    color: var(--tpm-success);
-  }
-
-  span {
-    display: flex;
-    flex-direction: column;
-  }
-
-  strong { font-size: 13px; }
-  small { margin-top: 4px; color: var(--tpm-text-secondary); font-size: 11px; }
-}
-
-.foundation-note {
-  margin-top: 24px;
-  padding: 16px;
-  border-left: 3px solid var(--tpm-accent);
-  background: #f6f8f9;
-
-  span {
-    color: var(--tpm-primary);
-    font: 700 10px "SFMono-Regular", Consolas, monospace;
-    letter-spacing: 0.1em;
-  }
-
-  p {
-    margin: 6px 0 0;
-    color: var(--tpm-text-secondary);
-    font-size: 11px;
-    line-height: 1.6;
-  }
-}
-
-@media (max-width: 1100px) {
+@media (max-width: 1200px) {
   .metric-grid { grid-template-columns: repeat(2, 1fr); }
   .dashboard-grid { grid-template-columns: 1fr; }
+  .status-list { grid-template-columns: repeat(3, 1fr); }
 }
-
-@media (max-width: 600px) {
-  .welcome-panel {
-    min-height: 150px;
-    padding: 24px 20px;
-
-    h1 { font-size: 22px; }
-  }
-  .date-block { display: none; }
-  .metric-grid { grid-template-columns: 1fr 1fr; gap: 9px; }
-  .metric-card {
-    align-items: flex-start;
-    flex-direction: column;
-    min-height: 138px;
-    padding: 15px;
-
-    > div:last-child { width: 100%; }
-    strong { font-size: 22px; }
-  }
-  .metric-icon { width: 38px; height: 38px; flex-basis: 38px; }
-  .stage-card, .capability-card { padding: 16px; }
-  .stage-row { grid-template-columns: 30px 1fr; }
-  .stage-status { grid-column: 2; }
+@media (max-width: 760px) {
+  .dashboard-header { align-items: flex-start; flex-direction: column; gap: 16px; }
+  .header-actions { width: 100%; grid-template-columns: 1fr; small { grid-column: 1; text-align: left; } }
+  .metric-grid { grid-template-columns: 1fr; }
+  .status-list { grid-template-columns: repeat(2, 1fr); }
 }
 </style>

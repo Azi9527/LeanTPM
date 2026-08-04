@@ -50,7 +50,7 @@ public class VisualizationController {
 
     @GetMapping("/dashboard")
     @PreAuthorize("hasAnyAuthority("
-            + "'visualization:cockpit:view','visualization:status:view',"
+            + "'dashboard:view','visualization:cockpit:view','visualization:status:view',"
             + "'visualization:inspection:view','visualization:maintenance:view',"
             + "'visualization:oee:view')")
     public ApiResponse<VisualizationDtos.DashboardResult> dashboard(

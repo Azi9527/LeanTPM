@@ -94,6 +94,8 @@ class VisualizationMySqlIntegrationTest {
         assertThat(dashboard.liveEquipment()).hasSize(8);
         assertThat(dashboard.periodType()).isEqualTo("DAY");
         assertThat(dashboard.refreshSeconds()).isEqualTo(86400);
+        assertThat(dashboard.reliability()).isNotNull();
+        assertThat(dashboard.reliability().faultCount()).isGreaterThanOrEqualTo(0);
 
         VisualizationDtos.DashboardResult weekly = service.dashboard(
                 LocalDate.now().minusDays(77), LocalDate.now(), 2L, "week"

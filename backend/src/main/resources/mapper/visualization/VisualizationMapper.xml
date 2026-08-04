@@ -286,6 +286,143 @@
         ORDER BY statistic_date
     </select>
 
+    <select id="reliabilityMetrics"
+            resultType="com.leantpm.visualization.VisualizationDtos$ReliabilityMetrics">
+        SELECT
+            (
+                SELECT ROUND(AVG(
+                    CASE
+                        WHEN repair.effective_work_seconds &gt; 0
+                            THEN repair.effective_work_seconds
+                        WHEN repair.started_time IS NOT NULL AND repair.completed_time IS NOT NULL
+                            THEN GREATEST(
+                                TIMESTAMPDIFF(SECOND, repair.started_time, repair.completed_time)
+                                    - repair.total_paused_seconds,
+                                0
+                            )
+                        ELSE NULL
+                    END
+                ), 3)
+                FROM equipment_repair_order repair
+                JOIN equipment e
+                  ON e.tenant_id = repair.tenant_id
+                 AND e.id = repair.equipment_id
+                 AND e.deleted = 0
+                 AND e.status = 1
+                WHERE repair.tenant_id = #{tenantId}
+                  AND repair.deleted = 0
+                  AND repair.repair_status = 'CLOSED'
+                  AND repair.completed_time &gt;= #{startDate}
+                  AND repair.completed_time &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)
+                  AND <include refid="equipmentScope"/>
+                  <include refid="organizationFilter"/>
+            ) AS mttr_seconds,
+            (
+                SELECT ROUND(
+                    SUM(oee.run_time_minutes) * 60 /
+                    NULLIF((
+                        SELECT COUNT(*)
+                        FROM equipment_fault_report fault
+                        JOIN equipment e
+                          ON e.tenant_id = fault.tenant_id
+                         AND e.id = fault.equipment_id
+                         AND e.deleted = 0
+                         AND e.status = 1
+                        WHERE fault.tenant_id = #{tenantId}
+                          AND fault.deleted = 0
+                          AND fault.report_status NOT IN ('REJECTED', 'CANCELLED')
+                          AND fault.fault_time &gt;= #{startDate}
+                          AND fault.fault_time &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)
+                          AND <include refid="equipmentScope"/>
+                          <include refid="organizationFilter"/>
+                    ), 0),
+                    3
+                )
+                FROM equipment_oee_record oee
+                JOIN equipment e
+                  ON e.tenant_id = oee.tenant_id
+                 AND e.id = oee.equipment_id
+                 AND e.deleted = 0
+                 AND e.status = 1
+                WHERE oee.tenant_id = #{tenantId}
+                  AND oee.deleted = 0
+                  AND oee.data_status IN ('APPROVED', 'LOCKED')
+                  AND oee.production_date BETWEEN #{startDate} AND #{endDate}
+                  AND <include refid="equipmentScope"/>
+                  <include refid="organizationFilter"/>
+            ) AS mtbf_seconds,
+            (
+                SELECT ROUND(AVG(
+                    TIMESTAMPDIFF(SECOND, e.commissioning_date, first_fault.first_fault_time)
+                ), 3)
+                FROM equipment e
+                JOIN (
+                    SELECT equipment_id, MIN(fault_time) AS first_fault_time
+                    FROM equipment_fault_report
+                    WHERE tenant_id = #{tenantId}
+                      AND deleted = 0
+                      AND report_status NOT IN ('REJECTED', 'CANCELLED')
+                    GROUP BY equipment_id
+                ) first_fault ON first_fault.equipment_id = e.id
+                WHERE e.tenant_id = #{tenantId}
+                  AND e.deleted = 0
+                  AND e.status = 1
+                  AND e.commissioning_date IS NOT NULL
+                  AND first_fault.first_fault_time &gt;= #{startDate}
+                  AND first_fault.first_fault_time &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)
+                  AND first_fault.first_fault_time &gt;= e.commissioning_date
+                  AND <include refid="equipmentScope"/>
+                  <include refid="organizationFilter"/>
+            ) AS mttf_seconds,
+            (
+                SELECT COUNT(*)
+                FROM equipment_fault_report fault
+                JOIN equipment e
+                  ON e.tenant_id = fault.tenant_id
+                 AND e.id = fault.equipment_id
+                 AND e.deleted = 0
+                 AND e.status = 1
+                WHERE fault.tenant_id = #{tenantId}
+                  AND fault.deleted = 0
+                  AND fault.report_status NOT IN ('REJECTED', 'CANCELLED')
+                  AND fault.fault_time &gt;= #{startDate}
+                  AND fault.fault_time &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)
+                  AND <include refid="equipmentScope"/>
+                  <include refid="organizationFilter"/>
+            ) AS fault_count,
+            (
+                SELECT COUNT(*)
+                FROM equipment_repair_order repair
+                JOIN equipment e
+                  ON e.tenant_id = repair.tenant_id
+                 AND e.id = repair.equipment_id
+                 AND e.deleted = 0
+                 AND e.status = 1
+                WHERE repair.tenant_id = #{tenantId}
+                  AND repair.deleted = 0
+                  AND repair.repair_status = 'CLOSED'
+                  AND repair.completed_time &gt;= #{startDate}
+                  AND repair.completed_time &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)
+                  AND <include refid="equipmentScope"/>
+                  <include refid="organizationFilter"/>
+            ) AS completed_repair_count,
+            (
+                SELECT ROUND(SUM(oee.run_time_minutes) / 60, 3)
+                FROM equipment_oee_record oee
+                JOIN equipment e
+                  ON e.tenant_id = oee.tenant_id
+                 AND e.id = oee.equipment_id
+                 AND e.deleted = 0
+                 AND e.status = 1
+                WHERE oee.tenant_id = #{tenantId}
+                  AND oee.deleted = 0
+                  AND oee.data_status IN ('APPROVED', 'LOCKED')
+                  AND oee.production_date BETWEEN #{startDate} AND #{endDate}
+                  AND <include refid="equipmentScope"/>
+                  <include refid="organizationFilter"/>
+            ) AS run_time_hours
+    </select>
+
     <select id="integerParameter" resultType="int">
         SELECT CAST(parameter_value AS SIGNED)
         FROM system_parameter

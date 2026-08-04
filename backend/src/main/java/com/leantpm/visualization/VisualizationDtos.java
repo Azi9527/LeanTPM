@@ -91,6 +91,16 @@ public final class VisualizationDtos {
     ) {
     }
 
+    public record ReliabilityMetrics(
+            BigDecimal mttrSeconds,
+            BigDecimal mtbfSeconds,
+            BigDecimal mttfSeconds,
+            long faultCount,
+            long completedRepairCount,
+            BigDecimal runTimeHours
+    ) {
+    }
+
     public record DashboardResult(
             LocalDateTime generatedAt,
             LocalDate startDate,
@@ -105,6 +115,7 @@ public final class VisualizationDtos {
             WorkflowMetrics inspection,
             WorkflowMetrics maintenance,
             List<WorkflowTrend> workflowTrend,
+            ReliabilityMetrics reliability,
             OeeDtos.AnalysisResult oee
     ) {
     }

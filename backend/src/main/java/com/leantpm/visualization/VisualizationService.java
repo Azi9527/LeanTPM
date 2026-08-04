@@ -103,6 +103,10 @@ public class VisualizationService {
                         normalizedStart, normalizedEnd, "MAINTENANCE"
                 ),
                 List.copyOf(workflowTrend),
+                mapper.reliabilityMetrics(
+                        current.tenantId(), scope, organizationIds,
+                        normalizedStart, normalizedEnd
+                ),
                 oeeService.analysis(
                         normalizedStart, normalizedEnd, organizationId, null,
                         normalizedPeriodType, "EQUIPMENT", 20

@@ -53,6 +53,14 @@ public interface VisualizationMapper {
             @Param("periodType") String periodType
     );
 
+    VisualizationDtos.ReliabilityMetrics reliabilityMetrics(
+            @Param("tenantId") long tenantId,
+            @Param("scope") DataPermission scope,
+            @Param("organizationIds") List<Long> organizationIds,
+            @Param("startDate") LocalDate startDate,
+            @Param("endDate") LocalDate endDate
+    );
+
     Integer integerParameter(
             @Param("tenantId") long tenantId,
             @Param("parameterKey") String parameterKey
