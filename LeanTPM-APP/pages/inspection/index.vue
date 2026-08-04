@@ -26,9 +26,9 @@
 	const tabs = [
 		{ label: '全部', value: '' }, { label: '待执行', value: 'PENDING' },
 		{ label: '执行中', value: 'IN_PROGRESS' }, { label: '已逾期', value: 'OVERDUE' },
-		{ label: '待复核', value: 'PENDING_REVIEW' }, { label: '已完成', value: 'COMPLETED' }
+		{ label: '已完成', value: 'COMPLETED' }
 	]
-	const labels = { PENDING: '待执行', IN_PROGRESS: '执行中', PENDING_REVIEW: '待复核', COMPLETED: '已完成', OVERDUE: '已逾期', CANCELLED: '已取消', VOIDED: '已作废' }
+	const labels = { PENDING: '待执行', IN_PROGRESS: '执行中', PENDING_REVIEW: '已完成', COMPLETED: '已完成', OVERDUE: '已逾期', CANCELLED: '已取消', VOIDED: '已作废' }
 	const activeStatus = ref('')
 	const rows = ref([])
 	const loading = ref(false)
@@ -69,7 +69,7 @@
 	.status { padding: 7rpx 15rpx; border-radius: 20rpx; color: #6d7772; background: #eef1f0; font-size: 21rpx; }
 	.status.pending, .status.in_progress { color: #176f47; background: #e6f5ed; }
 	.status.overdue { color: #a00008; background: #ffeded; }
-	.status.pending_review { color: #9d680c; background: #fff4df; }
+	.status.pending_review, .status.completed { color: #176f47; background: #e6f5ed; }
 	.equipment, .scheme { display: block; }
 	.equipment { margin-top: 20rpx; color: #213e32; font-size: 31rpx; font-weight: 800; }
 	.scheme { margin-top: 7rpx; color: #75827c; font-size: 24rpx; }

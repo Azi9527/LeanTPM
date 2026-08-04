@@ -611,7 +611,7 @@ public class InspectionCatalogService {
                 upper(request.shiftCode()),
                 request.defaultAssigneeUserId(),
                 upper(request.defaultTeamCode()),
-                request.reviewRequired(),
+                false,
                 request.backfillAllowed(),
                 request.effectiveDate(),
                 request.expiryDate(),

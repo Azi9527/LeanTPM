@@ -531,8 +531,7 @@ public class InspectionTaskService {
         mapper.submitResults(current.tenantId(), id);
         createAbnormalities(current, task);
         applyAbnormalStop(current, task);
-        String targetStatus = Boolean.TRUE.equals(task.reviewRequiredFlag())
-                ? "PENDING_REVIEW" : "COMPLETED";
+        String targetStatus = "COMPLETED";
         if (mapper.updateTaskStatus(
                 current.tenantId(), id, task.version(), "IN_PROGRESS", targetStatus,
                 clean(request.executionRemark()), current.userId()
@@ -541,7 +540,7 @@ public class InspectionTaskService {
         }
         mapper.insertTaskEvent(
                 current.tenantId(), id, "SUBMITTED", "IN_PROGRESS", targetStatus,
-                "提交点检结果", current.userId()
+                "提交点检结果，任务自动完成", current.userId()
         );
         changeLogService.record(
                 "INSPECTION_TASK", id, "SUBMIT", task,

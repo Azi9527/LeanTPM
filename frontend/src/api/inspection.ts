@@ -570,8 +570,6 @@ export const inspectionApi = {
     http.post(`/inspection/tasks/${id}/submit`, data, {
       headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
     }),
-  reviewTask: (id: number, data: object) =>
-    http.post(`/inspection/tasks/${id}/review`, data),
   closeTask: (id: number, targetStatus: 'CANCELLED' | 'VOIDED', data: object) =>
     http.post(`/inspection/tasks/${id}/close`, data, { params: { targetStatus } }),
 

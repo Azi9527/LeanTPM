@@ -11,8 +11,7 @@
 				<text v-if="detail.task.assigneeName" class="assignee">主执行：{{ detail.task.assigneeName }}；所有协作人均可提交，任一人提交即完成任务</text>
 			</view>
 
-			<view v-if="detail.task.taskStatus === 'PENDING_REVIEW'" class="notice warning">结果已提交，等待复核</view>
-			<view v-if="detail.task.taskStatus === 'COMPLETED'" class="notice success">任务已完成，当前为只读结果</view>
+			<view v-if="['COMPLETED', 'PENDING_REVIEW'].includes(detail.task.taskStatus)" class="notice success">任务已完成，当前为只读结果</view>
 
 			<view v-for="(item, index) in detail.items" :key="item.id" class="item-card">
 				<view class="item-title"><text class="index">{{ index + 1 }}</text><view><text class="name">{{ item.itemName }} <text v-if="item.requiredFlag" class="required">必填</text></text><text class="content">{{ item.inspectionContent }}</text></view></view>
@@ -102,7 +101,7 @@
 	const page = getCurrentInstance()?.proxy
 	let autosaveTimer = null
 	const executable = computed(() => detail.value && ['PENDING', 'IN_PROGRESS', 'OVERDUE'].includes(detail.value.task.taskStatus))
-	const labels = { PENDING: '待执行', IN_PROGRESS: '执行中', PENDING_REVIEW: '待复核', COMPLETED: '已完成', OVERDUE: '已逾期', CANCELLED: '已取消', VOIDED: '已作废' }
+	const labels = { PENDING: '待执行', IN_PROGRESS: '执行中', PENDING_REVIEW: '已完成', COMPLETED: '已完成', OVERDUE: '已逾期', CANCELLED: '已取消', VOIDED: '已作废' }
 
 	onLoad((query) => { taskId.value = Number(query?.id || 0); submitKey.value = createIdempotencyKey(`inspection-${taskId.value}`); load() })
 	onPullDownRefresh(async () => { try { await load() } finally { uni.stopPullDownRefresh() } })
@@ -287,7 +286,7 @@
 			}
 			if (submit) await inspectionApi.submitTask(taskId.value, payload, submitKey.value)
 			else await inspectionApi.saveDraft(taskId.value, payload)
-			uni.showToast({ title: submit ? '点检结果已提交' : '草稿已保存', icon: 'success' })
+			uni.showToast({ title: submit ? '点检任务已完成' : '草稿已保存', icon: 'success' })
 			if (submit) submitKey.value = createIdempotencyKey(`inspection-${taskId.value}`)
 			removeDraftEnvelope('inspection', taskId.value)
 			pendingSubmit.value = false

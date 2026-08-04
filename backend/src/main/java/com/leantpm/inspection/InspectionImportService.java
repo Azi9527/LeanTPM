@@ -64,7 +64,7 @@ public class InspectionImportService {
     private static final List<String> SCHEME_HEADERS = List.of(
             "方案编码", "方案名称", "点检类型", "周期类型", "周期间隔", "星期",
             "月日期", "计划时间", "班次编码", "默认执行人账号", "默认班组编码",
-            "需要复核", "允许补录", "生效日期", "失效日期", "启用", "描述", "变更说明"
+            "允许补录", "生效日期", "失效日期", "启用", "描述", "变更说明"
     );
     private static final List<String> SCHEME_ITEM_HEADERS = List.of(
             "方案编码", "项目编码", "顺序", "必填覆盖", "必拍覆盖", "允许跳过覆盖"
@@ -132,7 +132,7 @@ public class InspectionImportService {
             ), header);
             addSheet(workbook, SCHEME_SHEET, SCHEME_HEADERS, List.of(
                     "IMP-SCHEME-001", "导入示例日常点检", "DAILY", "DAILY", "1",
-                    "", "", "08:00", "", "operator01", "TEAM-A-1", "是", "是",
+                    "", "", "08:00", "", "operator01", "TEAM-A-1", "是",
                     LocalDate.now().toString(), "", "是", "导入示例", "首次导入"
             ), header);
             addSheet(workbook, SCHEME_ITEM_SHEET, SCHEME_ITEM_HEADERS, List.of(
@@ -366,7 +366,7 @@ public class InspectionImportService {
                 input.cycleType(), input.cycleInterval(), input.weekDays(),
                 input.monthDays(), input.scheduledTime(), 60,
                 inspectionCalendarId(tenantId), input.shiftCode(), assigneeId,
-                input.defaultTeamCode(), input.reviewRequired(), input.backfillAllowed(),
+                input.defaultTeamCode(), false, input.backfillAllowed(),
                 input.effectiveDate(), input.expiryDate(), items, List.copyOf(categoryIds),
                 List.copyOf(equipmentIds), input.enabled(), input.description(),
                 input.changeSummary(), version
@@ -498,7 +498,7 @@ public class InspectionImportService {
                         upper(optional(row, columns, formatter, "班次编码")),
                         optional(row, columns, formatter, "默认执行人账号"),
                         upper(optional(row, columns, formatter, "默认班组编码")),
-                        bool(row, columns, formatter, "需要复核", true),
+                        false,
                         bool(row, columns, formatter, "允许补录", true),
                         date(row, columns, formatter, "生效日期", true),
                         date(row, columns, formatter, "失效日期", false),

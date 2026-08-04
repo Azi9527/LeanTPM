@@ -333,7 +333,7 @@ class InspectionMySqlIntegrationTest {
                 );
         taskService.submit(task.id(), submissionRequest);
         InspectionDtos.TaskDetail submitted = taskService.detail(task.id());
-        assertThat(submitted.task().taskStatus()).isEqualTo("PENDING_REVIEW");
+        assertThat(submitted.task().taskStatus()).isEqualTo("COMPLETED");
         assertThat(submitted.abnormalities()).singleElement().satisfies(abnormal -> {
             assertThat(abnormal.abnormalStatus()).isEqualTo("OPEN");
             assertThat(abnormal.equipmentStopRequired()).isTrue();
@@ -365,14 +365,6 @@ class InspectionMySqlIntegrationTest {
                 .isEqualTo(submitted.task().version());
 
         authenticateAdmin();
-        taskService.review(
-                task.id(),
-                new InspectionDtos.ReviewTaskRequest(
-                        true, "复核通过", submitted.task().version()
-                )
-        );
-        assertThat(taskService.detail(task.id()).task().taskStatus()).isEqualTo("COMPLETED");
-
         InspectionDtos.AbnormalRow abnormal =
                 taskService.abnormalities(null, "OPEN", 1, 20).records().getFirst();
         taskService.handleAbnormal(

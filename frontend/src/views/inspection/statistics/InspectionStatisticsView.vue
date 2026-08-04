@@ -19,7 +19,7 @@ const refreshedAt = ref('')
 const cards = computed(() => [
   { label: '今日应检', value: value.value.dueToday, tone: 'blue', hint: '按计划日期统计' },
   { label: '今日完成', value: value.value.completedToday, tone: 'green', hint: '已完成任务' },
-  { label: '今日待办', value: value.value.pendingToday, tone: 'orange', hint: '待执行/执行中/待复核' },
+  { label: '今日待办', value: value.value.pendingToday, tone: 'orange', hint: '待执行/执行中' },
   { label: '逾期任务', value: value.value.overdue, tone: 'red', hint: '超过截止时间' },
   { label: '未闭环异常', value: value.value.abnormal, tone: 'purple', hint: '不含已关闭异常' },
 ])

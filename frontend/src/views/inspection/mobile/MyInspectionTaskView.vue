@@ -74,7 +74,7 @@ let routeTaskOpened = false
 const statusLabels: Record<TaskStatus, string> = {
   PENDING: '待执行',
   IN_PROGRESS: '执行中',
-  PENDING_REVIEW: '待复核',
+  PENDING_REVIEW: '已完成',
   COMPLETED: '已完成',
   OVERDUE: '已逾期',
   CANCELLED: '已取消',
@@ -257,7 +257,7 @@ async function save(submit: boolean) {
       )
     }
     else await inspectionApi.saveDraft(detail.value.task.id, payload)
-    ElMessage.success(submit ? '点检结果已提交' : '草稿已保存')
+    ElMessage.success(submit ? '点检任务已完成' : '草稿已保存')
     await removeMobileDraft('inspection', detail.value.task.id)
     pendingSubmit.value = false
     localSavedAt.value = ''
@@ -419,7 +419,6 @@ function dueClass(row: TaskRow) {
         <el-radio-button value="PENDING">待执行</el-radio-button>
         <el-radio-button value="IN_PROGRESS">执行中</el-radio-button>
         <el-radio-button value="OVERDUE">已逾期</el-radio-button>
-        <el-radio-button value="PENDING_REVIEW">待复核</el-radio-button>
       </el-radio-group>
     </section>
 
@@ -440,7 +439,7 @@ function dueClass(row: TaskRow) {
           <div><span class="mono">{{ detail.task.taskCode }}</span><h2>{{ detail.task.equipmentName }}</h2><p>{{ detail.task.schemeNameSnapshot }} · 截止 {{ detail.task.dueTime }}</p></div>
           <el-button circle @click="executionVisible = false">×</el-button>
         </div>
-        <el-alert v-if="detail.task.taskStatus === 'PENDING_REVIEW'" title="结果已提交，等待复核" type="warning" :closable="false" />
+        <el-alert v-if="['COMPLETED', 'PENDING_REVIEW'].includes(detail.task.taskStatus)" title="任务已完成，当前为只读结果" type="success" :closable="false" />
         <section v-for="(item, index) in detail.items" :key="item.id" class="inspection-card">
           <div class="inspection-index">{{ index + 1 }}</div>
           <div class="inspection-content">

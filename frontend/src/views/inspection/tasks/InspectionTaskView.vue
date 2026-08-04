@@ -72,7 +72,7 @@ const filteredUsers = computed(() => {
 const statusMeta: Record<TaskStatus, { label: string; type: '' | 'success' | 'warning' | 'danger' | 'info' }> = {
   PENDING: { label: '待执行', type: 'info' },
   IN_PROGRESS: { label: '执行中', type: 'warning' },
-  PENDING_REVIEW: { label: '待复核', type: '' },
+  PENDING_REVIEW: { label: '已完成', type: 'success' },
   COMPLETED: { label: '已完成', type: 'success' },
   OVERDUE: { label: '已逾期', type: 'danger' },
   CANCELLED: { label: '已取消', type: 'info' },
@@ -324,21 +324,6 @@ function parseAssigneeIds(row: TaskRow) {
   return row.assigneeUserId ? [row.assigneeUserId] : []
 }
 
-async function review(row: TaskRow, approved: boolean) {
-  const value = await ElMessageBox.prompt(
-    approved ? '可填写复核意见' : '请输入驳回原因',
-    approved ? '复核通过' : '复核驳回',
-    { inputPattern: approved ? undefined : /\S+/, inputErrorMessage: '驳回原因不能为空' },
-  )
-  try {
-    await inspectionApi.reviewTask(row.id, { approved, comment: value.value || null, version: row.version })
-    ElMessage.success(approved ? '任务已完成' : '任务已退回执行')
-    await load()
-  } catch (error) {
-    ElMessage.error(errorMessage(error))
-  }
-}
-
 async function close(row: TaskRow, targetStatus: 'CANCELLED' | 'VOIDED') {
   const value = await ElMessageBox.prompt('请输入原因', targetStatus === 'CANCELLED' ? '取消任务' : '作废任务', {
     inputPattern: /\S+/,
@@ -357,7 +342,7 @@ async function close(row: TaskRow, targetStatus: 'CANCELLED' | 'VOIDED') {
 <template>
   <div class="page-shell">
     <header class="page-header">
-      <div><h1>点检任务</h1><p>统一管理计划与手工任务，支持派工、复核、取消、作废和全量事件追踪。</p></div>
+      <div><h1>点检任务</h1><p>统一管理计划与手工任务，结果提交后直接完成，支持派工、取消、作废和全量事件追踪。</p></div>
       <el-button v-if="auth.can('inspection:task:create')" type="primary" @click="openCreate">创建任务</el-button>
     </header>
     <section class="surface-card query-bar">
@@ -420,10 +405,6 @@ async function close(row: TaskRow, targetStatus: 'CANCELLED' | 'VOIDED') {
           <template #default="{ row }">
             <el-button link type="primary" @click="showDetail(row)">详情</el-button>
             <el-button v-if="auth.can('inspection:task:assign') && ['PENDING','IN_PROGRESS','OVERDUE'].includes(row.taskStatus)" link type="primary" @click="openAssign(row)">派工</el-button>
-            <template v-if="auth.can('inspection:task:review') && row.taskStatus === 'PENDING_REVIEW'">
-              <el-button link type="success" @click="review(row, true)">通过</el-button>
-              <el-button link type="warning" @click="review(row, false)">驳回</el-button>
-            </template>
             <el-dropdown v-if="auth.can('inspection:task:cancel') && !['COMPLETED','CANCELLED','VOIDED'].includes(row.taskStatus)">
               <el-button link type="danger">关闭</el-button>
               <template #dropdown><el-dropdown-menu><el-dropdown-item @click="close(row, 'CANCELLED')">取消</el-dropdown-item><el-dropdown-item @click="close(row, 'VOIDED')">作废</el-dropdown-item></el-dropdown-menu></template>

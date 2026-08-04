@@ -97,7 +97,7 @@
             resultType="com.leantpm.mobile.MobileDtos$WorkCount">
         SELECT COALESCE(SUM(planned_date = CURRENT_DATE()), 0) AS due_today,
                COALESCE(SUM(task_status IN (
-                   'PENDING', 'IN_PROGRESS', 'PENDING_REVIEW', 'OVERDUE'
+                   'PENDING', 'IN_PROGRESS', 'OVERDUE'
                )), 0) AS pending,
                COALESCE(SUM(
                    task_status = 'OVERDUE'

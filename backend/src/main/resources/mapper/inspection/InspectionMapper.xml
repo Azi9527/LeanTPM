@@ -1659,7 +1659,7 @@
           COALESCE(SUM(task.planned_date = #{today}), 0) AS due_today,
           COALESCE(SUM(task.planned_date = #{today} AND task.task_status = 'COMPLETED'), 0) AS completed_today,
           COALESCE(SUM(task.planned_date = #{today}
-              AND task.task_status IN ('PENDING','IN_PROGRESS','PENDING_REVIEW')), 0) AS pending_today,
+              AND task.task_status IN ('PENDING','IN_PROGRESS')), 0) AS pending_today,
           COALESCE(SUM(task.task_status = 'OVERDUE'), 0) AS overdue,
           COALESCE(SUM(EXISTS (
               SELECT 1 FROM inspection_abnormal abnormal

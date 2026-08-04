@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { equipmentApi, type BarcodeRow, type EquipmentRow } from '@/api/equipment'
 import { useAuthStore } from '@/stores/auth'
@@ -15,6 +15,11 @@ const dialogVisible = ref(false)
 const previewVisible = ref(false)
 const selected = ref<BarcodeRow | null>(null)
 const selectedPrintIds = ref<number[]>([])
+const selectablePrintIds = computed(() => rows.value.filter((row) => row.active).map((row) => row.id))
+const allPrintSelected = computed(() =>
+  selectablePrintIds.value.length > 0
+  && selectablePrintIds.value.every((id) => selectedPrintIds.value.includes(id)),
+)
 const imageUrls = reactive<Record<number, string>>({})
 const generatingAll = ref(false)
 const downloading = ref(false)
@@ -72,6 +77,15 @@ function togglePrint(id: number, checked: boolean) {
   selectedPrintIds.value = checked
     ? [...new Set([...selectedPrintIds.value, id])]
     : selectedPrintIds.value.filter((value) => value !== id)
+}
+
+function toggleSelectAll() {
+  selectedPrintIds.value = allPrintSelected.value ? [] : [...selectablePrintIds.value]
+}
+
+function invertSelection() {
+  const selected = new Set(selectedPrintIds.value)
+  selectedPrintIds.value = selectablePrintIds.value.filter((id) => !selected.has(id))
 }
 
 function revokeImages() {
@@ -265,6 +279,16 @@ function escapeHtml(value: string) {
         <el-option label="超清 1200px" :value="1200" />
       </el-select>
       <el-button type="primary" @click="load">查询</el-button>
+      <el-button
+        v-if="auth.can('equipment:barcode:print')"
+        :disabled="!selectablePrintIds.length"
+        @click="toggleSelectAll"
+      >{{ allPrintSelected ? '取消全选' : '全选' }}</el-button>
+      <el-button
+        v-if="auth.can('equipment:barcode:print')"
+        :disabled="!selectablePrintIds.length"
+        @click="invertSelection"
+      >反选</el-button>
       <el-button
         v-if="auth.can('equipment:barcode:print')"
         :disabled="!selectedPrintIds.length"

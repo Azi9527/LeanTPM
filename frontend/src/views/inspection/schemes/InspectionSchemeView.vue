@@ -40,7 +40,6 @@ const form = reactive({
   shiftCode: '',
   defaultAssigneeUserId: undefined as number | undefined,
   defaultTeamCode: '',
-  reviewRequired: true,
   backfillAllowed: false,
   effectiveDate: new Date().toISOString().slice(0, 10),
   expiryDate: '',
@@ -120,7 +119,6 @@ function resetForm() {
     shiftCode: '',
     defaultAssigneeUserId: undefined,
     defaultTeamCode: '',
-    reviewRequired: true,
     backfillAllowed: false,
     effectiveDate: new Date().toISOString().slice(0, 10),
     expiryDate: '',
@@ -155,7 +153,6 @@ async function open(row?: SchemeRow) {
         shiftCode: value.version.shiftCode || '',
         defaultAssigneeUserId: value.version.defaultAssigneeUserId,
         defaultTeamCode: value.version.defaultTeamCode || '',
-        reviewRequired: value.version.reviewRequiredFlag,
         backfillAllowed: value.version.backfillAllowedFlag,
         effectiveDate: value.version.effectiveDate,
         expiryDate: value.version.expiryDate || '',
@@ -186,6 +183,7 @@ async function save() {
   try {
     const payload = {
       ...form,
+      reviewRequired: false,
       schemeCode: form.schemeCode || null,
       weekDays: form.weekDays.join(',') || null,
       monthDays: form.monthDays.join(',') || null,
@@ -305,7 +303,7 @@ function csvNumbers(value?: string) {
         </el-form-item>
         <el-form-item label="适用设备分类" class="full"><el-select v-model="form.categoryIds" multiple filterable collapse-tags><el-option v-for="category in categories" :key="category.id" :label="`${category.categoryCode} · ${category.categoryName}`" :value="category.id" /></el-select></el-form-item>
         <el-form-item label="指定设备" class="full"><el-select v-model="form.equipmentIds" multiple filterable collapse-tags collapse-tags-tooltip><el-option v-for="row in equipment" :key="row.id" :label="`${row.equipmentCode} · ${row.equipmentName}`" :value="row.id" /></el-select></el-form-item>
-        <el-form-item label="执行控制" class="full"><el-checkbox v-model="form.reviewRequired">提交后复核</el-checkbox><el-checkbox v-model="form.backfillAllowed">允许补录</el-checkbox><el-checkbox v-model="form.enabled">启用方案</el-checkbox></el-form-item>
+        <el-form-item label="执行控制" class="full"><el-checkbox v-model="form.backfillAllowed">允许补录</el-checkbox><el-checkbox v-model="form.enabled">启用方案</el-checkbox><span class="field-hint">点检结果提交后任务直接完成</span></el-form-item>
         <el-form-item label="版本说明" class="full"><el-input v-model="form.changeSummary" type="textarea" placeholder="说明本版本调整内容" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="dialogVisible = false">取消</el-button><el-button type="primary" :loading="saving" @click="save">保存草稿</el-button></template>
@@ -321,7 +319,7 @@ function csvNumbers(value?: string) {
           <el-descriptions-item label="工作日历">{{ calendars.find((row) => row.id === detail?.version.workCalendarId)?.calendarName || '未指定' }}</el-descriptions-item>
           <el-descriptions-item label="默认执行人">{{ detail.version.defaultAssigneeName || '未指定' }}</el-descriptions-item>
           <el-descriptions-item label="生效">{{ detail.version.effectiveDate }} ~ {{ detail.version.expiryDate || '长期' }}</el-descriptions-item>
-          <el-descriptions-item label="控制">{{ detail.version.reviewRequiredFlag ? '需复核' : '免复核' }} / {{ detail.version.backfillAllowedFlag ? '可补录' : '不可补录' }}</el-descriptions-item>
+          <el-descriptions-item label="控制">提交即完成 / {{ detail.version.backfillAllowedFlag ? '可补录' : '不可补录' }}</el-descriptions-item>
         </el-descriptions>
         <h3>点检项目</h3>
         <el-table :data="detail.items" size="small"><el-table-column prop="sortOrder" label="#" width="60" /><el-table-column prop="itemCode" label="编码" min-width="150" /><el-table-column prop="itemName" label="名称" min-width="150" /><el-table-column prop="resultType" label="结果类型" width="140" /></el-table>
