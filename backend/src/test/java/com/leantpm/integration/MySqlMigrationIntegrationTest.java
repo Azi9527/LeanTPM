@@ -37,7 +37,7 @@ class MySqlMigrationIntegrationTest {
     @Test
     void appliesEveryMigrationAndFoundationTable() throws Exception {
         assertThat(number("SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1"))
-                .isEqualTo(33);
+                .isEqualTo(34);
         assertThat(number("""
                 SELECT COUNT(*)
                 FROM information_schema.tables

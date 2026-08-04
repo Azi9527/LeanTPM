@@ -101,6 +101,9 @@ class MobileMySqlIntegrationTest {
         assertThat(context.equipment().statusCode()).isEqualTo("RUNNING");
         assertThat(context.equipment().statusColor()).startsWith("#");
         assertThat(context.activeTasks()).isNotNull();
+        assertThat(context.inspectionSchemes())
+                .extracting(MobileDtos.ApplicableInspectionScheme::schemeCode)
+                .contains("ISP-DEMO-CNC-DAILY");
     }
 
     @Test
@@ -116,11 +119,11 @@ class MobileMySqlIntegrationTest {
         insertReportTask(9703L, "MOBILE-REPORT-CANCELLED", organizationId, locationId, "CANCELLED");
         insertReportTaskAt(
                 9704L, "MOBILE-REPORT-END-OF-DAY", organizationId, locationId,
-                "COMPLETED", LocalDate.now().atTime(23, 59, 59, 999_000_000)
+                "COMPLETED", LocalDate.now(), LocalDate.now().plusDays(1).atStartOfDay()
         );
         insertReportTaskAt(
                 9705L, "MOBILE-REPORT-NEXT-DAY", organizationId, locationId,
-                "COMPLETED", LocalDate.now().plusDays(1).atStartOfDay()
+                "COMPLETED", LocalDate.now().plusDays(1), LocalDate.now().atTime(23, 59, 59)
         );
 
         MobileDtos.PersonalInspectionReport report = service.personalInspectionReport(
@@ -222,7 +225,8 @@ class MobileMySqlIntegrationTest {
             String status
     ) {
         insertReportTaskAt(
-                id, code, organizationId, locationId, status, LocalDateTime.now().minusHours(1)
+                id, code, organizationId, locationId, status,
+                LocalDate.now(), LocalDateTime.now().minusHours(1)
         );
     }
 
@@ -232,6 +236,7 @@ class MobileMySqlIntegrationTest {
             long organizationId,
             long locationId,
             String status,
+            LocalDate plannedDate,
             LocalDateTime dueTime
     ) {
         jdbc.update("""
@@ -242,7 +247,7 @@ class MobileMySqlIntegrationTest {
                 VALUES (?, 1, ?, 'ROUTINE', 1, ?, ?, ?,
                         ?, ?, ?, 'MANUAL',
                         IF(? = 'COMPLETED', CURRENT_TIMESTAMP(3), NULL), ?)
-                """, id, code, organizationId, locationId, dueTime.toLocalDate(), dueTime,
+                """, id, code, organizationId, locationId, plannedDate, dueTime,
                 USER_ID, status, status, USER_ID);
     }
 
