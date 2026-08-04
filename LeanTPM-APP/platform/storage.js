@@ -25,8 +25,11 @@ const SECURE_KEYS = new Set([
 ])
 
 function storage() {
-	if (!globalThis.uni) throw new Error('uni storage is unavailable')
-	return globalThis.uni
+	// In WeChat Mini Program builds `uni` is injected as a module-level runtime
+	// variable and is not guaranteed to be exposed on `globalThis`.
+	if (typeof uni !== 'undefined' && uni) return uni
+	if (globalThis?.uni) return globalThis.uni
+	throw new Error('uni storage is unavailable')
 }
 
 export function getStored(key, fallback = null) {
