@@ -20,7 +20,7 @@
 <script setup>
 	import { ref } from 'vue'
 	import { onShow } from '@dcloudio/uni-app'
-	import { getServerBaseUrl } from '../../utils/server'
+	import { getServerBaseUrl } from '../../utils/server.js'
 
 	const serverUrl = ref('未配置')
 

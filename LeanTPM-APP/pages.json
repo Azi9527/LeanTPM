@@ -1,10 +1,49 @@
 {
   "pages": [
     {
+      "path": "pages/launch/index",
+      "style": {
+        "navigationBarTitleText": "LeanTPM",
+        "navigationStyle": "custom"
+      }
+    },
+    {
       "path": "pages/setup/index",
       "style": {
         "navigationBarTitleText": "企业服务配置",
         "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/login/index",
+      "style": {
+        "navigationBarTitleText": "登录 LeanTPM",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/login/change-password",
+      "style": {
+        "navigationBarTitleText": "修改初始密码",
+        "navigationBarBackgroundColor": "#1c7d50",
+        "navigationBarTextStyle": "white"
+      }
+    },
+    {
+      "path": "pages/workbench/index",
+      "style": {
+        "navigationBarTitleText": "移动工作台",
+        "navigationStyle": "custom",
+        "enablePullDownRefresh": true,
+        "backgroundTextStyle": "dark"
+      }
+    },
+    {
+      "path": "pages/profile/index",
+      "style": {
+        "navigationBarTitleText": "我的",
+        "navigationBarBackgroundColor": "#1c7d50",
+        "navigationBarTextStyle": "white"
       }
     },
     {

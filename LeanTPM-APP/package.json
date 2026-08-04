@@ -1,0 +1,14 @@
+{
+  "name": "leantpm-uni-app",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test \"tests/*.test.js\"",
+    "check": "node scripts/check-project.mjs",
+    "verify": "npm run check && npm test",
+    "build:h5": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-hbuilder.ps1 h5",
+    "build:weixin": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-hbuilder.ps1 mp-weixin",
+    "build:app": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-hbuilder.ps1 app"
+  }
+}

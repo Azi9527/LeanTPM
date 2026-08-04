@@ -1,4 +1,11 @@
-export const API_BASE_URL_KEY = 'leantpm_api_base_url'
+import {
+	STORAGE_KEYS,
+	clearEnterpriseStorage,
+	getStored,
+	setStored
+} from '../platform/storage.js'
+
+export const API_BASE_URL_KEY = STORAGE_KEYS.serverBaseUrl
 
 export const DEFAULT_SERVER_URL = 'http://192.168.31.91:18080'
 
@@ -11,7 +18,7 @@ export function normalizeServerBaseUrl(value) {
 }
 
 export function getServerBaseUrl() {
-	return uni.getStorageSync(API_BASE_URL_KEY) || ''
+	return getStored(API_BASE_URL_KEY, '')
 }
 
 export function getServerDisplayUrl() {
@@ -20,7 +27,9 @@ export function getServerDisplayUrl() {
 
 export function saveServerBaseUrl(value) {
 	const normalized = normalizeServerBaseUrl(value)
-	uni.setStorageSync(API_BASE_URL_KEY, normalized)
+	const previous = getServerBaseUrl()
+	if (previous && previous !== normalized) clearEnterpriseStorage()
+	setStored(API_BASE_URL_KEY, normalized)
 	return normalized
 }
 

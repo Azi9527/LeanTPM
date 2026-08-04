@@ -1,7 +1,9 @@
 <script>
+	import { initializeNetwork } from './platform/network.js'
+
 	export default {
 		onLaunch: function() {
-			console.log('App Launch')
+			initializeNetwork()
 		},
 		onShow: function() {
 			console.log('App Show')

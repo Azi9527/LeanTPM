@@ -44,7 +44,7 @@
 		normalizeServerBaseUrl,
 		saveServerBaseUrl,
 		testServerConnection
-	} from '../../utils/server'
+	} from '../../utils/server.js'
 
 	const serverUrl = ref(getServerDisplayUrl())
 	const testing = ref(false)
@@ -67,7 +67,7 @@
 
 			setTimeout(() => {
 				uni.reLaunch({
-					url: '/pages/index/index'
+					url: '/pages/login/index'
 				})
 			}, 700)
 		} catch (error) {
