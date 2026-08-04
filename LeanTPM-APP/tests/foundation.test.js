@@ -8,7 +8,7 @@ globalThis.uni = {
 	removeStorageSync: (key) => values.delete(key)
 }
 
-const { normalizeServerBaseUrl } = await import('../utils/server.js')
+const { normalizeServerBaseUrl, testServerConnection } = await import('../utils/server.js')
 const { createIdempotencyKey } = await import('../utils/idempotency.js')
 const { brandingLogoSource, normalizeBranding } = await import('../utils/branding.js')
 const { extractEquipmentToken, requireEquipmentToken } = await import('../utils/equipment-token.js')
@@ -24,6 +24,19 @@ test('normalizes enterprise server URLs', () => {
 	assert.equal(normalizeServerBaseUrl(' http://192.168.31.91:18080/ '), 'http://192.168.31.91:18080/api/v1')
 	assert.equal(normalizeServerBaseUrl('https://tpm.example.com/api/v1'), 'https://tpm.example.com/api/v1')
 	assert.throws(() => normalizeServerBaseUrl('127.0.0.1:8080'), /HTTP/)
+})
+
+test('reports WeChat request-domain failures clearly', async () => {
+	const previousRequest = globalThis.uni.request
+	globalThis.uni.request = ({ fail }) => fail({ errMsg: 'request:fail url not in domain list' })
+	try {
+		await assert.rejects(
+			testServerConnection('https://tpm.example.com'),
+			/request 合法域名/
+		)
+	} finally {
+		globalThis.uni.request = previousRequest
+	}
 })
 
 test('generates scoped idempotency keys', () => {

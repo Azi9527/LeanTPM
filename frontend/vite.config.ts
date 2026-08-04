@@ -12,7 +12,9 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
-    allowedHosts: ['iop5i8kixsag.guyubao.com'],
+    // Guyubao assigns a new subdomain when a tunnel is recreated.
+    // The leading dot allows only guyubao.com and its subdomains.
+    allowedHosts: ['.guyubao.com'],
     proxy: {
       '/api': {
         target: process.env.VITE_BACKEND_URL || 'http://127.0.0.1:8080',

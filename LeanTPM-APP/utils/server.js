@@ -44,11 +44,20 @@ function sendRequest(options) {
 }
 
 export async function testServerConnection(baseUrl) {
-	const response = await sendRequest({
-		url: `${normalizeServerBaseUrl(baseUrl)}/auth/captcha`,
-		method: 'GET',
-		timeout: 10000
-	})
+	let response
+	try {
+		response = await sendRequest({
+			url: `${normalizeServerBaseUrl(baseUrl)}/auth/captcha`,
+			method: 'GET',
+			timeout: 10000
+		})
+	} catch (error) {
+		const detail = String(error?.errMsg || error?.message || '').trim()
+		if (/url not in domain list|domain list/i.test(detail)) {
+			throw new Error('当前域名未加入微信小程序 request 合法域名，请在微信公众平台配置后重试')
+		}
+		throw new Error(detail ? `网络请求失败：${detail}` : '网络请求失败，请检查服务地址和手机网络')
+	}
 	if (response.statusCode !== 200 || !response.data || response.data.code !== 'OK') {
 		throw new Error(response.data?.message || `服务器返回状态 ${response.statusCode}`)
 	}
