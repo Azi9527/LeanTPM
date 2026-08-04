@@ -17,3 +17,21 @@ export function errorMessage(error, fallback = '操作失败，请稍后重试')
 export function isConflict(error) {
 	return error instanceof ApiError && error.statusCode === 409
 }
+
+export function isServiceUnavailable(error) {
+	if (!(error instanceof ApiError)) return false
+	return error.code === 'NETWORK_ERROR'
+		|| error.code === 'SERVICE_UNAVAILABLE'
+		|| error.statusCode === 0
+		|| error.statusCode >= 500
+}
+
+export function isAuthenticationFailure(error) {
+	if (!(error instanceof ApiError)) return false
+	return error.statusCode === 401 || [
+		'SESSION_EXPIRED',
+		'TOKEN_EXPIRED',
+		'TOKEN_INVALID',
+		'INVALID_REFRESH_TOKEN'
+	].includes(error.code)
+}

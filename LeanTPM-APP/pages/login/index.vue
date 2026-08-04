@@ -87,7 +87,7 @@
 	import { ROUTES, reLaunchTo } from '../../constants/routes.js'
 	import { brandingState, initializeBranding } from '../../stores/branding.js'
 	import { rememberedUsername, signIn } from '../../stores/session.js'
-	import { errorMessage } from '../../utils/errors.js'
+	import { errorMessage, isServiceUnavailable } from '../../utils/errors.js'
 	import { brandingLogoSource } from '../../utils/branding.js'
 
 	const form = reactive({ username: '', password: '', captchaCode: '' })
@@ -146,7 +146,11 @@
 			await reLaunchTo(user.mustChangePassword ? '/pages/login/change-password' : ROUTES.workbench)
 		} catch (error) {
 			form.password = ''
-			uni.showModal({ title: '登录失败', content: errorMessage(error, '账号或密码错误'), showCancel: false })
+			uni.showModal({
+				title: isServiceUnavailable(error) ? '企业服务暂时不可用' : '登录失败',
+				content: errorMessage(error, '账号或密码错误'),
+				showCancel: false
+			})
 			if (challenge.value.enabled) await loadCaptcha()
 		} finally {
 			loading.value = false

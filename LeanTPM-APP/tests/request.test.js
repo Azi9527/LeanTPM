@@ -4,6 +4,8 @@ import assert from 'node:assert/strict'
 const values = new Map()
 const requests = []
 let protectedCalls = 0
+let refreshFailureStatus = 0
+let authFailureCalls = 0
 
 globalThis.uni = {
 	getStorageSync: (key) => values.get(key) ?? '',
@@ -12,6 +14,10 @@ globalThis.uni = {
 	request: (options) => {
 		requests.push(options)
 		if (options.url.endsWith('/auth/refresh')) {
+			if (refreshFailureStatus) {
+				options.success({ statusCode: refreshFailureStatus, data: { code: 'REDIS_UNAVAILABLE' } })
+				return
+			}
 			options.success({
 				statusCode: 200,
 				data: { code: 'OK', data: { accessToken: 'new-access', refreshToken: 'new-refresh' } }
@@ -34,6 +40,7 @@ test('refreshes an expired access token and retries once', async () => {
 	values.clear()
 	requests.length = 0
 	protectedCalls = 0
+	refreshFailureStatus = 0
 	storage.setStored(storage.STORAGE_KEYS.serverBaseUrl, 'https://tpm.example.com/api/v1')
 	request.storeTokens({ accessToken: 'old-access', refreshToken: 'old-refresh' })
 
@@ -48,4 +55,23 @@ test('adds an idempotency key to mutating business requests', async () => {
 	protectedCalls = 1
 	await request.apiRequest({ path: '/inspection/tasks/1/submit', method: 'POST', data: {} })
 	assert.match(requests[0].header['Idempotency-Key'], /^app-/)
+})
+
+test('keeps the session when token refresh cannot reach the service', async () => {
+	values.clear()
+	requests.length = 0
+	protectedCalls = 0
+	refreshFailureStatus = 503
+	authFailureCalls = 0
+	storage.setStored(storage.STORAGE_KEYS.serverBaseUrl, 'https://tpm.example.com/api/v1')
+	request.storeTokens({ accessToken: 'offline-access', refreshToken: 'offline-refresh' })
+	request.configureAuthFailureHandler(() => { authFailureCalls += 1 })
+
+	await assert.rejects(
+		request.apiRequest({ path: '/mobile/bootstrap' }),
+		/企业服务暂时不可用/
+	)
+	assert.equal(request.hasToken(), true)
+	assert.equal(authFailureCalls, 0)
+	refreshFailureStatus = 0
 })

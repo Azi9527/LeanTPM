@@ -8,6 +8,7 @@ import {
 } from '../api/request.js'
 import { ROUTES, reLaunchTo } from '../constants/routes.js'
 import { STORAGE_KEYS, clearBusinessStorage, getStored, setStored } from '../platform/storage.js'
+import { isAuthenticationFailure, isServiceUnavailable } from '../utils/errors.js'
 
 const state = reactive({
 	user: null,
@@ -66,8 +67,9 @@ export async function restoreSession() {
 		state.user = await authApi.currentUser()
 		setStored(STORAGE_KEYS.userProfile, state.user)
 		return state.user
-	} catch {
-		clearTokens()
+	} catch (error) {
+		if (isServiceUnavailable(error) && state.user) return state.user
+		if (isAuthenticationFailure(error)) clearTokens()
 		state.user = null
 		return null
 	} finally {

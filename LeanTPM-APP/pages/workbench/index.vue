@@ -76,6 +76,9 @@
 	import { displayName, sessionState } from '../../stores/session.js'
 	import { ROUTES, navigateTo, routeWithQuery } from '../../constants/routes.js'
 	import { checkAndroidUpgrade } from '../../utils/version.js'
+	import { isServiceUnavailable } from '../../utils/errors.js'
+
+	let serviceAlertShown = false
 
 	const todayText = ref('')
 	const avatarText = computed(() => displayName().slice(0, 1))
@@ -100,8 +103,18 @@
 		if (!sessionState.user) return
 		try {
 			const bootstrap = await refreshMobileBootstrap()
+			serviceAlertShown = false
 			checkAndroidUpgrade(bootstrap?.androidVersion)
-		} catch { /* visible error card is populated by the store */ }
+		} catch (error) {
+			if (isServiceUnavailable(error) && !serviceAlertShown) {
+				serviceAlertShown = true
+				uni.showModal({
+					title: '企业服务暂时不可用',
+					content: '无法连接 LeanTPM 后端服务。登录状态和离线草稿已保留，请确认服务器启动后点击页面提示重试。',
+					showCancel: false
+				})
+			}
+		}
 	}
 
 	function openProfile() { navigateTo(ROUTES.profile) }

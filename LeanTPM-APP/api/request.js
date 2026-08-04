@@ -1,5 +1,5 @@
 import { createIdempotencyKey } from '../utils/idempotency.js'
-import { ApiError } from '../utils/errors.js'
+import { ApiError, isAuthenticationFailure } from '../utils/errors.js'
 import {
 	STORAGE_KEYS,
 	clearSessionStorage,
@@ -59,7 +59,9 @@ function rawRequest(options) {
 			success: resolve,
 			fail: (error) => reject(new ApiError(
 				'NETWORK_ERROR',
-				error?.errMsg || '无法连接服务器，请检查网络和服务地址'
+				'企业服务暂时无法连接，请检查服务器是否启动、服务地址和网络；登录状态及离线草稿已保留',
+				0,
+				{ cause: error?.errMsg || '' }
 			))
 		})
 	})
@@ -67,6 +69,14 @@ function rawRequest(options) {
 
 function responseError(response) {
 	const body = response?.data
+	if (Number(response?.statusCode || 0) >= 500) {
+		return new ApiError(
+			'SERVICE_UNAVAILABLE',
+			'企业服务暂时不可用，请稍后重试；登录状态及离线草稿已保留',
+			response.statusCode,
+			body?.data ?? body ?? null
+		)
+	}
 	return new ApiError(
 		body?.code || `HTTP_${response?.statusCode || 0}`,
 		body?.message || `服务器返回状态 ${response?.statusCode || 0}`,
@@ -143,8 +153,11 @@ export async function apiRequest({
 				timeout
 			})
 		} catch (error) {
-			await notifyAuthFailure(error)
-			throw new ApiError('SESSION_EXPIRED', '登录状态已失效，请重新登录', 401)
+			if (isAuthenticationFailure(error)) {
+				await notifyAuthFailure(error)
+				throw new ApiError('SESSION_EXPIRED', '登录状态已失效，请重新登录', 401)
+			}
+			throw error
 		}
 	}
 
