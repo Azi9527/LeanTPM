@@ -73,7 +73,7 @@
 	import { inspectionApi } from '../../api/inspection.js'
 	import { downloadFile } from '../../api/request.js'
 	import { connected } from '../../platform/network.js'
-	import { choosePhoto, persistTempFile, renderWatermark, watermarkLines } from '../../platform/photo.js'
+	import { choosePhotos, persistTempFile, renderWatermark, watermarkLines } from '../../platform/photo.js'
 	import { uploadPhotoEvidence, newPhotoQueueId } from '../../services/photo-evidence.js'
 	import { syncPendingWork } from '../../services/offline-sync.js'
 	import { brandingState } from '../../stores/branding.js'
@@ -208,47 +208,61 @@
 
 	async function capturePhoto(item) {
 		if (!executable.value || uploadingItemId.value) return
-		if (drafts[item.id].attachmentIds.length >= Number(item.photoMaxCount || 10)) return uni.showToast({ title: `最多 ${item.photoMaxCount} 张`, icon: 'none' })
+		const remaining = Number(item.photoMaxCount || 10) - drafts[item.id].attachmentIds.length
+		if (remaining <= 0) return uni.showToast({ title: `最多 ${item.photoMaxCount} 张`, icon: 'none' })
 		uploadingItemId.value = item.id
 		try {
 			const sourceType = await choosePhotoSource()
 			if (!sourceType) return
-			const originalPath = await choosePhoto([sourceType])
-			if (!originalPath) return
-			const capturedAt = new Date()
-			const lines = watermarkLines({ brandName: brandingState.shortName, equipmentName: detail.value.task.equipmentName, equipmentCode: detail.value.task.equipmentCode, taskCode: detail.value.task.taskCode, itemName: item.itemName, executorName: displayName(), faultLocationText: item.inspectionPart || detail.value.task.locationName || item.itemName, capturedAt })
-			const watermarkedPath = await renderWatermark({ src: originalPath, canvasId: 'inspectionWatermark', page, lines })
-			const serverTime = mobileState.bootstrap?.serverTime || capturedAt.toISOString()
-			const serverDate = new Date(serverTime)
-			const id = newPhotoQueueId(taskId.value, item.id)
-			const record = {
-				id, workflow: 'inspection', taskId: taskId.value, taskItemId: item.id,
-				originalPath, watermarkedPath,
-				metadata: {
-					workflowType: 'INSPECTION', taskId: taskId.value, taskItemId: item.id,
-					capturedDeviceTime: capturedAt.toISOString(), serverReferenceTime: serverTime,
-					deviceClockOffsetSeconds: Number.isNaN(serverDate.getTime()) ? 0 : Math.round((capturedAt.getTime() - serverDate.getTime()) / 1000),
-					faultLocationText: item.inspectionPart || detail.value.task.locationName || item.itemName,
-					watermarkText: lines.join('\n')
-				}
+			const originalPaths = await choosePhotos([sourceType], sourceType === 'camera' ? 1 : remaining)
+			if (!originalPaths.length) return
+			let clockSkewWarning = false
+			for (const originalPath of originalPaths) {
+				const result = await processSelectedPhoto(item, originalPath)
+				clockSkewWarning ||= result.clockSkewWarning
 			}
-			if (!connected.value) {
-				record.originalPath = await persistTempFile(originalPath)
-				record.watermarkedPath = await persistTempFile(watermarkedPath)
-				queuePhoto(record)
-				drafts[item.id].attachmentIds.push(`queued:${id}`)
-				localAttachments.value.push({ id: `queued:${id}`, taskItemId: item.id, originalName: `现场照片-${capturedAt.getTime()}.jpg`, fileSize: 0, createdTime: capturedAt.toISOString(), localPath: record.watermarkedPath, contentType: 'image/jpeg' })
-				persistLocal(false)
-				uni.showToast({ title: '照片已加入离线队列', icon: 'success' })
-			} else {
-				const uploaded = await uploadPhotoEvidence(record)
-				drafts[item.id].attachmentIds.push(uploaded.attachmentId)
-				localAttachments.value.push({ id: uploaded.attachmentId, taskItemId: item.id, originalName: uploaded.attachment.originalName || `现场照片-${capturedAt.getTime()}.jpg`, fileSize: uploaded.attachment.fileSize, createdTime: uploaded.attachment.createdTime, localPath: watermarkedPath, contentType: 'image/jpeg' })
-				uni.showToast({ title: uploaded.evidence?.clockSkewWarning ? '照片已上传，设备时钟有偏差' : '水印照片已上传', icon: 'none' })
-			}
+			if (!connected.value) persistLocal(false)
+			uni.showToast({
+				title: !connected.value
+					? `${originalPaths.length} 张照片已加入离线队列`
+					: clockSkewWarning ? `${originalPaths.length} 张已上传，设备时钟有偏差` : `${originalPaths.length} 张水印照片已上传`,
+				icon: 'none'
+			})
 		} catch (cause) {
-			if (!String(cause?.errMsg || cause?.message || '').includes('cancel')) uni.showToast({ title: errorMessage(cause, '拍照处理失败'), icon: 'none' })
+			if (!String(cause?.errMsg || cause?.message || '').includes('cancel')) uni.showToast({ title: errorMessage(cause, '图片处理失败'), icon: 'none' })
 		} finally { uploadingItemId.value = 0 }
+	}
+
+	async function processSelectedPhoto(item, originalPath) {
+		const capturedAt = new Date()
+		const lines = watermarkLines({ brandName: brandingState.shortName, equipmentName: detail.value.task.equipmentName, equipmentCode: detail.value.task.equipmentCode, taskCode: detail.value.task.taskCode, itemName: item.itemName, executorName: displayName(), faultLocationText: item.inspectionPart || detail.value.task.locationName || item.itemName, capturedAt })
+		const watermarkedPath = await renderWatermark({ src: originalPath, canvasId: 'inspectionWatermark', page, lines })
+		const serverTime = mobileState.bootstrap?.serverTime || capturedAt.toISOString()
+		const serverDate = new Date(serverTime)
+		const id = newPhotoQueueId(taskId.value, item.id)
+		const record = {
+			id, workflow: 'inspection', taskId: taskId.value, taskItemId: item.id,
+			originalPath, watermarkedPath,
+			metadata: {
+				workflowType: 'INSPECTION', taskId: taskId.value, taskItemId: item.id,
+				capturedDeviceTime: capturedAt.toISOString(), serverReferenceTime: serverTime,
+				deviceClockOffsetSeconds: Number.isNaN(serverDate.getTime()) ? 0 : Math.round((capturedAt.getTime() - serverDate.getTime()) / 1000),
+				faultLocationText: item.inspectionPart || detail.value.task.locationName || item.itemName,
+				watermarkText: lines.join('\n')
+			}
+		}
+		if (!connected.value) {
+			record.originalPath = await persistTempFile(originalPath)
+			record.watermarkedPath = await persistTempFile(watermarkedPath)
+			queuePhoto(record)
+			drafts[item.id].attachmentIds.push(`queued:${id}`)
+			localAttachments.value.push({ id: `queued:${id}`, taskItemId: item.id, originalName: `现场照片-${capturedAt.getTime()}.jpg`, fileSize: 0, createdTime: capturedAt.toISOString(), localPath: record.watermarkedPath, contentType: 'image/jpeg' })
+			return { clockSkewWarning: false }
+		}
+		const uploaded = await uploadPhotoEvidence(record)
+		drafts[item.id].attachmentIds.push(uploaded.attachmentId)
+		localAttachments.value.push({ id: uploaded.attachmentId, taskItemId: item.id, originalName: uploaded.attachment.originalName || `现场照片-${capturedAt.getTime()}.jpg`, fileSize: uploaded.attachment.fileSize, createdTime: uploaded.attachment.createdTime, localPath: watermarkedPath, contentType: 'image/jpeg' })
+		return { clockSkewWarning: Boolean(uploaded.evidence?.clockSkewWarning) }
 	}
 
 	function choosePhotoSource() {

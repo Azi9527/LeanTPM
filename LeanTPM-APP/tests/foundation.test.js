@@ -16,7 +16,7 @@ const { inspectionTodoRows } = await import('../utils/inspection-todos.js')
 const { extractEquipmentToken, requireEquipmentToken } = await import('../utils/equipment-token.js')
 const { applyNumericAbnormalState, initialResultDraft, inferAbnormal, validateInspectionResults, buildInspectionPayload } = await import('../utils/inspection-results.js')
 const { saveDraftEnvelope, loadDraftEnvelope, queuePhoto, attachQueuedPhotoToDraft, listQueuedPhotos, removeDraftEnvelope } = await import('../stores/offline.js')
-const { choosePhoto, formatBusinessDateTime, watermarkLines } = await import('../platform/photo.js')
+const { choosePhoto, choosePhotos, formatBusinessDateTime, watermarkLines } = await import('../platform/photo.js')
 const { compareVersionCodes } = await import('../utils/version.js')
 const { ApiError, errorMessage, isConflict } = await import('../utils/errors.js')
 const secureStorage = await import('../platform/secure-storage.js')
@@ -132,15 +132,20 @@ test('recalculates numeric abnormal state when a value returns inside its range'
 test('selects camera or phone album as the photo source', async () => {
 	const previousChooseImage = globalThis.uni.chooseImage
 	let receivedSourceType = []
-	globalThis.uni.chooseImage = ({ sourceType, success }) => {
+	let receivedCount = 0
+	globalThis.uni.chooseImage = ({ sourceType, count, success }) => {
 		receivedSourceType = sourceType
-		success({ tempFilePaths: ['inspection.jpg'] })
+		receivedCount = count
+		success({ tempFilePaths: ['inspection-1.jpg', 'inspection-2.jpg', 'inspection-3.jpg'] })
 	}
 	try {
-		assert.equal(await choosePhoto(['album']), 'inspection.jpg')
+		assert.equal(await choosePhoto(['album']), 'inspection-1.jpg')
 		assert.deepEqual(receivedSourceType, ['album'])
-		assert.equal(await choosePhoto(['camera']), 'inspection.jpg')
+		assert.equal(receivedCount, 1)
+		assert.equal(await choosePhoto(['camera']), 'inspection-1.jpg')
 		assert.deepEqual(receivedSourceType, ['camera'])
+		assert.deepEqual(await choosePhotos(['album'], 3), ['inspection-1.jpg', 'inspection-2.jpg', 'inspection-3.jpg'])
+		assert.equal(receivedCount, 3)
 	} finally {
 		globalThis.uni.chooseImage = previousChooseImage
 	}

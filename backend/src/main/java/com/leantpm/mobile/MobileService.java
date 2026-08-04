@@ -63,7 +63,9 @@ public class MobileService {
                 mapper.inspectionAbnormalCount(current.tenantId(), current.userId()),
                 mapper.personalInspectionReport(
                         current.tenantId(), current.userId(),
-                        today.withDayOfMonth(1), today
+                        today.withDayOfMonth(1), today,
+                        today.withDayOfMonth(1).atStartOfDay(),
+                        today.plusDays(1).atStartOfDay()
                 ),
                 safeCount(mapper.maintenanceCount(current.tenantId(), current.userId())),
                 notificationService.messages(false, 1, 30).records().stream()
@@ -96,7 +98,9 @@ public class MobileService {
             throw new BusinessException("MOBILE_REPORT_DATE_RANGE_TOO_LARGE", "个人报表单次查询范围不能超过 366 天");
         }
         return mapper.personalInspectionReport(
-                current.tenantId(), current.userId(), startDate, endDate
+                current.tenantId(), current.userId(),
+                startDate, endDate,
+                startDate.atStartOfDay(), endDate.plusDays(1).atStartOfDay()
         );
     }
 

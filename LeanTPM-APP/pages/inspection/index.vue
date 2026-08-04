@@ -31,7 +31,7 @@
 		{ label: '已完成', value: 'COMPLETED' }
 	]
 	const labels = { PENDING: '待执行', IN_PROGRESS: '执行中', PENDING_REVIEW: '已完成', COMPLETED: '已完成', OVERDUE: '已逾期', CANCELLED: '已取消', VOIDED: '已作废' }
-	const activeStatus = ref('')
+	const activeStatus = ref('PENDING')
 	const rows = ref([])
 	const loading = ref(false)
 	const error = ref('')

@@ -114,6 +114,14 @@ class MobileMySqlIntegrationTest {
         insertReportTask(9701L, "MOBILE-REPORT-DONE", organizationId, locationId, "COMPLETED");
         insertReportTask(9702L, "MOBILE-REPORT-OVERDUE", organizationId, locationId, "OVERDUE");
         insertReportTask(9703L, "MOBILE-REPORT-CANCELLED", organizationId, locationId, "CANCELLED");
+        insertReportTaskAt(
+                9704L, "MOBILE-REPORT-END-OF-DAY", organizationId, locationId,
+                "COMPLETED", LocalDate.now().atTime(23, 59, 59, 999_000_000)
+        );
+        insertReportTaskAt(
+                9705L, "MOBILE-REPORT-NEXT-DAY", organizationId, locationId,
+                "COMPLETED", LocalDate.now().plusDays(1).atStartOfDay()
+        );
 
         MobileDtos.PersonalInspectionReport report = service.personalInspectionReport(
                 LocalDate.now(), LocalDate.now()
@@ -121,8 +129,8 @@ class MobileMySqlIntegrationTest {
 
         assertThat(report.startDate()).isEqualTo(LocalDate.now());
         assertThat(report.endDate()).isEqualTo(LocalDate.now());
-        assertThat(report.due()).isEqualTo(2);
-        assertThat(report.completed()).isEqualTo(1);
+        assertThat(report.due()).isEqualTo(3);
+        assertThat(report.completed()).isEqualTo(2);
         assertThat(report.pending()).isEqualTo(1);
         assertThat(report.overdue()).isEqualTo(1);
         assertThatThrownBy(() -> service.personalInspectionReport(
@@ -213,15 +221,29 @@ class MobileMySqlIntegrationTest {
             long locationId,
             String status
     ) {
+        insertReportTaskAt(
+                id, code, organizationId, locationId, status, LocalDateTime.now().minusHours(1)
+        );
+    }
+
+    private void insertReportTaskAt(
+            long id,
+            String code,
+            long organizationId,
+            long locationId,
+            String status,
+            LocalDateTime dueTime
+    ) {
         jdbc.update("""
                 INSERT INTO inspection_task
                     (id, tenant_id, task_code, inspection_type, equipment_id,
                      organization_id, location_id, planned_date, due_time,
                      assignee_user_id, task_status, source_type, completed_time, created_by)
-                VALUES (?, 1, ?, 'ROUTINE', 1, ?, ?, CURRENT_DATE(),
-                        DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 1 HOUR), ?, ?, 'MANUAL',
+                VALUES (?, 1, ?, 'ROUTINE', 1, ?, ?, ?,
+                        ?, ?, ?, 'MANUAL',
                         IF(? = 'COMPLETED', CURRENT_TIMESTAMP(3), NULL), ?)
-                """, id, code, organizationId, locationId, USER_ID, status, status, USER_ID);
+                """, id, code, organizationId, locationId, dueTime.toLocalDate(), dueTime,
+                USER_ID, status, status, USER_ID);
     }
 
     private void authenticate() {

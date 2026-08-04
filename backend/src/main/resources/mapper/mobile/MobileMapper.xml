@@ -189,7 +189,8 @@
         FROM inspection_task task
         WHERE task.tenant_id = #{tenantId} AND task.deleted = 0
           AND task.task_status NOT IN ('CANCELLED', 'VOIDED')
-          AND task.planned_date BETWEEN #{startDate} AND #{endDate}
+          AND task.due_time &gt;= #{startTime}
+          AND task.due_time &lt; #{endExclusive}
           AND (
               task.assignee_user_id = #{userId}
               OR EXISTS (

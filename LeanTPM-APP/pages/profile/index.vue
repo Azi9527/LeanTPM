@@ -1,5 +1,7 @@
 <template>
 	<view class="page" :style="$brandTheme()">
+		<view v-if="!sessionState.user" class="session-loading">正在验证登录状态…</view>
+		<template v-else>
 		<view class="profile-card">
 			<view class="avatar">{{ displayName().slice(0, 1) }}</view>
 			<view><text class="name">{{ displayName() }}</text><text class="account">{{ sessionState.user?.username }}</text></view>
@@ -24,17 +26,19 @@
 
 		<button class="logout-button" :loading="loading" @click="logout">退出登录</button>
 		<AppBottomNav active="profile" />
+		</template>
 	</view>
 </template>
 
 <script setup>
 	import { computed, ref } from 'vue'
 	import { onLoad } from '@dcloudio/uni-app'
+	import { hasToken } from '../../api/request.js'
 	import { ROUTES, navigateTo, reLaunchTo } from '../../constants/routes.js'
 	import { syncPendingWork } from '../../services/offline-sync.js'
 	import { mobileState, refreshMobileBootstrap } from '../../stores/mobile.js'
 	import { pendingWorkCount } from '../../stores/offline.js'
-	import { displayName, sessionState, signOut } from '../../stores/session.js'
+	import { displayName, restoreSession, sessionState, signOut } from '../../stores/session.js'
 	import { getServerBaseUrl } from '../../utils/server.js'
 	import { compareVersionCodes, currentAppInfo, openUpgradeUrl } from '../../utils/version.js'
 	import AppBottomNav from '../../components/AppBottomNav.vue'
@@ -45,11 +49,13 @@
 	const versionCode = ref(100)
 	const pendingCount = ref(pendingWorkCount())
 	const syncing = ref(false)
-	const rolesText = computed(() => sessionState.user?.roles?.join('、') || '员工')
+	const rolesText = computed(() => sessionState.user?.roles?.join('、') || '—')
 	const versionPolicy = computed(() => mobileState.bootstrap?.androidVersion || {})
 	const upgradeRequired = computed(() => compareVersionCodes(versionCode.value, versionPolicy.value.minimumVersionCode).upgradeRequired)
 
 	onLoad(async () => {
+		if (!sessionState.user && hasToken()) await restoreSession()
+		if (!sessionState.user) return reLaunchTo(ROUTES.login)
 		const info = currentAppInfo()
 		versionName.value = info.version
 		versionCode.value = info.versionCode
@@ -92,6 +98,7 @@
 
 <style>
 	.page { box-sizing: border-box; min-height: 100vh; padding: 32rpx 28rpx; background: #f4f7f5; }
+	.session-loading { padding: 180rpx 20rpx; color: #7f8d86; font-size: 25rpx; text-align: center; }
 	.profile-card { display: flex; align-items: center; padding: 40rpx 32rpx; border-radius: 26rpx; color: #fff; background: linear-gradient(145deg, #173c2f, var(--brand-primary, #1c7d50)); }
 	.avatar { display: flex; width: 88rpx; height: 88rpx; align-items: center; justify-content: center; margin-right: 24rpx; border: 2rpx solid rgba(255,255,255,.55); border-radius: 28rpx; background: rgba(255,255,255,.13); font-size: 35rpx; font-weight: 800; }
 	.name, .account { display: block; }
