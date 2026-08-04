@@ -11,6 +11,7 @@ globalThis.uni = {
 const { normalizeServerBaseUrl, testServerConnection } = await import('../utils/server.js')
 const { createIdempotencyKey } = await import('../utils/idempotency.js')
 const { brandingLogoSource, normalizeBranding } = await import('../utils/branding.js')
+const { reportPeriodRange } = await import('../utils/report-period.js')
 const { extractEquipmentToken, requireEquipmentToken } = await import('../utils/equipment-token.js')
 const { initialResultDraft, inferAbnormal, validateInspectionResults, buildInspectionPayload } = await import('../utils/inspection-results.js')
 const { saveDraftEnvelope, loadDraftEnvelope, queuePhoto, attachQueuedPhotoToDraft, listQueuedPhotos, removeDraftEnvelope } = await import('../stores/offline.js')
@@ -53,6 +54,22 @@ test('normalizes branding and rejects invalid colors', () => {
 	assert.equal(branding.neutralColor, '#c4000a')
 	assert.equal(brandingLogoSource('/branding/baoshan-mining-logo.png'), '/static/branding/baoshan-mining-logo.png')
 	assert.match(brandingLogoSource('data:image/png;base64,AA=='), /^data:image/)
+})
+
+test('builds business-friendly report shortcut periods', () => {
+	const reference = new Date(2026, 7, 4, 12, 0, 0)
+	assert.deepEqual(reportPeriodRange('month', reference), {
+		startDate: '2026-08-01', endDate: '2026-08-04'
+	})
+	assert.deepEqual(reportPeriodRange('previousMonth', reference), {
+		startDate: '2026-07-01', endDate: '2026-07-31'
+	})
+	assert.deepEqual(reportPeriodRange('week', reference), {
+		startDate: '2026-08-03', endDate: '2026-08-04'
+	})
+	assert.deepEqual(reportPeriodRange('today', reference), {
+		startDate: '2026-08-04', endDate: '2026-08-04'
+	})
 })
 
 test('extracts LeanTPM equipment tokens from labels and URLs', () => {

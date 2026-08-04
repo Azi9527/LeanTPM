@@ -97,7 +97,7 @@
     {
       "path": "pages/report/index",
       "style": {
-        "navigationBarTitleText": "个人报表",
+        "navigationBarTitleText": "点检报表",
         "enablePullDownRefresh": true
       }
     },

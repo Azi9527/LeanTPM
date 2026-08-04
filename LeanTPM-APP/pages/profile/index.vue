@@ -12,7 +12,6 @@
 			<view class="menu-row"><text>待同步业务</text><text class="value">{{ pendingCount }} 项</text></view>
 			<view class="menu-row" @click="syncNow"><text>{{ syncing ? '正在同步…' : '立即同步离线业务' }}</text><text class="arrow">›</text></view>
 			<view class="menu-row" @click="openMessages"><text>现场消息</text><text class="arrow">›</text></view>
-			<view class="menu-row" @click="openReport"><text>个人报表</text><text class="arrow">›</text></view>
 			<view class="menu-row" @click="openSetup"><text>重新配置服务地址</text><text class="arrow">›</text></view>
 			<view class="menu-row" @click="openChangePassword"><text>修改密码</text><text class="arrow">›</text></view>
 		</view>
@@ -69,7 +68,6 @@
 		uni.navigateTo({ url: '/pages/login/change-password' })
 	}
 	function openMessages() { navigateTo(ROUTES.messages) }
-	function openReport() { navigateTo(ROUTES.report) }
 	function downloadUpgrade() { openUpgradeUrl(versionPolicy.value.downloadUrl) }
 	async function syncNow() {
 		if (syncing.value) return
