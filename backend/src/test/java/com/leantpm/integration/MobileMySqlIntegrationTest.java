@@ -125,6 +125,9 @@ class MobileMySqlIntegrationTest {
                 9705L, "MOBILE-REPORT-NEXT-DAY", organizationId, locationId,
                 "COMPLETED", LocalDate.now().plusDays(1), LocalDate.now().atTime(23, 59, 59)
         );
+        insertCollaborativeReportTask(
+                9706L, "MOBILE-REPORT-COLLABORATOR", organizationId, locationId
+        );
 
         MobileDtos.PersonalInspectionReport report = service.personalInspectionReport(
                 LocalDate.now(), LocalDate.now()
@@ -132,9 +135,9 @@ class MobileMySqlIntegrationTest {
 
         assertThat(report.startDate()).isEqualTo(LocalDate.now());
         assertThat(report.endDate()).isEqualTo(LocalDate.now());
-        assertThat(report.due()).isEqualTo(3);
-        assertThat(report.completed()).isEqualTo(2);
-        assertThat(report.pending()).isEqualTo(1);
+        assertThat(report.due()).isEqualTo(5);
+        assertThat(report.completed()).isEqualTo(3);
+        assertThat(report.pending()).isEqualTo(2);
         assertThat(report.overdue()).isEqualTo(1);
         assertThatThrownBy(() -> service.personalInspectionReport(
                 LocalDate.now(), LocalDate.now().minusDays(1)
@@ -249,6 +252,28 @@ class MobileMySqlIntegrationTest {
                         IF(? = 'COMPLETED', CURRENT_TIMESTAMP(3), NULL), ?)
                 """, id, code, organizationId, locationId, plannedDate, dueTime,
                 USER_ID, status, status, USER_ID);
+    }
+
+    private void insertCollaborativeReportTask(
+            long id,
+            String code,
+            long organizationId,
+            long locationId
+    ) {
+        jdbc.update("""
+                INSERT INTO inspection_task
+                    (id, tenant_id, task_code, inspection_type, equipment_id,
+                     organization_id, location_id, planned_date, due_time,
+                     assignee_user_id, task_status, source_type, created_by)
+                VALUES (?, 1, ?, 'ROUTINE', 1, ?, ?, CURRENT_DATE(),
+                        TIMESTAMP(CURRENT_DATE(), '23:59:59'), 9903, 'PENDING',
+                        'MANUAL', ?)
+                """, id, code, organizationId, locationId, USER_ID);
+        jdbc.update("""
+                INSERT INTO inspection_task_assignee
+                    (tenant_id, task_id, user_id, sort_order, primary_flag, created_by)
+                VALUES (1, ?, ?, 2, 0, ?)
+                """, id, USER_ID, USER_ID);
     }
 
     private void authenticate() {

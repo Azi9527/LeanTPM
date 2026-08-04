@@ -39,7 +39,9 @@ public interface MobileMapper {
             @Param("tenantId") long tenantId,
             @Param("userId") long userId,
             @Param("startDate") java.time.LocalDate startDate,
-            @Param("endDate") java.time.LocalDate endDate
+            @Param("endDate") java.time.LocalDate endDate,
+            @Param("startTime") java.time.LocalDateTime startTime,
+            @Param("endExclusive") java.time.LocalDateTime endExclusive
     );
 
     MobileDtos.WorkCount maintenanceCount(
