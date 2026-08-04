@@ -10,6 +10,7 @@ export const STORAGE_KEYS = Object.freeze({
 	refreshExpiresAt: `${PREFIX}refresh_expires_at`,
 	userProfile: `${PREFIX}user_profile`,
 	rememberedUsername: `${PREFIX}remembered_username`,
+	rememberedCredentials: `${PREFIX}remembered_credentials`,
 	branding: `${PREFIX}branding`,
 	drafts: `${PREFIX}drafts`,
 	photoQueue: `${PREFIX}photo_queue`,
@@ -19,7 +20,8 @@ export const STORAGE_KEYS = Object.freeze({
 const SECURE_KEYS = new Set([
 	STORAGE_KEYS.accessToken, STORAGE_KEYS.refreshToken,
 	STORAGE_KEYS.accessExpiresAt, STORAGE_KEYS.refreshExpiresAt,
-	STORAGE_KEYS.userProfile, STORAGE_KEYS.drafts, STORAGE_KEYS.photoQueue
+	STORAGE_KEYS.userProfile, STORAGE_KEYS.rememberedCredentials,
+	STORAGE_KEYS.drafts, STORAGE_KEYS.photoQueue
 ])
 
 function storage() {
@@ -72,5 +74,7 @@ export function clearBusinessStorage() {
 export function clearEnterpriseStorage() {
 	clearSessionStorage()
 	clearBusinessStorage()
+	removeStored(STORAGE_KEYS.rememberedCredentials)
+	removeStored(STORAGE_KEYS.rememberedUsername)
 	removeStored(STORAGE_KEYS.branding)
 }

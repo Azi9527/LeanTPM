@@ -32,6 +32,11 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.imageio.ImageIO;
+import java.awt.Color;
+import java.awt.Font;
+import java.awt.FontMetrics;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -592,8 +597,11 @@ public class EquipmentService {
                     image.setRGB(x, y, matrix.get(x, y) ? 0xFF111827 : 0xFFFFFFFF);
                 }
             }
+            BufferedImage rendered = format == BarcodeFormat.QR_CODE
+                    ? withEquipmentCaption(image, barcode.equipmentName(), barcode.equipmentCode())
+                    : image;
             try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
-                ImageIO.write(image, "png", output);
+                ImageIO.write(rendered, "png", output);
                 return output.toByteArray();
             }
         } catch (WriterException | IOException exception) {
@@ -602,6 +610,56 @@ public class EquipmentService {
                     HttpStatus.INTERNAL_SERVER_ERROR
             );
         }
+    }
+
+    static BufferedImage withEquipmentCaption(
+            BufferedImage qrCode,
+            String equipmentName,
+            String equipmentCode
+    ) {
+        int width = qrCode.getWidth();
+        int padding = Math.max(12, width / 40);
+        int captionHeight = Math.max(68, width / 7);
+        BufferedImage label = new BufferedImage(
+                width,
+                qrCode.getHeight() + captionHeight,
+                BufferedImage.TYPE_INT_RGB
+        );
+        Graphics2D graphics = label.createGraphics();
+        try {
+            graphics.setColor(Color.WHITE);
+            graphics.fillRect(0, 0, label.getWidth(), label.getHeight());
+            graphics.drawImage(qrCode, 0, 0, null);
+            graphics.setColor(new Color(17, 24, 39));
+            graphics.setRenderingHint(
+                    RenderingHints.KEY_TEXT_ANTIALIASING,
+                    RenderingHints.VALUE_TEXT_ANTIALIAS_ON
+            );
+            String name = equipmentName == null ? "" : equipmentName.trim();
+            String code = equipmentCode == null ? "" : equipmentCode.trim();
+            String codeLabel = "（" + code + "）";
+            String caption = name + codeLabel;
+            Font font = new Font("Microsoft YaHei", Font.BOLD, Math.max(18, width / 24));
+            graphics.setFont(font);
+            FontMetrics metrics = graphics.getFontMetrics();
+            while (metrics.stringWidth(caption) > width - padding * 2 && font.getSize() > 12) {
+                font = font.deriveFont((float) font.getSize() - 1);
+                graphics.setFont(font);
+                metrics = graphics.getFontMetrics();
+            }
+            int nameLength = name.length();
+            while (metrics.stringWidth(caption) > width - padding * 2 && nameLength > 1) {
+                nameLength--;
+                caption = name.substring(0, nameLength) + "…" + codeLabel;
+            }
+            int x = Math.max(padding, (width - metrics.stringWidth(caption)) / 2);
+            int captionTop = qrCode.getHeight();
+            int y = captionTop + (captionHeight - metrics.getHeight()) / 2 + metrics.getAscent();
+            graphics.drawString(caption, x, y);
+        } finally {
+            graphics.dispose();
+        }
+        return label;
     }
 
     @Transactional(readOnly = true)

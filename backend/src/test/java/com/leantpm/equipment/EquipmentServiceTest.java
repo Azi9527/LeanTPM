@@ -15,9 +15,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+import java.awt.Color;
+import java.awt.image.BufferedImage;
 import java.time.LocalDateTime;
 import java.util.Set;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -116,6 +119,34 @@ class EquipmentServiceTest {
         verify(changeLogService).record(
                 eq("EQUIPMENT_STATUS"), eq(100L), eq("UPDATE"), eq(current), eq(updated)
         );
+    }
+
+    @Test
+    void rendersEquipmentNameAndCodeBelowQrImage() {
+        BufferedImage qrCode = new BufferedImage(240, 240, BufferedImage.TYPE_INT_RGB);
+        var graphics = qrCode.createGraphics();
+        graphics.setColor(Color.WHITE);
+        graphics.fillRect(0, 0, qrCode.getWidth(), qrCode.getHeight());
+        graphics.dispose();
+
+        BufferedImage label = EquipmentService.withEquipmentCaption(
+                qrCode,
+                "循环泵站一号",
+                "VIZ-PUMP-01"
+        );
+
+        assertThat(label.getWidth()).isEqualTo(240);
+        assertThat(label.getHeight()).isGreaterThan(240);
+        boolean hasCaptionPixels = false;
+        for (int y = 240; y < label.getHeight() && !hasCaptionPixels; y++) {
+            for (int x = 0; x < label.getWidth(); x++) {
+                if ((label.getRGB(x, y) & 0xFFFFFF) != 0xFFFFFF) {
+                    hasCaptionPixels = true;
+                    break;
+                }
+            }
+        }
+        assertThat(hasCaptionPixels).isTrue();
     }
 
     private EquipmentDtos.EquipmentRow equipment() {

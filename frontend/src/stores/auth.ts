@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import * as authApi from '@/api/auth'
 import { clearTokens, hasToken, storeTokens } from '@/utils/http'
 import type { UserProfile } from '@/types/api'
+import { updateRememberedPassword } from '@/utils/rememberedCredentials'
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref<UserProfile | null>(null)
@@ -44,6 +45,7 @@ export const useAuthStore = defineStore('auth', () => {
   async function updatePassword(currentPassword: string, newPassword: string): Promise<void> {
     const tokens = await authApi.changePassword(currentPassword, newPassword)
     await storeTokens(tokens)
+    if (user.value?.username) await updateRememberedPassword(user.value.username, newPassword)
     await loadProfile()
   }
 

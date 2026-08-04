@@ -65,7 +65,7 @@
 			<view class="login-options">
 				<view class="remember" @click="remember = !remember">
 					<view :class="['checkbox', { checked: remember }]">{{ remember ? '✓' : '' }}</view>
-					<text>记住账号</text>
+					<text>记住账号和密码</text>
 				</view>
 				<text class="lock-tip">连续失败 5 次将临时锁定</text>
 			</view>
@@ -86,7 +86,7 @@
 	import { authApi } from '../../api/auth.js'
 	import { ROUTES, reLaunchTo } from '../../constants/routes.js'
 	import { brandingState, initializeBranding } from '../../stores/branding.js'
-	import { rememberedUsername, signIn } from '../../stores/session.js'
+	import { rememberedCredentials, rememberedUsername, signIn } from '../../stores/session.js'
 	import { errorMessage, isServiceUnavailable } from '../../utils/errors.js'
 	import { brandingLogoSource } from '../../utils/branding.js'
 
@@ -99,7 +99,10 @@
 	const logoSource = computed(() => brandingLogoSource(brandingState.logoUrl))
 
 	onLoad(async () => {
-		form.username = rememberedUsername()
+		const saved = rememberedCredentials()
+		form.username = saved?.username || rememberedUsername()
+		form.password = saved?.password || ''
+		remember.value = Boolean(saved) || remember.value
 		await initializeBranding()
 		await loadCaptcha()
 	})
@@ -142,10 +145,8 @@
 				captchaId: challenge.value.captchaId,
 				captchaCode: form.captchaCode.trim()
 			}, remember.value)
-			form.password = ''
 			await reLaunchTo(user.mustChangePassword ? '/pages/login/change-password' : ROUTES.workbench)
 		} catch (error) {
-			form.password = ''
 			uni.showModal({
 				title: isServiceUnavailable(error) ? '企业服务暂时不可用' : '登录失败',
 				content: errorMessage(error, '账号或密码错误'),

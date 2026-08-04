@@ -177,10 +177,9 @@ function printLabel(row: BarcodeRow) {
     <style>
       body{font-family:Arial,"Microsoft YaHei",sans-serif;display:grid;place-items:center;margin:0;min-height:100vh}
       .label{box-sizing:border-box;width:${label.widthMm}mm;height:${label.heightMm}mm;text-align:center;border:1px solid #d1d5db;padding:6mm;border-radius:3mm}
-      img{max-width:560px;max-height:360px}
-      h2{margin:12px 0 4px}.code{font:16px monospace;color:#4b5563}
+      img{max-width:100%;max-height:100%;object-fit:contain}
     </style></head><body><div class="label">
-    <img src="${url}" /><h2>${escapeHtml(row.equipmentName)}</h2><div class="code">${escapeHtml(row.equipmentCode)}</div>
+    <img src="${url}" alt="${escapeHtml(row.equipmentName)}（${escapeHtml(row.equipmentCode)}）" />
     </div><script>window.onload=()=>window.print()<\/script></body></html>
   `)
   popup.document.close()
@@ -201,9 +200,7 @@ function printSelected() {
   }
   const labels = selectedRows.map((row) => `
     <article class="label">
-      <img src="${imageUrls[row.id]}" />
-      <h2>${escapeHtml(row.equipmentName)}</h2>
-      <div class="code">${escapeHtml(row.equipmentCode)}</div>
+      <img src="${imageUrls[row.id]}" alt="${escapeHtml(row.equipmentName)}（${escapeHtml(row.equipmentCode)}）" />
     </article>
   `).join('')
   popup.document.write(`
@@ -211,7 +208,7 @@ function printSelected() {
     <style>
       body{font-family:Arial,"Microsoft YaHei",sans-serif;display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin:20px}
       .label{box-sizing:border-box;width:${label.widthMm}mm;height:${label.heightMm}mm;text-align:center;border:1px solid #d1d5db;padding:4mm;break-inside:avoid;border-radius:2mm}
-      img{max-width:100%;height:220px;object-fit:contain}h2{margin:10px 0 4px}.code{font:15px monospace;color:#4b5563}
+      img{width:100%;height:100%;object-fit:contain}
       @media print{body{margin:0}.label{page-break-inside:avoid}}
     </style></head><body>${labels}<script>window.onload=()=>window.print()<\/script></body></html>
   `)
@@ -345,8 +342,6 @@ function escapeHtml(value: string) {
     <el-dialog v-model="previewVisible" title="设备标签预览" width="min(620px, 94vw)" align-center>
       <div v-if="selected" class="preview-label">
         <img :src="imageUrls[selected.id]" :alt="selected.equipmentCode">
-        <h2>{{ selected.equipmentName }}</h2>
-        <span class="mono">{{ selected.equipmentCode }}</span>
       </div>
       <template #footer>
         <el-button v-if="selected" type="primary" @click="printLabel(selected)">打印标签</el-button>

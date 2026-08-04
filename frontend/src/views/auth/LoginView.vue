@@ -6,6 +6,11 @@ import { captcha as fetchCaptcha, type CaptchaChallenge } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 import { errorMessage } from '@/utils/http'
 import { nativeContainer } from '@/mobile/secureVault'
+import {
+  clearRememberedCredentials,
+  loadRememberedCredentials,
+  saveRememberedCredentials,
+} from '@/utils/rememberedCredentials'
 import BrandLogo from '@/components/branding/BrandLogo.vue'
 import { useBranding } from '@/branding/branding'
 
@@ -17,6 +22,7 @@ const formRef = ref<FormInstance>()
 const loginBoxRef = ref<HTMLElement>()
 const loading = ref(false)
 const captchaLoading = ref(false)
+const remember = ref(true)
 const challenge = ref<CaptchaChallenge>({ enabled: true })
 const form = reactive({ username: '', password: '', captchaCode: '' })
 const rules: FormRules = {
@@ -61,6 +67,11 @@ async function submit() {
       challenge.value.captchaId,
       form.captchaCode.trim(),
     )
+    if (remember.value) {
+      await saveRememberedCredentials(form.username, form.password)
+    } else {
+      await clearRememberedCredentials()
+    }
     const redirect = typeof route.query.redirect === 'string'
       ? route.query.redirect
       : nativeContainer ? '/mobile/workbench' : '/dashboard'
@@ -93,7 +104,15 @@ function syncCredentialInputEvent(event: Event) {
   if (input.name === 'password') form.password = input.value
 }
 
-onMounted(loadCaptcha)
+onMounted(async () => {
+  const saved = await loadRememberedCredentials()
+  if (saved) {
+    form.username = saved.username
+    form.password = saved.password
+    remember.value = true
+  }
+  await loadCaptcha()
+})
 </script>
 
 <template>
@@ -166,7 +185,7 @@ onMounted(loadCaptcha)
             </div>
           </el-form-item>
           <div class="login-options">
-            <el-checkbox>记住账号</el-checkbox>
+            <el-checkbox v-model="remember">记住账号和密码</el-checkbox>
             <span>连续失败 5 次将临时锁定</span>
           </div>
           <el-button

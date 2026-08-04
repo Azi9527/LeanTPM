@@ -7,7 +7,7 @@ import {
 	storeTokens
 } from '../api/request.js'
 import { ROUTES, reLaunchTo } from '../constants/routes.js'
-import { STORAGE_KEYS, clearBusinessStorage, getStored, setStored } from '../platform/storage.js'
+import { STORAGE_KEYS, clearBusinessStorage, getStored, removeStored, setStored } from '../platform/storage.js'
 import { isAuthenticationFailure, isServiceUnavailable } from '../utils/errors.js'
 
 const state = reactive({
@@ -35,6 +35,24 @@ export function rememberUsername(username, remember) {
 	else setStored(STORAGE_KEYS.rememberedUsername, '')
 }
 
+export function rememberedCredentials() {
+	const saved = getStored(STORAGE_KEYS.rememberedCredentials, null)
+	if (!saved || typeof saved !== 'object') return null
+	const username = String(saved.username || '').trim()
+	const password = String(saved.password || '')
+	return username && password ? { username, password } : null
+}
+
+export function rememberCredentials(username, password, remember) {
+	if (remember) {
+		setStored(STORAGE_KEYS.rememberedCredentials, { username: username.trim(), password })
+		rememberUsername(username, true)
+		return
+	}
+	removeStored(STORAGE_KEYS.rememberedCredentials)
+	rememberUsername('', false)
+}
+
 export async function signIn(credentials, remember = true) {
 	state.loading = true
 	try {
@@ -48,7 +66,7 @@ export async function signIn(credentials, remember = true) {
 		state.user = result.user
 		state.initialized = true
 		setStored(STORAGE_KEYS.userProfile, result.user)
-		rememberUsername(credentials.username, remember)
+		rememberCredentials(credentials.username, credentials.password, remember)
 		return result.user
 	} finally {
 		state.loading = false
@@ -80,6 +98,10 @@ export async function restoreSession() {
 export async function changePassword(currentPassword, newPassword) {
 	const tokens = await authApi.changePassword(currentPassword, newPassword)
 	storeTokens(tokens)
+	const saved = rememberedCredentials()
+	if (saved?.username === state.user?.username) {
+		rememberCredentials(saved.username, newPassword, true)
+	}
 	return restoreSession()
 }
 

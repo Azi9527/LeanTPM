@@ -18,6 +18,7 @@ const { watermarkLines } = await import('../platform/photo.js')
 const { compareVersionCodes } = await import('../utils/version.js')
 const { ApiError, errorMessage, isConflict } = await import('../utils/errors.js')
 const secureStorage = await import('../platform/secure-storage.js')
+const storage = await import('../platform/storage.js')
 
 test('normalizes enterprise server URLs', () => {
 	assert.equal(normalizeServerBaseUrl(' http://192.168.31.91:18080/ '), 'http://192.168.31.91:18080/api/v1')
@@ -99,5 +100,10 @@ test('uses a readable fallback in the HBuilder Android standard base', () => {
 	secureStorage.secureSet('debug-token', { token: 'fresh-token' })
 	assert.match(values.get('leantpm_secure_debug-token'), /^S1:/)
 	assert.deepEqual(secureStorage.secureGet('debug-token'), { token: 'fresh-token' })
+	storage.setStored(storage.STORAGE_KEYS.rememberedCredentials, { username: 'admin', password: '888888' })
+	assert.deepEqual(
+		storage.getStored(storage.STORAGE_KEYS.rememberedCredentials),
+		{ username: 'admin', password: '888888' }
+	)
 	delete globalThis.plus
 })
