@@ -43,12 +43,20 @@ export async function renderWatermark({ src, canvasId, page, lines, maxWidth = 1
 	return new Promise((resolve, reject) => uni.canvasToTempFilePath({ canvasId, width, height, destWidth: width, destHeight: height, fileType: 'jpg', quality: 0.84, success: (result) => resolve(result.tempFilePath), fail: reject }, page))
 }
 
+export function formatBusinessDateTime(value = new Date()) {
+	const date = value instanceof Date ? value : new Date(value)
+	if (Number.isNaN(date.getTime())) return ''
+	const pad = (part) => String(part).padStart(2, '0')
+	return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+}
+
 export function watermarkLines({ brandName, equipmentName, equipmentCode, taskCode, itemName, executorName, faultLocationText, capturedAt }) {
+	const capturedTime = formatBusinessDateTime(capturedAt || new Date())
 	return [
 		brandName || 'LeanTPM',
 		`${equipmentName || ''} (${equipmentCode || ''})`,
 		`${taskCode || ''} · ${itemName || ''}`,
 		`位置 ${faultLocationText || '设备现场'}`,
-		`${capturedAt || new Date().toLocaleString()} · 执行人 ${executorName || '当前用户'}`
+		`${capturedTime} · 执行人 ${executorName || '当前用户'}`
 	]
 }

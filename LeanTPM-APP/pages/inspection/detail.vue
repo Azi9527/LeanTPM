@@ -212,7 +212,7 @@
 			const originalPath = await chooseCameraPhoto()
 			if (!originalPath) return
 			const capturedAt = new Date()
-			const lines = watermarkLines({ brandName: brandingState.shortName, equipmentName: detail.value.task.equipmentName, equipmentCode: detail.value.task.equipmentCode, taskCode: detail.value.task.taskCode, itemName: item.itemName, executorName: displayName(), faultLocationText: item.inspectionPart || detail.value.task.locationName || item.itemName, capturedAt: capturedAt.toLocaleString() })
+			const lines = watermarkLines({ brandName: brandingState.shortName, equipmentName: detail.value.task.equipmentName, equipmentCode: detail.value.task.equipmentCode, taskCode: detail.value.task.taskCode, itemName: item.itemName, executorName: displayName(), faultLocationText: item.inspectionPart || detail.value.task.locationName || item.itemName, capturedAt })
 			const watermarkedPath = await renderWatermark({ src: originalPath, canvasId: 'inspectionWatermark', page, lines })
 			const serverTime = mobileState.bootstrap?.serverTime || capturedAt.toISOString()
 			const serverDate = new Date(serverTime)

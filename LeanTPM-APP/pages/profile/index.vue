@@ -24,6 +24,7 @@
 		</view>
 
 		<button class="logout-button" :loading="loading" @click="logout">退出登录</button>
+		<AppBottomNav active="profile" />
 	</view>
 </template>
 
@@ -37,6 +38,7 @@
 	import { displayName, sessionState, signOut } from '../../stores/session.js'
 	import { getServerBaseUrl } from '../../utils/server.js'
 	import { compareVersionCodes, currentAppInfo, openUpgradeUrl } from '../../utils/version.js'
+	import AppBottomNav from '../../components/AppBottomNav.vue'
 
 	const loading = ref(false)
 	const serverUrl = getServerBaseUrl()

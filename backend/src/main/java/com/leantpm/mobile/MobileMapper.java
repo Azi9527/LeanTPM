@@ -37,7 +37,9 @@ public interface MobileMapper {
 
     MobileDtos.PersonalInspectionReport personalInspectionReport(
             @Param("tenantId") long tenantId,
-            @Param("userId") long userId
+            @Param("userId") long userId,
+            @Param("startDate") java.time.LocalDate startDate,
+            @Param("endDate") java.time.LocalDate endDate
     );
 
     MobileDtos.WorkCount maintenanceCount(

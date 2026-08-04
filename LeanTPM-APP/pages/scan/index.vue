@@ -16,6 +16,7 @@
 			<textarea v-model="manualValue" class="textarea" maxlength="500" placeholder="粘贴 64 位设备令牌或完整二维码链接" />
 			<button class="secondary" @click="openValue(manualValue)">识别并打开设备</button>
 		</view>
+		<AppBottomNav active="scan" />
 	</view>
 </template>
 
@@ -23,6 +24,7 @@
 	import { ref } from 'vue'
 	import { ROUTES, navigateTo, routeWithQuery } from '../../constants/routes.js'
 	import { requireEquipmentToken } from '../../utils/equipment-token.js'
+	import AppBottomNav from '../../components/AppBottomNav.vue'
 
 	const scanning = ref(false)
 	const manualValue = ref('')

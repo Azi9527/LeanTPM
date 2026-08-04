@@ -165,10 +165,22 @@
 
     <select id="personalInspectionReport"
             resultType="com.leantpm.mobile.MobileDtos$PersonalInspectionReport">
-        SELECT DATE_SUB(CURRENT_DATE(), INTERVAL 29 DAY) AS start_date,
-               CURRENT_DATE() AS end_date,
+        SELECT #{startDate} AS start_date,
+               #{endDate} AS end_date,
                COUNT(*) AS due,
-               COALESCE(SUM(task.task_status = 'COMPLETED'), 0) AS completed,
+               COALESCE(SUM(task.task_status IN ('COMPLETED', 'PENDING_REVIEW')), 0) AS completed,
+               COALESCE(SUM(task.task_status NOT IN (
+                   'COMPLETED', 'PENDING_REVIEW', 'CANCELLED', 'VOIDED'
+               )), 0) AS pending,
+               COALESCE(SUM(
+                   task.task_status = 'OVERDUE'
+                   OR (
+                       task.task_status NOT IN (
+                           'COMPLETED', 'PENDING_REVIEW', 'CANCELLED', 'VOIDED'
+                       )
+                       AND task.due_time &lt; CURRENT_TIMESTAMP(3)
+                   )
+               ), 0) AS overdue,
                COALESCE(SUM(EXISTS (
                    SELECT 1 FROM inspection_abnormal abnormal
                    WHERE abnormal.tenant_id = task.tenant_id
@@ -176,8 +188,8 @@
                )), 0) AS abnormal
         FROM inspection_task task
         WHERE task.tenant_id = #{tenantId} AND task.deleted = 0
-          AND task.planned_date BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 29 DAY)
-                                    AND CURRENT_DATE()
+          AND task.task_status NOT IN ('CANCELLED', 'VOIDED')
+          AND task.planned_date BETWEEN #{startDate} AND #{endDate}
           AND (
               task.assignee_user_id = #{userId}
               OR EXISTS (

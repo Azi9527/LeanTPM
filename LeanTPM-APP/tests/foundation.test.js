@@ -14,7 +14,7 @@ const { brandingLogoSource, normalizeBranding } = await import('../utils/brandin
 const { extractEquipmentToken, requireEquipmentToken } = await import('../utils/equipment-token.js')
 const { initialResultDraft, inferAbnormal, validateInspectionResults, buildInspectionPayload } = await import('../utils/inspection-results.js')
 const { saveDraftEnvelope, loadDraftEnvelope, queuePhoto, attachQueuedPhotoToDraft, listQueuedPhotos, removeDraftEnvelope } = await import('../stores/offline.js')
-const { watermarkLines } = await import('../platform/photo.js')
+const { formatBusinessDateTime, watermarkLines } = await import('../platform/photo.js')
 const { compareVersionCodes } = await import('../utils/version.js')
 const { ApiError, errorMessage, isConflict } = await import('../utils/errors.js')
 const secureStorage = await import('../platform/secure-storage.js')
@@ -77,9 +77,13 @@ test('queues photos before pending drafts and writes attachment ids back', () =>
 })
 
 test('builds a GPS-free equipment location watermark', () => {
-	const lines = watermarkLines({ brandName: '客户矿业', equipmentName: '循环泵', equipmentCode: 'P-01', taskCode: 'DJ-1', itemName: '油位', executorName: '操作工01', faultLocationText: '机加二线' })
+	const capturedAt = new Date(2026, 7, 4, 11, 49, 21)
+	const lines = watermarkLines({ brandName: '客户矿业', equipmentName: '循环泵', equipmentCode: 'P-01', taskCode: 'DJ-1', itemName: '油位', executorName: '操作工01', faultLocationText: '机加二线', capturedAt })
 	assert.equal(lines.length, 5)
 	assert.match(lines.join(' '), /机加二线/)
+	assert.match(lines.at(-1), /^2026-08-04 11:49:21 · 执行人 操作工01$/)
+	assert.equal(formatBusinessDateTime(capturedAt), '2026-08-04 11:49:21')
+	assert.doesNotMatch(lines.at(-1), /Tue|GMT|CST/)
 	assert.doesNotMatch(lines.join(' '), /GPS|经度|纬度/)
 })
 

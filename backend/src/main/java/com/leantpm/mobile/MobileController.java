@@ -5,13 +5,17 @@ import com.leantpm.common.idempotency.Idempotent;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Pattern;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.time.LocalDate;
 
 @Validated
 @RestController
@@ -29,6 +33,19 @@ public class MobileController {
     )
     public ApiResponse<MobileDtos.Bootstrap> bootstrap() {
         return ApiResponse.success(service.bootstrap());
+    }
+
+    @GetMapping("/personal-inspection-report")
+    @PreAuthorize(
+            "hasAuthority('mobile:access') and hasAuthority('mobile:workbench:view')"
+    )
+    public ApiResponse<MobileDtos.PersonalInspectionReport> personalInspectionReport(
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate
+    ) {
+        return ApiResponse.success(service.personalInspectionReport(startDate, endDate));
     }
 
     @GetMapping("/equipment/{token}")

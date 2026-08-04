@@ -13,6 +13,7 @@
 			<view class="progress-text"><text>{{ task.completedItemCount }}/{{ task.itemCount }} 项</text><text v-if="task.assigneeName">主执行：{{ task.assigneeName }}</text></view>
 		</view>
 		<view v-if="!loading && !rows.length" class="empty">当前没有点检任务</view>
+		<AppBottomNav active="inspection" />
 	</view>
 </template>
 
@@ -22,6 +23,7 @@
 	import { inspectionApi } from '../../api/inspection.js'
 	import { ROUTES, navigateTo, routeWithQuery } from '../../constants/routes.js'
 	import { errorMessage } from '../../utils/errors.js'
+	import AppBottomNav from '../../components/AppBottomNav.vue'
 
 	const tabs = [
 		{ label: '全部', value: '' }, { label: '待执行', value: 'PENDING' },

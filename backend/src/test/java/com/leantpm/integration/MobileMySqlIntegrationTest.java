@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Set;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -85,8 +86,9 @@ class MobileMySqlIntegrationTest {
         assertThat(bootstrap.equipmentStatus().total()).isEqualTo(8);
         assertThat(bootstrap.inspection()).isNotNull();
         assertThat(bootstrap.inspectionAbnormal()).isNotNull();
-        assertThat(bootstrap.personalInspectionReport().startDate()).isNotNull();
-        assertThat(bootstrap.personalInspectionReport().endDate()).isNotNull();
+        assertThat(bootstrap.personalInspectionReport().startDate())
+                .isEqualTo(LocalDate.now().withDayOfMonth(1));
+        assertThat(bootstrap.personalInspectionReport().endDate()).isEqualTo(LocalDate.now());
         assertThat(bootstrap.maintenance()).isNotNull();
         assertThat(bootstrap.messages()).isNotNull();
 
@@ -96,6 +98,35 @@ class MobileMySqlIntegrationTest {
         assertThat(context.equipment().statusCode()).isEqualTo("RUNNING");
         assertThat(context.equipment().statusColor()).startsWith("#");
         assertThat(context.activeTasks()).isNotNull();
+    }
+
+    @Test
+    void filtersPersonalInspectionReportBySelectedDateRange() {
+        Long organizationId = jdbc.queryForObject(
+                "SELECT organization_id FROM equipment WHERE tenant_id = 1 AND id = 1", Long.class
+        );
+        Long locationId = jdbc.queryForObject(
+                "SELECT location_id FROM equipment WHERE tenant_id = 1 AND id = 1", Long.class
+        );
+        insertReportTask(9701L, "MOBILE-REPORT-DONE", organizationId, locationId, "COMPLETED");
+        insertReportTask(9702L, "MOBILE-REPORT-OVERDUE", organizationId, locationId, "OVERDUE");
+        insertReportTask(9703L, "MOBILE-REPORT-CANCELLED", organizationId, locationId, "CANCELLED");
+
+        MobileDtos.PersonalInspectionReport report = service.personalInspectionReport(
+                LocalDate.now(), LocalDate.now()
+        );
+
+        assertThat(report.startDate()).isEqualTo(LocalDate.now());
+        assertThat(report.endDate()).isEqualTo(LocalDate.now());
+        assertThat(report.due()).isEqualTo(2);
+        assertThat(report.completed()).isEqualTo(1);
+        assertThat(report.pending()).isEqualTo(1);
+        assertThat(report.overdue()).isEqualTo(1);
+        assertThatThrownBy(() -> service.personalInspectionReport(
+                LocalDate.now(), LocalDate.now().minusDays(1)
+        )).isInstanceOf(BusinessException.class)
+                .extracting("code")
+                .isEqualTo("MOBILE_REPORT_DATE_RANGE_INVALID");
     }
 
     @Test
@@ -170,6 +201,24 @@ class MobileMySqlIntegrationTest {
                      content_type, extension, file_size, sha256, created_by, updated_by)
                 VALUES (?, 1, ?, ?, ?, 'image/jpeg', 'jpeg', 1024, ?, ?, ?)
                 """, id, name, name, "it/" + name, sha256, USER_ID, USER_ID);
+    }
+
+    private void insertReportTask(
+            long id,
+            String code,
+            long organizationId,
+            long locationId,
+            String status
+    ) {
+        jdbc.update("""
+                INSERT INTO inspection_task
+                    (id, tenant_id, task_code, inspection_type, equipment_id,
+                     organization_id, location_id, planned_date, due_time,
+                     assignee_user_id, task_status, source_type, completed_time, created_by)
+                VALUES (?, 1, ?, 'ROUTINE', 1, ?, ?, CURRENT_DATE(),
+                        DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 1 HOUR), ?, ?, 'MANUAL',
+                        IF(? = 'COMPLETED', CURRENT_TIMESTAMP(3), NULL), ?)
+                """, id, code, organizationId, locationId, USER_ID, status, status, USER_ID);
     }
 
     private void authenticate() {

@@ -45,6 +45,8 @@ public final class MobileDtos {
             LocalDate endDate,
             long due,
             long completed,
+            long pending,
+            long overdue,
             long abnormal
     ) {
     }

@@ -9,7 +9,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Locale;
 
@@ -36,6 +38,7 @@ public class MobileService {
     public MobileDtos.Bootstrap bootstrap() {
         var current = SecurityUtils.currentUser();
         assertMobileEnabled(current.tenantId(), current.userId());
+        LocalDate today = LocalDate.now();
         return new MobileDtos.Bootstrap(
                 LocalDateTime.now(),
                 parameter(
@@ -58,7 +61,10 @@ public class MobileService {
                 mapper.equipmentStatusCount(current.tenantId()),
                 safeCount(mapper.inspectionCount(current.tenantId(), current.userId())),
                 mapper.inspectionAbnormalCount(current.tenantId(), current.userId()),
-                mapper.personalInspectionReport(current.tenantId(), current.userId()),
+                mapper.personalInspectionReport(
+                        current.tenantId(), current.userId(),
+                        today.withDayOfMonth(1), today
+                ),
                 safeCount(mapper.maintenanceCount(current.tenantId(), current.userId())),
                 notificationService.messages(false, 1, 30).records().stream()
                         .map(message -> new MobileDtos.MessageItem(
@@ -69,6 +75,28 @@ public class MobileService {
                                 message.occurredTime(), message.routePath()
                         ))
                         .toList()
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public MobileDtos.PersonalInspectionReport personalInspectionReport(
+            LocalDate requestedStartDate,
+            LocalDate requestedEndDate
+    ) {
+        var current = SecurityUtils.currentUser();
+        assertMobileEnabled(current.tenantId(), current.userId());
+        LocalDate today = LocalDate.now();
+        LocalDate startDate = requestedStartDate == null
+                ? today.withDayOfMonth(1) : requestedStartDate;
+        LocalDate endDate = requestedEndDate == null ? today : requestedEndDate;
+        if (endDate.isBefore(startDate)) {
+            throw new BusinessException("MOBILE_REPORT_DATE_RANGE_INVALID", "报表结束日期不能早于开始日期");
+        }
+        if (ChronoUnit.DAYS.between(startDate, endDate) > 366) {
+            throw new BusinessException("MOBILE_REPORT_DATE_RANGE_TOO_LARGE", "个人报表单次查询范围不能超过 366 天");
+        }
+        return mapper.personalInspectionReport(
+                current.tenantId(), current.userId(), startDate, endDate
         );
     }
 
