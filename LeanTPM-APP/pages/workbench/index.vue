@@ -17,17 +17,17 @@
 		<view v-if="mobileState.error" class="error-card" @click="load">{{ mobileState.error }} · 点击重试</view>
 
 		<view class="section">
-			<view class="section-header"><text>设备状态</text><text class="section-link">查看明细</text></view>
+			<view class="section-header" @click="openEquipmentStatus('')"><text>设备状态</text><text class="section-link">查看明细</text></view>
 			<view class="equipment-grid">
-				<view class="metric equipment-total"><text class="metric-value">{{ equipment.total }}</text><text class="metric-label">设备总数</text></view>
-				<view class="metric"><text class="metric-value running">{{ equipment.running }}</text><text class="metric-label">运行</text></view>
-				<view class="metric"><text class="metric-value warning">{{ equipment.stopped }}</text><text class="metric-label">停机</text></view>
-				<view class="metric"><text class="metric-value danger">{{ equipment.fault }}</text><text class="metric-label">故障</text></view>
+				<view class="metric equipment-total" @click="openEquipmentStatus('')"><text class="metric-value">{{ equipment.total }}</text><text class="metric-label">设备总数</text></view>
+				<view class="metric" @click="openEquipmentStatus('RUNNING')"><text class="metric-value running">{{ equipment.running }}</text><text class="metric-label">运行</text></view>
+				<view class="metric" @click="openEquipmentStatus('STOPPED')"><text class="metric-value warning">{{ equipment.stopped }}</text><text class="metric-label">停机</text></view>
+				<view class="metric" @click="openEquipmentStatus('FAULT')"><text class="metric-value danger">{{ equipment.fault }}</text><text class="metric-label">故障</text></view>
 			</view>
 		</view>
 
 		<view class="section">
-			<view class="section-header"><text>我的点检</text><text class="section-link">全部任务</text></view>
+			<view class="section-header" @click="openInspections"><text>我的点检</text><text class="section-link">全部任务</text></view>
 			<view class="inspection-card">
 				<view class="inspection-main">
 					<text class="inspection-number">{{ inspection.pending }}</text>
@@ -42,8 +42,8 @@
 		<view class="section">
 			<view class="section-header"><text>现场作业</text></view>
 			<view class="action-grid">
-				<view class="action primary"><text class="action-icon">扫</text><text>设备扫码</text></view>
-				<view class="action"><text class="action-icon">检</text><text>我的点检</text></view>
+				<view class="action primary" @click="openScan"><text class="action-icon">扫</text><text>设备扫码</text></view>
+				<view class="action" @click="openInspections"><text class="action-icon">检</text><text>我的点检</text></view>
 				<view class="action"><text class="action-icon danger-bg">异</text><text>点检异常</text></view>
 				<view class="action" @click="openProfile"><text class="action-icon neutral-bg">我</text><text>个人报表</text></view>
 			</view>
@@ -57,8 +57,8 @@
 		<view class="bottom-space"></view>
 		<view class="bottom-nav">
 			<view class="nav-item active"><text>▣</text><text>工作台</text></view>
-			<view class="nav-item"><text>⌁</text><text>扫码</text></view>
-			<view class="nav-item"><text>✓</text><text>点检</text></view>
+			<view class="nav-item" @click="openScan"><text>⌁</text><text>扫码</text></view>
+			<view class="nav-item" @click="openInspections"><text>✓</text><text>点检</text></view>
 			<view class="nav-item" @click="openProfile"><text>●</text><text>我的</text></view>
 		</view>
 	</view>
@@ -70,7 +70,7 @@
 	import { connected, initializeNetwork, networkType } from '../../platform/network.js'
 	import { mobileState, refreshMobileBootstrap } from '../../stores/mobile.js'
 	import { displayName, sessionState } from '../../stores/session.js'
-	import { ROUTES, navigateTo } from '../../constants/routes.js'
+	import { ROUTES, navigateTo, routeWithQuery } from '../../constants/routes.js'
 
 	const todayText = ref('')
 	const avatarText = computed(() => displayName().slice(0, 1))
@@ -96,6 +96,9 @@
 	}
 
 	function openProfile() { navigateTo(ROUTES.profile) }
+	function openScan() { navigateTo(ROUTES.scan) }
+	function openInspections() { navigateTo(ROUTES.inspectionTasks) }
+	function openEquipmentStatus(status) { navigateTo(routeWithQuery(ROUTES.equipmentStatus, { status })) }
 </script>
 
 <style>

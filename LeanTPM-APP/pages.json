@@ -47,6 +47,26 @@
       }
     },
     {
+      "path": "pages/equipment/status",
+      "style": {
+        "navigationBarTitleText": "设备状态",
+        "enablePullDownRefresh": true
+      }
+    },
+    {
+      "path": "pages/scan/index",
+      "style": {
+        "navigationBarTitleText": "设备扫码"
+      }
+    },
+    {
+      "path": "pages/equipment/context",
+      "style": {
+        "navigationBarTitleText": "设备现场信息",
+        "enablePullDownRefresh": true
+      }
+    },
+    {
       "path": "pages/index/index",
       "style": {
         "navigationBarTitleText": "LeanTPM"

@@ -11,6 +11,7 @@ globalThis.uni = {
 const { normalizeServerBaseUrl } = await import('../utils/server.js')
 const { createIdempotencyKey } = await import('../utils/idempotency.js')
 const { normalizeBranding } = await import('../utils/branding.js')
+const { extractEquipmentToken, requireEquipmentToken } = await import('../utils/equipment-token.js')
 const { ApiError, errorMessage, isConflict } = await import('../utils/errors.js')
 
 test('normalizes enterprise server URLs', () => {
@@ -31,6 +32,14 @@ test('normalizes branding and rejects invalid colors', () => {
 	assert.equal(branding.shortName, '客户矿业')
 	assert.equal(branding.primaryColor, '#abcdef')
 	assert.equal(branding.neutralColor, '#c4000a')
+})
+
+test('extracts LeanTPM equipment tokens from labels and URLs', () => {
+	const token = 'a'.repeat(64)
+	assert.equal(extractEquipmentToken(token.toUpperCase()), token)
+	assert.equal(extractEquipmentToken(`https://example.test/m/e/${token}?source=label`), token)
+	assert.equal(extractEquipmentToken('not-a-label'), null)
+	assert.throws(() => requireEquipmentToken('bad'), /LeanTPM/)
 })
 
 test('preserves API conflict semantics', () => {
