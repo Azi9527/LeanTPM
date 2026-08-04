@@ -95,6 +95,9 @@ class MobileMySqlIntegrationTest {
         MobileDtos.EquipmentContext context = service.equipment(TOKEN.toUpperCase());
         assertThat(context.equipment().equipmentId()).isEqualTo(1L);
         assertThat(context.equipment().equipmentCode()).isEqualTo("VIZ-CNC-01");
+        assertThat(context.equipment().model()).isNotBlank();
+        assertThat(context.equipment().assetNumber()).isNotBlank();
+        assertThat(context.equipment().lifecycleStage()).isNotBlank();
         assertThat(context.equipment().statusCode()).isEqualTo("RUNNING");
         assertThat(context.equipment().statusColor()).startsWith("#");
         assertThat(context.activeTasks()).isNotNull();

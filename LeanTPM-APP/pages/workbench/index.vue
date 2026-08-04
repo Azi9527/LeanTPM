@@ -40,6 +40,23 @@
 		</view>
 
 		<view class="section">
+			<view class="section-header" @click="openInspections"><text>我的待办</text><text class="section-link">{{ todoTotal }} 项 · 查看全部</text></view>
+			<view class="todo-card">
+				<view v-for="task in todoRows" :key="task.id" class="todo-row" @click="openTask(task.id)">
+					<view class="todo-main">
+						<view class="todo-title"><text>{{ task.equipmentName }}</text><text :class="['todo-status', task.taskStatus.toLowerCase()]">{{ taskStatusLabel(task.taskStatus) }}</text></view>
+						<text class="todo-scheme">{{ task.schemeNameSnapshot }}</text>
+						<view class="todo-meta"><text>{{ task.taskCode }}</text><text>截止 {{ dateTime(task.dueTime) }}</text></view>
+					</view>
+					<text class="todo-arrow">›</text>
+				</view>
+				<view v-if="todoLoading" class="todo-empty">正在加载待办任务…</view>
+				<view v-else-if="todoError" class="todo-empty error-text" @click.stop="loadTodos">{{ todoError }} · 点击重试</view>
+				<view v-else-if="!todoRows.length" class="todo-empty">当前没有待执行的点检任务</view>
+			</view>
+		</view>
+
+		<view class="section">
 			<view class="section-header"><text>现场作业</text></view>
 			<view class="action-grid">
 				<view class="action primary" @click="openScan"><text class="action-icon">扫</text><text>设备扫码</text></view>
@@ -64,11 +81,13 @@
 	import { computed, ref } from 'vue'
 	import { onLoad, onPullDownRefresh, onShow } from '@dcloudio/uni-app'
 	import { connected, initializeNetwork, networkType } from '../../platform/network.js'
+	import { inspectionApi } from '../../api/inspection.js'
 	import { mobileState, refreshMobileBootstrap } from '../../stores/mobile.js'
 	import { displayName, sessionState } from '../../stores/session.js'
 	import { ROUTES, navigateTo, routeWithQuery } from '../../constants/routes.js'
 	import { checkAndroidUpgrade } from '../../utils/version.js'
-	import { isServiceUnavailable } from '../../utils/errors.js'
+	import { errorMessage, isServiceUnavailable } from '../../utils/errors.js'
+	import { inspectionTodoRows } from '../../utils/inspection-todos.js'
 	import AppBottomNav from '../../components/AppBottomNav.vue'
 
 	let serviceAlertShown = false
@@ -80,6 +99,11 @@
 	const report = computed(() => mobileState.bootstrap?.personalInspectionReport || {})
 	const completionRate = computed(() => report.value.due ? Math.round((report.value.completed || 0) * 100 / report.value.due) : 0)
 	const unreadMessages = computed(() => (mobileState.bootstrap?.messages || []).filter((item) => !item.readTime).length)
+	const todoRows = ref([])
+	const todoTotal = ref(0)
+	const todoLoading = ref(false)
+	const todoError = ref('')
+	const taskLabels = { PENDING: '待执行', IN_PROGRESS: '执行中', OVERDUE: '已逾期' }
 
 	onLoad(() => {
 		initializeNetwork()
@@ -98,6 +122,7 @@
 			const bootstrap = await refreshMobileBootstrap()
 			serviceAlertShown = false
 			checkAndroidUpgrade(bootstrap?.androidVersion)
+			await loadTodos()
 		} catch (error) {
 			if (isServiceUnavailable(error) && !serviceAlertShown) {
 				serviceAlertShown = true
@@ -109,6 +134,22 @@
 			}
 		}
 	}
+
+	async function loadTodos() {
+		if (todoLoading.value) return
+		todoLoading.value = true; todoError.value = ''
+		try {
+			const result = await inspectionApi.tasks({ mineOnly: true, page: 1, pageSize: 100 })
+			const active = inspectionTodoRows(result?.records || [], 100)
+			todoTotal.value = active.length
+			todoRows.value = active.slice(0, 5)
+		} catch (cause) { todoError.value = errorMessage(cause, '待办任务加载失败') }
+		finally { todoLoading.value = false }
+	}
+
+	function taskStatusLabel(status) { return taskLabels[status] || status }
+	function dateTime(value) { return value ? String(value).replace('T', ' ').slice(0, 16) : '—' }
+	function openTask(id) { navigateTo(routeWithQuery('/pages/inspection/detail', { id })) }
 
 	function openProfile() { navigateTo(ROUTES.profile) }
 	function openScan() { navigateTo(ROUTES.scan) }
@@ -150,6 +191,20 @@
 	.inspection-stat { flex: 1; color: var(--brand-secondary, #3e3a39); text-align: center; }
 	.inspection-stat text:first-child { font-size: 31rpx; font-weight: 750; }
 	.inspection-stat text:last-child { margin-top: 7rpx; color: #8b9690; font-size: 21rpx; }
+	.todo-card { overflow: hidden; border-radius: 24rpx; background: #fff; box-shadow: 0 12rpx 38rpx rgba(25,53,42,.06); }
+	.todo-row { display: flex; align-items: center; gap: 18rpx; padding: 25rpx 24rpx; border-bottom: 1rpx solid #edf1ef; }
+	.todo-row:last-child { border-bottom: 0; }
+	.todo-main { min-width: 0; flex: 1; }
+	.todo-title, .todo-meta { display: flex; align-items: center; justify-content: space-between; gap: 16rpx; }
+	.todo-title > text:first-child { overflow: hidden; color: #203d31; font-size: 28rpx; font-weight: 760; text-overflow: ellipsis; white-space: nowrap; }
+	.todo-status { flex: none; padding: 6rpx 14rpx; border-radius: 18rpx; color: #176f47; background: #e6f5ed; font-size: 20rpx; }
+	.todo-status.overdue { color: #a00008; background: #ffeded; }
+	.todo-status.in_progress { color: #986306; background: #fff3dc; }
+	.todo-scheme { display: block; overflow: hidden; margin-top: 7rpx; color: #75827c; font-size: 23rpx; text-overflow: ellipsis; white-space: nowrap; }
+	.todo-meta { margin-top: 11rpx; color: #929b96; font-size: 20rpx; }
+	.todo-arrow { color: var(--brand-primary, #1c7d50); font-size: 42rpx; }
+	.todo-empty { padding: 40rpx 24rpx; color: #8a958f; font-size: 23rpx; text-align: center; }
+	.todo-empty.error-text { color: #a00008; }
 	.action-grid { display: grid; grid-template-columns: repeat(3, 1fr); padding: 26rpx 8rpx; border-radius: 24rpx; background: #fff; box-shadow: 0 12rpx 38rpx rgba(25,53,42,.06); }
 	.action { display: flex; align-items: center; flex-direction: column; color: #4e5a54; font-size: 23rpx; }
 	.action-icon { display: flex; width: 78rpx; height: 78rpx; align-items: center; justify-content: center; margin-bottom: 13rpx; border-radius: 25rpx; color: #fff; background: var(--brand-primary, #1c7d50); font-size: 29rpx; font-weight: 750; }

@@ -361,13 +361,27 @@
                e.equipment_code,
                e.equipment_name,
                category.category_name,
+               e.model,
+               e.specification,
+               e.brand,
+               e.manufacturer,
+               e.factory_serial_number,
+               e.production_date,
+               e.commissioning_date,
                organization.organization_name,
                location.location_name,
+               e.asset_number,
+               e.lifecycle_stage,
+               e.critical_flag,
+               e.special_flag,
+               e.oee_enabled,
+               e.description,
                COALESCE(current_status.status_code, 'OFFLINE') AS status_code,
                COALESCE(palette.status_name, '离线') AS status_name,
                COALESCE(palette.display_color, '#64748b') AS status_color,
                current_status.status_since,
-               responsible.real_name AS responsible_name
+               responsible.real_name AS responsible_name,
+               e.updated_time
         FROM equipment_barcode barcode
         JOIN equipment e
           ON e.tenant_id = barcode.tenant_id

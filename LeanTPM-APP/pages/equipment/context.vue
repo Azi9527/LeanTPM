@@ -8,24 +8,52 @@
 
 		<template v-if="context">
 			<view class="hero">
-				<view class="hero-line"><text class="code">{{ context.equipment.equipmentCode }}</text><text class="status">{{ context.equipment.statusName }}</text></view>
+				<view class="hero-line"><text class="code">{{ context.equipment.equipmentCode }}</text><text class="status" :style="{ backgroundColor: context.equipment.statusColor || undefined }">{{ context.equipment.statusName }}</text></view>
 				<text class="equipment-name">{{ context.equipment.equipmentName }}</text>
 				<text class="category">{{ context.equipment.categoryName }}</text>
 			</view>
 
 			<view class="detail-card">
+				<text class="section-title">管理信息</text>
 				<view><text>所属组织</text><text>{{ context.equipment.organizationName || '未设置' }}</text></view>
 				<view><text>安装位置</text><text>{{ context.equipment.locationName || '未设置' }}</text></view>
 				<view><text>设备负责人</text><text>{{ context.equipment.responsibleName || '未设置' }}</text></view>
 				<view><text>状态开始</text><text>{{ dateTime(context.equipment.statusSince) }}</text></view>
+				<view><text>档案更新时间</text><text>{{ dateTime(context.equipment.updatedTime) }}</text></view>
+			</view>
+
+			<view class="detail-card">
+				<text class="section-title">技术与资产档案</text>
+				<view><text>型号</text><text>{{ displayValue(context.equipment.model) }}</text></view>
+				<view><text>规格</text><text>{{ displayValue(context.equipment.specification) }}</text></view>
+				<view><text>品牌</text><text>{{ displayValue(context.equipment.brand) }}</text></view>
+				<view><text>制造商</text><text>{{ displayValue(context.equipment.manufacturer) }}</text></view>
+				<view><text>出厂编号</text><text>{{ displayValue(context.equipment.factorySerialNumber) }}</text></view>
+				<view><text>资产编号</text><text>{{ displayValue(context.equipment.assetNumber) }}</text></view>
+				<view><text>生产日期</text><text>{{ dateOnly(context.equipment.productionDate) }}</text></view>
+				<view><text>投产日期</text><text>{{ dateOnly(context.equipment.commissioningDate) }}</text></view>
+				<view><text>生命周期</text><text>{{ lifecycleLabel(context.equipment.lifecycleStage) }}</text></view>
+				<view><text>设备标识</text><text>{{ equipmentTags(context.equipment) }}</text></view>
+				<view><text>纳入 OEE</text><text>{{ yesNo(context.equipment.oeeEnabled) }}</text></view>
+				<view v-if="context.equipment.description"><text>设备说明</text><text>{{ context.equipment.description }}</text></view>
 			</view>
 
 			<view class="action-card">
 				<text class="section-title">现场作业</text>
-				<button class="primary" :disabled="!context.inspectionSchemes.length" @click="openCreate">手工创建点检任务</button>
+				<button class="primary" :disabled="!context.inspectionSchemes.length || !canCreateTask" @click="openCreate">手工创建点检任务</button>
 				<button class="disabled" disabled>设备保养（尚未开发）</button>
 				<button class="disabled" disabled>故障报修（尚未开发）</button>
 				<text v-if="!context.inspectionSchemes.length" class="tip">该设备暂无适用且已发布的点检方案</text>
+				<text v-else-if="!canCreateTask" class="tip">当前账号没有创建点检任务权限，请联系班组长或管理员</text>
+			</view>
+
+			<view class="scheme-card">
+				<view class="section-head"><text class="section-title">适用点检方案</text><text>{{ context.inspectionSchemes.length }}</text></view>
+				<view v-for="scheme in context.inspectionSchemes" :key="scheme.schemeVersionId" class="scheme-row">
+					<view><text>{{ scheme.schemeName }}</text><text>{{ scheme.schemeCode }} · {{ inspectionTypeLabel(scheme.inspectionType) }}</text></view>
+					<text>已发布</text>
+				</view>
+				<text v-if="!context.inspectionSchemes.length" class="empty compact">暂无适用点检方案</text>
 			</view>
 
 			<view class="task-card">
@@ -74,8 +102,8 @@
 	import { onLoad, onPullDownRefresh } from '@dcloudio/uni-app'
 	import { inspectionApi } from '../../api/inspection.js'
 	import { mobileApi } from '../../api/mobile.js'
-	import { ROUTES, navigateTo, routeWithQuery } from '../../constants/routes.js'
-	import { sessionState } from '../../stores/session.js'
+	import { navigateTo, routeWithQuery } from '../../constants/routes.js'
+	import { can, sessionState } from '../../stores/session.js'
 	import { createIdempotencyKey } from '../../utils/idempotency.js'
 	import { errorMessage } from '../../utils/errors.js'
 	import { requireEquipmentToken } from '../../utils/equipment-token.js'
@@ -92,6 +120,8 @@
 	const createForm = reactive({ assigneeUserIds: [], plannedDate: '', dueClock: '23:59', teamCode: '', remark: '设备扫码手工创建' })
 	const schemeLabels = computed(() => context.value?.inspectionSchemes?.map((item) => `${item.schemeName}（${item.schemeCode}）`) || [])
 	const teamLabels = computed(() => ['不指定班组'].concat(context.value?.teams?.map((item) => item.teamName) || []))
+	const canCreateTask = computed(() => can('inspection:task:create'))
+	const lifecycleLabels = { PLANNED: '计划中', IN_SERVICE: '在役', IDLE: '闲置', RETIRED: '已退役', SCRAPPED: '已报废' }
 
 	onLoad((query) => {
 		try { token.value = requireEquipmentToken(query?.token) } catch (cause) { error.value = cause.message; return }
@@ -105,6 +135,17 @@
 		return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
 	}
 	function dateTime(value) { return value ? String(value).replace('T', ' ').slice(0, 16) : '—' }
+	function dateOnly(value) { return value ? String(value).slice(0, 10) : '未设置' }
+	function displayValue(value) { return String(value || '').trim() || '未设置' }
+	function lifecycleLabel(value) { return lifecycleLabels[value] || displayValue(value) }
+	function yesNo(value) { return value === true ? '是' : value === false ? '否' : '未设置' }
+	function equipmentTags(equipment) {
+		const tags = []
+		if (equipment.criticalFlag) tags.push('关键设备')
+		if (equipment.specialFlag) tags.push('特种设备')
+		return tags.join('、') || '普通设备'
+	}
+	function inspectionTypeLabel(value) { return value === 'PROFESSIONAL' ? '专业点检' : value === 'ROUTINE' ? '日常点检' : displayValue(value) }
 
 	async function load() {
 		if (!token.value || loading.value) return
@@ -115,6 +156,7 @@
 	}
 
 	function openCreate() {
+		if (!canCreateTask.value) return uni.showToast({ title: '当前账号无创建任务权限', icon: 'none' })
 		if (!context.value?.inspectionSchemes?.length) return
 		const myId = sessionState.user?.id
 		const me = context.value.assignees.find((item) => item.userId === myId)
@@ -160,7 +202,7 @@
 			}, createKey.value)
 			createVisible.value = false
 			uni.showToast({ title: '点检任务已创建', icon: 'success' })
-			navigateTo(routeWithQuery(ROUTES.inspectionTasks, { taskId: result.id }))
+			navigateTo(routeWithQuery('/pages/inspection/detail', { id: result.id }))
 		} catch (cause) {
 			uni.showModal({ title: '创建失败', content: errorMessage(cause), showCancel: false })
 		} finally { creating.value = false }
@@ -168,7 +210,7 @@
 
 	function openTask(task) {
 		if (task.workflowType !== 'INSPECTION') return uni.showToast({ title: '设备保养尚未开发', icon: 'none' })
-		navigateTo(routeWithQuery(ROUTES.inspectionTasks, { taskId: task.taskId }))
+		navigateTo(routeWithQuery('/pages/inspection/detail', { id: task.taskId }))
 	}
 </script>
 
@@ -185,7 +227,8 @@
 	.equipment-name, .category { display: block; }
 	.equipment-name { margin-top: 18rpx; font-size: 39rpx; font-weight: 800; }
 	.category { margin-top: 9rpx; font-size: 23rpx; opacity: .72; }
-	.detail-card, .action-card, .task-card { margin-top: 21rpx; padding: 29rpx; border-radius: 24rpx; background: #fff; box-shadow: 0 10rpx 34rpx rgba(25,53,42,.06); }
+	.detail-card, .action-card, .task-card, .scheme-card { margin-top: 21rpx; padding: 29rpx; border-radius: 24rpx; background: #fff; box-shadow: 0 10rpx 34rpx rgba(25,53,42,.06); }
+	.detail-card .section-title { display: block; margin-bottom: 10rpx; }
 	.detail-card view { display: flex; justify-content: space-between; gap: 20rpx; padding: 16rpx 0; border-bottom: 1rpx solid #edf1ef; font-size: 24rpx; }
 	.detail-card view:last-child { border: 0; }
 	.detail-card view text:first-child { color: #88938d; }
@@ -197,6 +240,13 @@
 	.tip { display: block; margin-top: 15rpx; color: #b0760e; font-size: 22rpx; }
 	.section-head { display: flex; justify-content: space-between; }
 	.section-head text:last-child { color: var(--brand-primary, #1c7d50); font-size: 28rpx; font-weight: 800; }
+	.scheme-row { display: flex; align-items: center; justify-content: space-between; gap: 20rpx; padding: 22rpx 0; border-top: 1rpx solid #edf1ef; }
+	.scheme-row view { min-width: 0; flex: 1; }
+	.scheme-row view text { display: block; }
+	.scheme-row view text:first-child { color: #294338; font-size: 25rpx; font-weight: 700; }
+	.scheme-row view text:last-child { margin-top: 7rpx; color: #84908a; font-size: 21rpx; }
+	.scheme-row > text { flex: none; padding: 7rpx 13rpx; border-radius: 18rpx; color: #176f47; background: #e6f5ed; font-size: 20rpx; }
+	.empty.compact { display: block; padding: 35rpx 10rpx 12rpx; }
 	.task { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 17rpx; padding: 24rpx 0; border-top: 1rpx solid #edf1ef; }
 	.task-type { padding: 12rpx; border-radius: 12rpx; color: #147145; background: #e5f6ed; font-size: 22rpx; }
 	.task-type.maintenance { color: #9e6709; background: #fff3df; }

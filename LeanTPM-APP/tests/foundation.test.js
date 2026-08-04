@@ -12,6 +12,7 @@ const { normalizeServerBaseUrl, testServerConnection } = await import('../utils/
 const { createIdempotencyKey } = await import('../utils/idempotency.js')
 const { brandingLogoSource, normalizeBranding } = await import('../utils/branding.js')
 const { reportPeriodRange } = await import('../utils/report-period.js')
+const { inspectionTodoRows } = await import('../utils/inspection-todos.js')
 const { extractEquipmentToken, requireEquipmentToken } = await import('../utils/equipment-token.js')
 const { applyNumericAbnormalState, initialResultDraft, inferAbnormal, validateInspectionResults, buildInspectionPayload } = await import('../utils/inspection-results.js')
 const { saveDraftEnvelope, loadDraftEnvelope, queuePhoto, attachQueuedPhotoToDraft, listQueuedPhotos, removeDraftEnvelope } = await import('../stores/offline.js')
@@ -70,6 +71,17 @@ test('builds business-friendly report shortcut periods', () => {
 	assert.deepEqual(reportPeriodRange('today', reference), {
 		startDate: '2026-08-04', endDate: '2026-08-04'
 	})
+})
+
+test('orders active inspection todos for direct execution', () => {
+	const rows = [
+		{ id: 4, taskStatus: 'COMPLETED', dueTime: '2026-08-04T08:00:00' },
+		{ id: 3, taskStatus: 'PENDING', dueTime: '2026-08-05T08:00:00' },
+		{ id: 2, taskStatus: 'OVERDUE', dueTime: '2026-08-03T08:00:00' },
+		{ id: 1, taskStatus: 'IN_PROGRESS', dueTime: '2026-08-04T09:00:00' }
+	]
+	assert.deepEqual(inspectionTodoRows(rows).map((task) => task.id), [2, 1, 3])
+	assert.deepEqual(inspectionTodoRows(rows, 2).map((task) => task.id), [2, 1])
 })
 
 test('extracts LeanTPM equipment tokens from labels and URLs', () => {

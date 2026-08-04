@@ -137,13 +137,27 @@ public final class MobileDtos {
             String equipmentCode,
             String equipmentName,
             String categoryName,
+            String model,
+            String specification,
+            String brand,
+            String manufacturer,
+            String factorySerialNumber,
+            LocalDate productionDate,
+            LocalDate commissioningDate,
             String organizationName,
             String locationName,
+            String assetNumber,
+            String lifecycleStage,
+            Boolean criticalFlag,
+            Boolean specialFlag,
+            Boolean oeeEnabled,
+            String description,
             String statusCode,
             String statusName,
             String statusColor,
             LocalDateTime statusSince,
-            String responsibleName
+            String responsibleName,
+            LocalDateTime updatedTime
     ) {
     }
 
