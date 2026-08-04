@@ -105,7 +105,7 @@
 		margin-right: 20rpx;
 		border-radius: 16rpx;
 		color: #ffffff;
-		background: #1c7d50;
+		background: var(--brand-primary, #1c7d50);
 		font-size: 28rpx;
 		font-weight: 700;
 	}
@@ -134,7 +134,7 @@
 
 	.eyebrow {
 		margin-bottom: 16rpx;
-		color: #1c7d50;
+		color: var(--brand-primary, #1c7d50);
 		font-size: 24rpx;
 		font-weight: 700;
 		letter-spacing: 4rpx;
@@ -160,7 +160,7 @@
 
 	.label {
 		margin-bottom: 14rpx;
-		color: #3e3a39;
+		color: var(--brand-secondary, #3e3a39);
 		font-size: 28rpx;
 		font-weight: 600;
 	}
@@ -186,7 +186,7 @@
 		border: 0;
 		border-radius: 18rpx;
 		color: #ffffff;
-		background: #1c7d50;
+		background: var(--brand-primary, #1c7d50);
 		font-size: 30rpx;
 		font-weight: 700;
 	}

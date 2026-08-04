@@ -22,3 +22,10 @@ export function normalizeBranding(settings = {}) {
 		neutralColor: cleanColor(settings.neutralColor, DEFAULT_BRANDING.neutralColor)
 	}
 }
+
+export function brandingLogoSource(value) {
+	const source = String(value || '').trim()
+	if (!source || source === DEFAULT_BRANDING.logoUrl || source.includes('baoshan-mining-logo')) return '/static/branding/baoshan-mining-logo.png'
+	if (/^(data:image\/|https?:\/\/)/i.test(source)) return source
+	return source
+}

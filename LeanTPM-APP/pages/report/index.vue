@@ -1,5 +1,5 @@
 <template>
-	<view class="page">
+	<view class="page" :style="$brandTheme()">
 		<view class="hero"><text class="eyebrow">PERSONAL REPORT</text><text class="title">我的点检绩效</text><text class="range">{{ report.startDate || '—' }} 至 {{ report.endDate || '—' }}</text><text class="rate">{{ completionRate }}%</text><text class="rate-label">任务完成率</text></view>
 		<view v-if="error" class="error" @click="load">{{ error }} · 点击重试</view>
 		<view class="metrics">
@@ -30,7 +30,7 @@
 
 <style>
 	.page { min-height: 100vh; padding: 25rpx 26rpx 60rpx; background: #f4f7f5; }
-	.hero { padding: 38rpx 32rpx; border-radius: 27rpx; color: #fff; background: linear-gradient(140deg, #30302f, #3e3a39); }
+	.hero { padding: 38rpx 32rpx; border-radius: 27rpx; color: #fff; background: linear-gradient(140deg, #30302f, var(--brand-secondary, #3e3a39)); }
 	.eyebrow, .title, .range, .rate, .rate-label { display: block; }
 	.eyebrow { color: #78d2a4; font-size: 19rpx; font-weight: 800; letter-spacing: 4rpx; }
 	.title { margin-top: 10rpx; font-size: 36rpx; font-weight: 850; }
@@ -41,13 +41,13 @@
 	.metrics view { text-align: center; }
 	.metrics text { display: block; color: #31483e; font-size: 34rpx; font-weight: 800; }
 	.metrics text:last-child { margin-top: 6rpx; color: #89938e; font-size: 21rpx; font-weight: 400; }
-	.green { color: #1c7d50 !important; }
-	.red { color: #c4000a !important; }
+	.green { color: var(--brand-primary, #1c7d50) !important; }
+	.red { color: var(--brand-accent, #c4000a) !important; }
 	.card { margin-top: 20rpx; padding: 28rpx; border-radius: 22rpx; background: #fff; box-shadow: 0 10rpx 32rpx rgba(25,53,42,.05); }
 	.card-title { display: block; margin-bottom: 12rpx; color: #264236; font-size: 29rpx; font-weight: 750; }
 	.row { display: flex; justify-content: space-between; padding: 18rpx 0; border-bottom: 1rpx solid #edf1ef; color: #718079; font-size: 24rpx; }
 	.row text:last-child { color: #324a40; font-size: 27rpx; font-weight: 750; }
-	.link { margin-top: 22rpx; color: #1c7d50; background: #e9f5ef; font-size: 24rpx; }
+	.link { margin-top: 22rpx; color: var(--brand-primary, #1c7d50); background: #e9f5ef; font-size: 24rpx; }
 	.tip { display: block; margin: 24rpx 10rpx; color: #909a95; font-size: 21rpx; line-height: 1.6; text-align: center; }
 	.error { padding: 40rpx; color: #a00008; text-align: center; }
 </style>

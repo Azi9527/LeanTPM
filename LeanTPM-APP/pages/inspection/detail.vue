@@ -1,5 +1,5 @@
 <template>
-	<view class="page">
+	<view class="page" :style="$brandTheme()">
 		<view v-if="loading && !detail" class="loading">正在加载点检任务…</view>
 		<view v-if="error && !detail" class="error" @click="load">{{ error }} · 点击重试</view>
 		<template v-if="detail">
@@ -48,7 +48,7 @@
 
 					<template v-if="drafts[item.id].abnormal">
 						<textarea class="textarea abnormal-text" :disabled="!executable" :value="drafts[item.id].abnormalDescription" maxlength="1000" placeholder="请描述异常现象" @input="drafts[item.id].abnormalDescription = eventValue($event)" />
-						<view class="stop-row" @click="toggleStop(item)"><text>设备需要停机</text><switch color="#c4000a" :disabled="!executable" :checked="drafts[item.id].equipmentStopRequired" @change="changeStop(item, $event)" /></view>
+						<view class="stop-row" @click="toggleStop(item)"><text>设备需要停机</text><switch :color="brandingState.neutralColor" :disabled="!executable" :checked="drafts[item.id].equipmentStopRequired" @change="changeStop(item, $event)" /></view>
 						<textarea v-if="Boolean(drafts[item.id].equipmentStopRequired) !== Boolean(item.abnormalDefaultStopFlag)" class="textarea reason" :disabled="!executable" :value="drafts[item.id].stopOverrideReason" maxlength="500" placeholder="与默认停机规则不同，请填写调整原因" @input="drafts[item.id].stopOverrideReason = eventValue($event)" />
 					</template>
 					<input v-if="drafts[item.id].skipped" class="skip-reason" :disabled="!executable" :value="drafts[item.id].skipReason" placeholder="请填写跳过原因" @input="drafts[item.id].skipReason = eventValue($event)" />
@@ -306,7 +306,7 @@
 	.page { min-height: 100vh; padding: 23rpx 24rpx 50rpx; background: #f4f7f5; }
 	.loading, .error { padding: 80rpx 24rpx; color: #839089; text-align: center; font-size: 25rpx; }
 	.error { color: #a00008; }
-	.task-hero { padding: 32rpx; border-radius: 26rpx; color: #fff; background: linear-gradient(140deg, #193f31, #1c7d50); }
+	.task-hero { padding: 32rpx; border-radius: 26rpx; color: #fff; background: linear-gradient(140deg, #193f31, var(--brand-primary, #1c7d50)); }
 	.task-line, .task-meta, .stop-row { display: flex; align-items: center; justify-content: space-between; gap: 18rpx; }
 	.code { font-family: monospace; font-size: 22rpx; opacity: .75; }
 	.status { padding: 8rpx 16rpx; border-radius: 20rpx; background: rgba(255,255,255,.18); font-size: 21rpx; }
@@ -320,18 +320,18 @@
 	.notice.success { color: #126e43; background: #e7f6ee; }
 	.item-card { margin-top: 19rpx; padding: 28rpx; border-radius: 23rpx; background: #fff; box-shadow: 0 10rpx 32rpx rgba(25,53,42,.06); }
 	.item-title { display: flex; gap: 17rpx; }
-	.index { display: flex; width: 50rpx; height: 50rpx; align-items: center; justify-content: center; flex: 0 0 auto; border-radius: 50%; color: #fff; background: #1c7d50; font-size: 24rpx; }
+	.index { display: flex; width: 50rpx; height: 50rpx; align-items: center; justify-content: center; flex: 0 0 auto; border-radius: 50%; color: #fff; background: var(--brand-primary, #1c7d50); font-size: 24rpx; }
 	.name, .content { display: block; }
 	.name { color: #203d31; font-size: 29rpx; font-weight: 750; }
-	.required { color: #1c7d50; font-size: 19rpx; }
+	.required { color: var(--brand-primary, #1c7d50); font-size: 19rpx; }
 	.content { margin-top: 8rpx; color: #6e7b75; font-size: 23rpx; line-height: 1.5; }
 	.standard { margin-top: 22rpx; padding: 20rpx; border-radius: 15rpx; color: #4e5d56; background: #f3f6f4; font-size: 23rpx; line-height: 1.55; }
 	.standard-label { color: #263f35; font-weight: 700; }
 	.safety { margin-top: 15rpx; padding: 17rpx; border-radius: 14rpx; color: #9a680d; background: #fff5e3; font-size: 22rpx; }
 	.choice-row { display: grid; grid-template-columns: 1fr 1fr; gap: 15rpx; margin-top: 23rpx; }
 	.choice { padding: 21rpx; border: 2rpx solid #dce5e0; border-radius: 15rpx; color: #68756f; text-align: center; font-size: 26rpx; }
-	.choice.selected { border-color: #1c7d50; color: #166f47; background: #e9f6ef; }
-	.choice.selected.bad { border-color: #c4000a; color: #a00008; background: #fff0f0; }
+	.choice.selected { border-color: var(--brand-primary, #1c7d50); color: #166f47; background: #e9f6ef; }
+	.choice.selected.bad { border-color: var(--brand-accent, #c4000a); color: #a00008; background: #fff0f0; }
 	.number-row { display: flex; align-items: center; gap: 16rpx; margin-top: 23rpx; }
 	.number-input, .skip-reason { box-sizing: border-box; height: 82rpx; padding: 0 20rpx; border: 2rpx solid #dce5e0; border-radius: 15rpx; font-size: 26rpx; }
 	.number-input { flex: 1; }
@@ -339,11 +339,11 @@
 	.picker { display: flex; height: 82rpx; align-items: center; justify-content: space-between; margin-top: 22rpx; padding: 0 20rpx; border: 2rpx solid #dce5e0; border-radius: 15rpx; font-size: 25rpx; }
 	.multi-row, .flags { display: flex; flex-wrap: wrap; gap: 12rpx; margin-top: 22rpx; }
 	.multi, .flag { padding: 13rpx 18rpx; border: 2rpx solid #dce5e0; border-radius: 13rpx; color: #68756f; font-size: 22rpx; }
-	.multi.selected, .flag.active { border-color: #1c7d50; color: #166e46; background: #e9f6ef; }
-	.flag.photo { margin-left: auto; color: #1c7d50; }
+	.multi.selected, .flag.active { border-color: var(--brand-primary, #1c7d50); color: #166e46; background: #e9f6ef; }
+	.flag.photo { margin-left: auto; color: var(--brand-primary, #1c7d50); }
 	.attachments { margin-top: 18rpx; padding: 17rpx; border-radius: 14rpx; background: #f4f7f5; }
 	.attachments-title { display: block; margin-bottom: 10rpx; color: #506158; font-size: 23rpx; font-weight: 700; }
-	.attachment { display: flex; align-items: center; justify-content: space-between; gap: 14rpx; padding: 15rpx 0; border-top: 1rpx solid #e3e9e6; color: #1c7d50; font-size: 22rpx; }
+	.attachment { display: flex; align-items: center; justify-content: space-between; gap: 14rpx; padding: 15rpx 0; border-top: 1rpx solid #e3e9e6; color: var(--brand-primary, #1c7d50); font-size: 22rpx; }
 	.attachment view text { display: block; color: #45574e; }
 	.attachment view text:last-child { margin-top: 5rpx; color: #8c9691; font-size: 19rpx; }
 	.abnormal-text { border-color: #efb2b5; background: #fffafa; }
@@ -357,7 +357,7 @@
 	.bottom-space { height: calc(125rpx + env(safe-area-inset-bottom)); }
 	.actions { position: fixed; z-index: 20; right: 0; bottom: 0; left: 0; display: grid; grid-template-columns: 1fr 1.4fr; gap: 16rpx; padding: 18rpx 24rpx calc(18rpx + env(safe-area-inset-bottom)); border-top: 1rpx solid #e3e9e6; background: rgba(255,255,255,.97); }
 	.actions button { margin: 0; border-radius: 16rpx; font-size: 27rpx; }
-	.draft { color: #1c7d50; background: #e9f5ef; }
-	.submit { color: #fff; background: #1c7d50; }
+	.draft { color: var(--brand-primary, #1c7d50); background: #e9f5ef; }
+	.submit { color: #fff; background: var(--brand-primary, #1c7d50); }
 	.watermark-canvas { position: fixed; z-index: -10; left: -3000px; bottom: -3000px; width: 1600px; height: 2000px; opacity: 0; }
 </style>

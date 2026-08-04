@@ -1,5 +1,5 @@
 <template>
-	<view class="page">
+	<view class="page" :style="$brandTheme()">
 		<view class="scanner-card">
 			<view class="scan-frame"><view/><view/><view/><view/><text>▦</text></view>
 			<text class="title">扫描设备二维码</text>
@@ -55,9 +55,9 @@
 	.page { min-height: 100vh; padding: 34rpx 28rpx 60rpx; background: #f4f7f5; }
 	.scanner-card, .manual-card { padding: 38rpx 30rpx; border-radius: 28rpx; background: #fff; box-shadow: 0 14rpx 42rpx rgba(25,53,42,.07); }
 	.scanner-card { display: flex; align-items: center; flex-direction: column; text-align: center; }
-	.scan-frame { position: relative; display: flex; width: 330rpx; height: 330rpx; align-items: center; justify-content: center; margin: 24rpx 0 34rpx; border-radius: 30rpx; color: #1c7d50; background: #edf7f2; }
+	.scan-frame { position: relative; display: flex; width: 330rpx; height: 330rpx; align-items: center; justify-content: center; margin: 24rpx 0 34rpx; border-radius: 30rpx; color: var(--brand-primary, #1c7d50); background: #edf7f2; }
 	.scan-frame text { font-size: 110rpx; opacity: .48; }
-	.scan-frame view { position: absolute; width: 60rpx; height: 60rpx; border-color: #1c7d50; }
+	.scan-frame view { position: absolute; width: 60rpx; height: 60rpx; border-color: var(--brand-primary, #1c7d50); }
 	.scan-frame view:nth-child(1) { top: 18rpx; left: 18rpx; border-top: 7rpx solid; border-left: 7rpx solid; }
 	.scan-frame view:nth-child(2) { top: 18rpx; right: 18rpx; border-top: 7rpx solid; border-right: 7rpx solid; }
 	.scan-frame view:nth-child(3) { bottom: 18rpx; left: 18rpx; border-bottom: 7rpx solid; border-left: 7rpx solid; }
@@ -66,9 +66,9 @@
 	.title { color: #1e3b2f; font-size: 34rpx; font-weight: 800; }
 	.hint, .web-hint { margin-top: 14rpx; color: #7b8882; font-size: 24rpx; line-height: 1.65; }
 	.primary, .secondary { width: 100%; margin-top: 30rpx; border-radius: 17rpx; font-size: 28rpx; }
-	.primary { color: #fff; background: #1c7d50; }
+	.primary { color: #fff; background: var(--brand-primary, #1c7d50); }
 	.manual-card { margin-top: 24rpx; }
 	.manual-title { color: #294538; font-size: 28rpx; font-weight: 700; }
 	.textarea { box-sizing: border-box; width: 100%; height: 160rpx; margin-top: 22rpx; padding: 20rpx; border: 2rpx solid #dce6e1; border-radius: 17rpx; font-size: 25rpx; }
-	.secondary { color: #1c7d50; background: #e9f5ef; }
+	.secondary { color: var(--brand-primary, #1c7d50); background: #e9f5ef; }
 </style>

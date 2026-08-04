@@ -1,7 +1,7 @@
 <template>
-	<view class="page">
+	<view class="page" :style="$brandTheme()">
 		<view class="brand">
-			<view class="mark">LT</view>
+			<image class="brand-logo" :src="logoSource" mode="aspectFit" />
 			<view>
 				<text class="brand-name">LeanTPM</text>
 				<text class="brand-subtitle">{{ brandingState.subtitle }}</text>
@@ -81,13 +81,14 @@
 </template>
 
 <script setup>
-	import { reactive, ref } from 'vue'
+	import { computed, reactive, ref } from 'vue'
 	import { onLoad } from '@dcloudio/uni-app'
 	import { authApi } from '../../api/auth.js'
 	import { ROUTES, reLaunchTo } from '../../constants/routes.js'
 	import { brandingState, initializeBranding } from '../../stores/branding.js'
 	import { rememberedUsername, signIn } from '../../stores/session.js'
 	import { errorMessage } from '../../utils/errors.js'
+	import { brandingLogoSource } from '../../utils/branding.js'
 
 	const form = reactive({ username: '', password: '', captchaCode: '' })
 	const challenge = ref({ enabled: false })
@@ -95,6 +96,7 @@
 	const captchaLoading = ref(false)
 	const remember = ref(true)
 	const showPassword = ref(false)
+	const logoSource = computed(() => brandingLogoSource(brandingState.logoUrl))
 
 	onLoad(async () => {
 		form.username = rememberedUsername()
@@ -165,32 +167,33 @@
 	}
 
 	.brand { display: flex; align-items: center; margin-bottom: 72rpx; }
-	.mark { display: flex; width: 76rpx; height: 76rpx; align-items: center; justify-content: center; margin-right: 20rpx; border-radius: 18rpx; color: #fff; background: #1c7d50; font-size: 28rpx; font-weight: 800; }
+	.mark { display: flex; width: 76rpx; height: 76rpx; align-items: center; justify-content: center; margin-right: 20rpx; border-radius: 18rpx; color: #fff; background: var(--brand-primary, #1c7d50); font-size: 28rpx; font-weight: 800; }
+	.brand-logo { width: 180rpx; height: 86rpx; margin-right: 20rpx; }
 	.brand-name, .brand-subtitle, .eyebrow, .title, .description, .label, .login-help { display: block; }
 	.brand-name { color: #19352a; font-size: 40rpx; font-weight: 800; }
 	.brand-subtitle { margin-top: 3rpx; color: #78847f; font-size: 22rpx; }
 	.login-card { padding: 46rpx 34rpx 34rpx; border: 1rpx solid rgba(28, 125, 80, .12); border-radius: 32rpx; background: #fff; box-shadow: 0 24rpx 70rpx rgba(28, 70, 51, .1); }
-	.eyebrow { color: #1c7d50; font-size: 23rpx; font-weight: 700; letter-spacing: 4rpx; }
+	.eyebrow { color: var(--brand-primary, #1c7d50); font-size: 23rpx; font-weight: 700; letter-spacing: 4rpx; }
 	.title { margin-top: 12rpx; color: #19352a; font-size: 46rpx; font-weight: 800; }
 	.description { margin: 14rpx 0 40rpx; color: #7a8580; font-size: 26rpx; line-height: 1.6; }
 	.field { margin-bottom: 28rpx; }
-	.label { margin-bottom: 13rpx; color: #3e3a39; font-size: 27rpx; font-weight: 600; }
+	.label { margin-bottom: 13rpx; color: var(--brand-secondary, #3e3a39); font-size: 27rpx; font-weight: 600; }
 	.input, .password-field, .captcha-input { box-sizing: border-box; height: 92rpx; border: 2rpx solid #dce5e0; border-radius: 17rpx; background: #fff; font-size: 28rpx; }
 	.input, .captcha-input { width: 100%; padding: 0 25rpx; }
 	.password-field { display: flex; align-items: center; padding: 0 23rpx; }
 	.password-input { flex: 1; height: 88rpx; font-size: 28rpx; }
-	.password-toggle { padding: 20rpx 0 20rpx 20rpx; color: #1c7d50; font-size: 25rpx; }
+	.password-toggle { padding: 20rpx 0 20rpx 20rpx; color: var(--brand-primary, #1c7d50); font-size: 25rpx; }
 	.captcha-row { display: flex; }
 	.captcha-input { flex: 1; }
-	.captcha-image { display: flex; overflow: hidden; width: 210rpx; height: 92rpx; align-items: center; justify-content: center; margin-left: 16rpx; border-radius: 17rpx; color: #1c7d50; background: #eef7f2; font-size: 24rpx; }
+	.captcha-image { display: flex; overflow: hidden; width: 210rpx; height: 92rpx; align-items: center; justify-content: center; margin-left: 16rpx; border-radius: 17rpx; color: var(--brand-primary, #1c7d50); background: #eef7f2; font-size: 24rpx; }
 	.captcha-image image { width: 100%; height: 100%; }
 	.login-options { display: flex; align-items: center; justify-content: space-between; margin: 4rpx 0 30rpx; }
 	.remember { display: flex; align-items: center; color: #47544e; font-size: 25rpx; }
 	.checkbox { display: flex; width: 34rpx; height: 34rpx; align-items: center; justify-content: center; margin-right: 12rpx; border: 2rpx solid #aeb9b3; border-radius: 8rpx; color: #fff; font-size: 23rpx; }
-	.checkbox.checked { border-color: #1c7d50; background: #1c7d50; }
+	.checkbox.checked { border-color: var(--brand-primary, #1c7d50); background: var(--brand-primary, #1c7d50); }
 	.lock-tip { color: #929b97; font-size: 22rpx; }
-	.primary-button { display: flex; height: 94rpx; align-items: center; justify-content: center; border-radius: 18rpx; color: #fff; background: #1c7d50; font-size: 30rpx; font-weight: 700; }
+	.primary-button { display: flex; height: 94rpx; align-items: center; justify-content: center; border-radius: 18rpx; color: #fff; background: var(--brand-primary, #1c7d50); font-size: 30rpx; font-weight: 700; }
 	.primary-button[disabled] { color: rgba(255,255,255,.78); background: #74aa90; }
 	.login-help { margin-top: 26rpx; color: #909a95; font-size: 23rpx; line-height: 1.6; text-align: center; }
-	.text-button { margin-top: 12rpx; color: #1c7d50; background: transparent; font-size: 25rpx; }
+	.text-button { margin-top: 12rpx; color: var(--brand-primary, #1c7d50); background: transparent; font-size: 25rpx; }
 </style>

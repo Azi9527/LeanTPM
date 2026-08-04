@@ -1,5 +1,5 @@
 <template>
-	<view class="page">
+	<view class="page" :style="$brandTheme()">
 		<scroll-view scroll-x class="tabs"><view v-for="item in tabs" :key="item.value" :class="['tab', { active: status === item.value }]" @click="selectStatus(item.value)">{{ item.label }}</view></scroll-view>
 		<view v-if="error" class="error" @click="load">{{ error }} · 点击重试</view>
 		<view v-for="row in rows" :key="row.id" class="card" @click="open(row)">
@@ -74,7 +74,7 @@
 	.page { min-height: 100vh; padding: 22rpx 25rpx 60rpx; background: #f4f7f5; }
 	.tabs { width: calc(100% + 50rpx); margin: 0 -25rpx 22rpx; white-space: nowrap; }
 	.tab { display: inline-flex; height: 62rpx; align-items: center; margin-left: 17rpx; padding: 0 25rpx; border-radius: 31rpx; color: #68756f; background: #fff; font-size: 24rpx; }
-	.tab.active { color: #fff; background: #1c7d50; }
+	.tab.active { color: #fff; background: var(--brand-primary, #1c7d50); }
 	.card { margin-bottom: 18rpx; padding: 27rpx; border-radius: 22rpx; background: #fff; box-shadow: 0 10rpx 32rpx rgba(25,53,42,.06); }
 	.head, .foot, .sheet-head, .detail, .attachment { display: flex; justify-content: space-between; gap: 18rpx; }
 	.code { color: #77847e; font-family: monospace; font-size: 21rpx; }
@@ -98,7 +98,7 @@
 	.detail text:first-child { flex: 0 0 130rpx; color: #8b9590; }
 	.detail text:last-child { color: #43564c; text-align: right; }
 	.attachment-title { display: block; margin: 27rpx 0 10rpx; color: #2d473b; font-size: 27rpx; font-weight: 750; }
-	.attachment { align-items: center; padding: 19rpx 0; border-bottom: 1rpx solid #e9eeeb; color: #1c7d50; font-size: 22rpx; }
+	.attachment { align-items: center; padding: 19rpx 0; border-bottom: 1rpx solid #e9eeeb; color: var(--brand-primary, #1c7d50); font-size: 22rpx; }
 	.attachment view text { display: block; color: #44564d; }
 	.attachment view text:last-child { margin-top: 5rpx; color: #8b9590; font-size: 19rpx; }
 	.empty.small { padding: 28rpx; }

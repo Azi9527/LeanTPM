@@ -1,5 +1,5 @@
 <template>
-	<view class="page">
+	<view class="page" :style="$brandTheme()">
 		<view class="card">
 			<text class="title">修改初始密码</text>
 			<text class="description">首次登录必须设置新密码。新密码至少 6 位，且不能与当前密码相同。</text>
@@ -55,7 +55,7 @@
 	.title, .description, .label { display: block; }
 	.title { color: #19352a; font-size: 42rpx; font-weight: 800; }
 	.description { margin: 16rpx 0 36rpx; color: #7e8984; font-size: 26rpx; line-height: 1.7; }
-	.label { margin: 24rpx 0 12rpx; color: #3e3a39; font-size: 27rpx; font-weight: 600; }
+	.label { margin: 24rpx 0 12rpx; color: var(--brand-secondary, #3e3a39); font-size: 27rpx; font-weight: 600; }
 	.input { box-sizing: border-box; width: 100%; height: 92rpx; padding: 0 24rpx; border: 2rpx solid #dce5e0; border-radius: 17rpx; font-size: 28rpx; }
-	.primary-button { display: flex; height: 94rpx; align-items: center; justify-content: center; margin-top: 42rpx; border-radius: 18rpx; color: #fff; background: #1c7d50; font-size: 30rpx; font-weight: 700; }
+	.primary-button { display: flex; height: 94rpx; align-items: center; justify-content: center; margin-top: 42rpx; border-radius: 18rpx; color: #fff; background: var(--brand-primary, #1c7d50); font-size: 30rpx; font-weight: 700; }
 </style>

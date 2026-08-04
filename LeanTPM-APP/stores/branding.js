@@ -7,9 +7,20 @@ const state = reactive({ ...DEFAULT_BRANDING })
 
 export const brandingState = readonly(state)
 
+export function brandingThemeStyle() {
+	return {
+		'--brand-primary': state.primaryColor,
+		'--brand-secondary': state.secondaryColor,
+		'--brand-accent': state.neutralColor
+	}
+}
+
 export function applyBranding(settings, persist = true) {
 	Object.assign(state, normalizeBranding(settings))
 	if (persist) setStored(STORAGE_KEYS.branding, { ...state })
+	try {
+		uni.setNavigationBarColor({ frontColor: '#ffffff', backgroundColor: state.primaryColor, animation: { duration: 180, timingFunc: 'easeIn' } })
+	} catch { /* custom-navigation and early startup fallback */ }
 }
 
 export async function initializeBranding() {

@@ -10,7 +10,7 @@ globalThis.uni = {
 
 const { normalizeServerBaseUrl } = await import('../utils/server.js')
 const { createIdempotencyKey } = await import('../utils/idempotency.js')
-const { normalizeBranding } = await import('../utils/branding.js')
+const { brandingLogoSource, normalizeBranding } = await import('../utils/branding.js')
 const { extractEquipmentToken, requireEquipmentToken } = await import('../utils/equipment-token.js')
 const { initialResultDraft, inferAbnormal, validateInspectionResults, buildInspectionPayload } = await import('../utils/inspection-results.js')
 const { saveDraftEnvelope, loadDraftEnvelope, queuePhoto, attachQueuedPhotoToDraft, listQueuedPhotos, removeDraftEnvelope } = await import('../stores/offline.js')
@@ -36,6 +36,8 @@ test('normalizes branding and rejects invalid colors', () => {
 	assert.equal(branding.shortName, '客户矿业')
 	assert.equal(branding.primaryColor, '#abcdef')
 	assert.equal(branding.neutralColor, '#c4000a')
+	assert.equal(brandingLogoSource('/branding/baoshan-mining-logo.png'), '/static/branding/baoshan-mining-logo.png')
+	assert.match(brandingLogoSource('data:image/png;base64,AA=='), /^data:image/)
 })
 
 test('extracts LeanTPM equipment tokens from labels and URLs', () => {

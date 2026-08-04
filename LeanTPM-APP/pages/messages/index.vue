@@ -1,5 +1,5 @@
 <template>
-	<view class="page">
+	<view class="page" :style="$brandTheme()">
 		<view class="heading"><view><text class="eyebrow">ALERTS</text><text class="title">现场消息</text></view><text class="count">{{ unreadCount }} 未读</text></view>
 		<view v-if="error" class="error" @click="load">{{ error }} · 点击重试</view>
 		<view v-for="message in rows" :key="message.id" :class="['card', { unread: !message.readTime }]" @click="openMessage(message)">
@@ -52,11 +52,11 @@
 	.page { min-height: 100vh; padding: 26rpx 25rpx 60rpx; background: #f4f7f5; }
 	.heading { display: flex; align-items: flex-end; justify-content: space-between; margin: 5rpx 4rpx 28rpx; }
 	.eyebrow, .title { display: block; }
-	.eyebrow { color: #1c7d50; font-size: 20rpx; font-weight: 800; letter-spacing: 4rpx; }
+	.eyebrow { color: var(--brand-primary, #1c7d50); font-size: 20rpx; font-weight: 800; letter-spacing: 4rpx; }
 	.title { margin-top: 6rpx; color: #233f33; font-size: 38rpx; font-weight: 850; }
 	.count { color: #8b9690; font-size: 22rpx; }
 	.card { display: grid; grid-template-columns: 76rpx 1fr auto; align-items: center; gap: 18rpx; margin-bottom: 17rpx; padding: 25rpx; border-radius: 22rpx; background: #fff; box-shadow: 0 10rpx 32rpx rgba(25,53,42,.06); }
-	.card.unread { border-left: 7rpx solid #1c7d50; }
+	.card.unread { border-left: 7rpx solid var(--brand-primary, #1c7d50); }
 	.icon { display: flex; width: 72rpx; height: 72rpx; align-items: center; justify-content: center; border-radius: 21rpx; color: #95620b; background: #fff2d9; font-size: 31rpx; font-weight: 900; }
 	.icon.danger { color: #aa0008; background: #ffeded; }
 	.message-title, .body, .time { display: block; }

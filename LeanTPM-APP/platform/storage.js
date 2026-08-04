@@ -1,3 +1,5 @@
+import { secureGet, secureRemove, secureSet } from './secure-storage.js'
+
 const PREFIX = 'leantpm_uni_'
 
 export const STORAGE_KEYS = Object.freeze({
@@ -14,6 +16,12 @@ export const STORAGE_KEYS = Object.freeze({
 	lastMessageIds: `${PREFIX}last_message_ids`
 })
 
+const SECURE_KEYS = new Set([
+	STORAGE_KEYS.accessToken, STORAGE_KEYS.refreshToken,
+	STORAGE_KEYS.accessExpiresAt, STORAGE_KEYS.refreshExpiresAt,
+	STORAGE_KEYS.userProfile, STORAGE_KEYS.drafts, STORAGE_KEYS.photoQueue
+])
+
 function storage() {
 	if (!globalThis.uni) throw new Error('uni storage is unavailable')
 	return globalThis.uni
@@ -21,6 +29,7 @@ function storage() {
 
 export function getStored(key, fallback = null) {
 	try {
+		if (SECURE_KEYS.has(key)) return secureGet(key, fallback)
 		const value = storage().getStorageSync(key)
 		return value === '' || value === undefined || value === null ? fallback : value
 	} catch {
@@ -29,11 +38,13 @@ export function getStored(key, fallback = null) {
 }
 
 export function setStored(key, value) {
+	if (SECURE_KEYS.has(key)) return secureSet(key, value)
 	storage().setStorageSync(key, value)
 }
 
 export function removeStored(key) {
 	try {
+		if (SECURE_KEYS.has(key)) { secureRemove(key); return }
 		storage().removeStorageSync(key)
 	} catch {
 		// A partially initialized runtime may reject storage cleanup; session state is still reset in memory.

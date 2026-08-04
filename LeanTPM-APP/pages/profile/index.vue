@@ -1,5 +1,5 @@
 <template>
-	<view class="page">
+	<view class="page" :style="$brandTheme()">
 		<view class="profile-card">
 			<view class="avatar">{{ displayName().slice(0, 1) }}</view>
 			<view><text class="name">{{ displayName() }}</text><text class="account">{{ sessionState.user?.username }}</text></view>
@@ -92,7 +92,7 @@
 
 <style>
 	.page { box-sizing: border-box; min-height: 100vh; padding: 32rpx 28rpx; background: #f4f7f5; }
-	.profile-card { display: flex; align-items: center; padding: 40rpx 32rpx; border-radius: 26rpx; color: #fff; background: linear-gradient(145deg, #173c2f, #1c7d50); }
+	.profile-card { display: flex; align-items: center; padding: 40rpx 32rpx; border-radius: 26rpx; color: #fff; background: linear-gradient(145deg, #173c2f, var(--brand-primary, #1c7d50)); }
 	.avatar { display: flex; width: 88rpx; height: 88rpx; align-items: center; justify-content: center; margin-right: 24rpx; border: 2rpx solid rgba(255,255,255,.55); border-radius: 28rpx; background: rgba(255,255,255,.13); font-size: 35rpx; font-weight: 800; }
 	.name, .account { display: block; }
 	.name { font-size: 35rpx; font-weight: 750; }
@@ -103,10 +103,10 @@
 	.value { max-width: 68%; color: #87918c; font-size: 24rpx; text-align: right; }
 	.value.server { word-break: break-all; }
 	.arrow { color: #98a29d; font-size: 42rpx; }
-	.logout-button { display: flex; height: 92rpx; align-items: center; justify-content: center; margin-top: 36rpx; border-radius: 18rpx; color: #c4000a; background: #fff; font-size: 28rpx; font-weight: 700; }
+	.logout-button { display: flex; height: 92rpx; align-items: center; justify-content: center; margin-top: 36rpx; border-radius: 18rpx; color: var(--brand-accent, #c4000a); background: #fff; font-size: 28rpx; font-weight: 700; }
 	.version-card { padding-bottom: 22rpx; }
 	.upgrade-warning, .release-notes { display: block; margin: 20rpx 28rpx 0; font-size: 23rpx; line-height: 1.6; }
 	.upgrade-warning { color: #a00008; }
 	.release-notes { color: #7d8883; }
-	.upgrade-button { margin: 22rpx 28rpx 0; color: #fff; background: #1c7d50; font-size: 25rpx; }
+	.upgrade-button { margin: 22rpx 28rpx 0; color: #fff; background: var(--brand-primary, #1c7d50); font-size: 25rpx; }
 </style>

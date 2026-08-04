@@ -1,8 +1,8 @@
 <template>
 	<view class="launch-page">
-		<view class="mark">LT</view>
-		<text class="name">LeanTPM</text>
-		<text class="subtitle">精益设备管理</text>
+		<image class="customer-logo" src="/static/branding/baoshan-mining-logo.png" mode="widthFix" />
+		<text class="name">宝山矿业</text>
+		<text class="subtitle">精益设备管理 · LeanTPM</text>
 		<view class="loading-line"><view class="loading-value"></view></view>
 	</view>
 </template>
@@ -40,7 +40,7 @@
 		flex-direction: column;
 		padding: env(safe-area-inset-top) 48rpx env(safe-area-inset-bottom);
 		color: #ffffff;
-		background: linear-gradient(155deg, #16392d 0%, #1c7d50 72%, #349869 100%);
+		background: linear-gradient(155deg, #16392d 0%, var(--brand-primary, #1c7d50) 72%, #349869 100%);
 	}
 
 	.mark {
@@ -55,6 +55,7 @@
 		font-weight: 800;
 		letter-spacing: 2rpx;
 	}
+	.customer-logo { width: 600rpx; padding: 18rpx; border-radius: 24rpx; background: rgba(255,255,255,.96); }
 
 	.name {
 		margin-top: 34rpx;

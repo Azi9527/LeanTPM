@@ -14,9 +14,10 @@ const manifestSource = fs.readFileSync(path.join(root, 'manifest.json'), 'utf8')
 const withoutComments = manifestSource.replace(/\/\*[\s\S]*?\*\//g, '')
 const manifest = JSON.parse(withoutComments)
 const android = manifest['app-plus']?.distribute?.android
-assert.equal(android?.packagename, 'com.leantpm.mobile.uniapp.dev')
+assert.equal(android?.packagename, 'com.leantpm.mobile')
 assert.equal(android?.minSdkVersion, 29)
 assert.equal(android?.targetSdkVersion, 36)
+assert.ok(manifest['app-plus']?.distribute?.icons?.android?.xxxhdpi, 'Android icon configuration is required')
 
 const forbiddenPermissions = [
 	'ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION', 'READ_PHONE_STATE',

@@ -1,4 +1,5 @@
 import App from './App.vue'
+import { brandingThemeStyle } from './stores/branding.js'
 
 // #ifndef VUE3
 import Vue from 'vue'
@@ -17,6 +18,7 @@ import {
 } from 'vue'
 export function createApp() {
 	const app = createSSRApp(App)
+	app.config.globalProperties.$brandTheme = brandingThemeStyle
 	return {
 		app
 	}

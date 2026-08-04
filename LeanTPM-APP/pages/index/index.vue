@@ -54,7 +54,7 @@
 		justify-content: center;
 		border-radius: 36rpx;
 		color: #ffffff;
-		background: #1c7d50;
+		background: var(--brand-primary, #1c7d50);
 		box-shadow: 0 20rpx 50rpx rgba(28, 125, 80, 0.25);
 		font-size: 64rpx;
 		font-weight: 700;
@@ -91,13 +91,13 @@
 	}
 
 	.status-label {
-		color: #3e3a39;
+		color: var(--brand-secondary, #3e3a39);
 		font-size: 29rpx;
 		font-weight: 600;
 	}
 
 	.status-value {
-		color: #1c7d50;
+		color: var(--brand-primary, #1c7d50);
 		font-size: 26rpx;
 		font-weight: 700;
 	}
@@ -125,9 +125,9 @@
 		width: 100%;
 		height: 92rpx;
 		margin-top: 36rpx;
-		border: 2rpx solid #1c7d50;
+		border: 2rpx solid var(--brand-primary, #1c7d50);
 		border-radius: 18rpx;
-		color: #1c7d50;
+		color: var(--brand-primary, #1c7d50);
 		background: transparent;
 		font-size: 28rpx;
 		font-weight: 700;

@@ -1,5 +1,5 @@
 <template>
-	<view class="page">
+	<view class="page" :style="$brandTheme()">
 		<view class="filter-scroll">
 			<scroll-view scroll-x class="filters">
 				<view
@@ -87,9 +87,9 @@
 	.filter-scroll { margin: 0 -26rpx 22rpx; }
 	.filters { width: 100%; white-space: nowrap; }
 	.filter { display: inline-flex; height: 64rpx; align-items: center; margin-left: 18rpx; padding: 0 29rpx; border-radius: 32rpx; color: #69766f; background: #fff; font-size: 25rpx; }
-	.filter.active { color: #fff; background: #1c7d50; }
+	.filter.active { color: #fff; background: var(--brand-primary, #1c7d50); }
 	.summary { display: flex; justify-content: space-between; margin: 12rpx 4rpx 18rpx; color: #234235; font-size: 29rpx; font-weight: 700; }
-	.summary text:last-child { color: #1c7d50; }
+	.summary text:last-child { color: var(--brand-primary, #1c7d50); }
 	.card { margin-bottom: 18rpx; padding: 28rpx; border-radius: 22rpx; background: #fff; box-shadow: 0 10rpx 32rpx rgba(25,53,42,.06); }
 	.card-head { display: flex; justify-content: space-between; gap: 20rpx; }
 	.name, .code, .location, .owner { display: block; }
@@ -103,5 +103,5 @@
 	.owner { margin-top: 9rpx; color: #89938e; font-size: 22rpx; }
 	.error, .empty { padding: 48rpx 24rpx; color: #8d9792; text-align: center; font-size: 25rpx; }
 	.error { margin-bottom: 18rpx; border-radius: 18rpx; color: #a00008; background: #fff0f0; }
-	.load-more { margin-top: 24rpx; color: #1c7d50; background: #e8f5ee; font-size: 25rpx; }
+	.load-more { margin-top: 24rpx; color: var(--brand-primary, #1c7d50); background: #e8f5ee; font-size: 25rpx; }
 </style>

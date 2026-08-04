@@ -1,5 +1,5 @@
 <template>
-	<view class="page">
+	<view class="page" :style="$brandTheme()">
 		<scroll-view scroll-x class="tabs">
 			<view v-for="item in tabs" :key="item.value" :class="['tab', { active: activeStatus === item.value }]" @click="selectStatus(item.value)">{{ item.label }}</view>
 		</scroll-view>
@@ -62,7 +62,7 @@
 	.page { min-height: 100vh; padding: 22rpx 25rpx 60rpx; background: #f4f7f5; }
 	.tabs { width: calc(100% + 50rpx); margin: 0 -25rpx 22rpx; white-space: nowrap; }
 	.tab { display: inline-flex; height: 62rpx; align-items: center; margin-left: 17rpx; padding: 0 25rpx; border-radius: 31rpx; color: #6c7872; background: #fff; font-size: 24rpx; }
-	.tab.active { color: #fff; background: #1c7d50; }
+	.tab.active { color: #fff; background: var(--brand-primary, #1c7d50); }
 	.task-card { margin-bottom: 18rpx; padding: 28rpx; border-radius: 23rpx; background: #fff; box-shadow: 0 10rpx 32rpx rgba(25,53,42,.06); }
 	.task-head, .meta, .progress-text { display: flex; justify-content: space-between; gap: 18rpx; }
 	.code { color: #718079; font-family: monospace; font-size: 22rpx; }
@@ -75,7 +75,7 @@
 	.scheme { margin-top: 7rpx; color: #75827c; font-size: 24rpx; }
 	.meta { margin-top: 22rpx; color: #89938e; font-size: 21rpx; }
 	.progress { overflow: hidden; height: 10rpx; margin-top: 22rpx; border-radius: 5rpx; background: #edf1ef; }
-	.progress view { height: 100%; border-radius: 5rpx; background: #1c7d50; }
+	.progress view { height: 100%; border-radius: 5rpx; background: var(--brand-primary, #1c7d50); }
 	.progress-text { margin-top: 10rpx; color: #8c9691; font-size: 20rpx; }
 	.error, .empty { padding: 55rpx 20rpx; color: #8a948f; text-align: center; font-size: 25rpx; }
 	.error { margin-bottom: 18rpx; border-radius: 18rpx; color: #a00008; background: #fff0f0; }

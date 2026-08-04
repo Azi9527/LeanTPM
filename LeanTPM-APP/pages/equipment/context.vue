@@ -1,5 +1,5 @@
 <template>
-	<view class="page">
+	<view class="page" :style="$brandTheme()">
 		<view v-if="loading && !context" class="loading">正在读取设备信息…</view>
 		<view v-if="error && !context" class="error-card">
 			<text class="error-title">无法查看设备</text><text>{{ error }}</text>
@@ -178,7 +178,7 @@
 	.error-card { padding: 40rpx 30rpx; border-radius: 24rpx; color: #7a4a4d; background: #fff; text-align: center; }
 	.error-card text { display: block; margin-bottom: 18rpx; }
 	.error-title { color: #a00008; font-size: 32rpx; font-weight: 800; }
-	.hero { padding: 36rpx 32rpx; border-radius: 27rpx; color: #fff; background: linear-gradient(140deg, #183e30, #1c7d50); }
+	.hero { padding: 36rpx 32rpx; border-radius: 27rpx; color: #fff; background: linear-gradient(140deg, #183e30, var(--brand-primary, #1c7d50)); }
 	.hero-line { display: flex; align-items: center; justify-content: space-between; }
 	.code { font-family: monospace; font-size: 24rpx; opacity: .76; }
 	.status { padding: 8rpx 18rpx; border-radius: 24rpx; background: rgba(255,255,255,.18); font-size: 22rpx; }
@@ -192,11 +192,11 @@
 	.detail-card view text:last-child { color: #31483e; text-align: right; }
 	.section-title { color: #213e32; font-size: 30rpx; font-weight: 750; }
 	.action-card button { margin-top: 20rpx; border-radius: 16rpx; font-size: 26rpx; }
-	.primary { color: #fff; background: #1c7d50; }
+	.primary { color: #fff; background: var(--brand-primary, #1c7d50); }
 	.disabled { color: #9ca5a0; background: #eef1f0; }
 	.tip { display: block; margin-top: 15rpx; color: #b0760e; font-size: 22rpx; }
 	.section-head { display: flex; justify-content: space-between; }
-	.section-head text:last-child { color: #1c7d50; font-size: 28rpx; font-weight: 800; }
+	.section-head text:last-child { color: var(--brand-primary, #1c7d50); font-size: 28rpx; font-weight: 800; }
 	.task { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 17rpx; padding: 24rpx 0; border-top: 1rpx solid #edf1ef; }
 	.task-type { padding: 12rpx; border-radius: 12rpx; color: #147145; background: #e5f6ed; font-size: 22rpx; }
 	.task-type.maintenance { color: #9e6709; background: #fff3df; }
@@ -211,7 +211,7 @@
 	.picker { display: flex; height: 84rpx; align-items: center; justify-content: space-between; padding: 0 22rpx; border: 2rpx solid #dce5e0; border-radius: 16rpx; font-size: 25rpx; }
 	.chips { display: flex; flex-wrap: wrap; gap: 12rpx; }
 	.chip { padding: 13rpx 17rpx; border: 2rpx solid #dce5e0; border-radius: 12rpx; color: #68766f; font-size: 22rpx; }
-	.chip.selected { border-color: #1c7d50; color: #176d46; background: #e9f6ef; }
+	.chip.selected { border-color: var(--brand-primary, #1c7d50); color: #176d46; background: #e9f6ef; }
 	.remark { box-sizing: border-box; width: 100%; height: 130rpx; padding: 18rpx; border: 2rpx solid #dce5e0; border-radius: 16rpx; font-size: 24rpx; }
 	.submit { margin-top: 32rpx; border-radius: 17rpx; }
 	.safe-space { height: calc(34rpx + env(safe-area-inset-bottom)); }
