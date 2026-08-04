@@ -13,9 +13,9 @@ const { createIdempotencyKey } = await import('../utils/idempotency.js')
 const { brandingLogoSource, normalizeBranding } = await import('../utils/branding.js')
 const { reportPeriodRange } = await import('../utils/report-period.js')
 const { extractEquipmentToken, requireEquipmentToken } = await import('../utils/equipment-token.js')
-const { initialResultDraft, inferAbnormal, validateInspectionResults, buildInspectionPayload } = await import('../utils/inspection-results.js')
+const { applyNumericAbnormalState, initialResultDraft, inferAbnormal, validateInspectionResults, buildInspectionPayload } = await import('../utils/inspection-results.js')
 const { saveDraftEnvelope, loadDraftEnvelope, queuePhoto, attachQueuedPhotoToDraft, listQueuedPhotos, removeDraftEnvelope } = await import('../stores/offline.js')
-const { formatBusinessDateTime, watermarkLines } = await import('../platform/photo.js')
+const { choosePhoto, formatBusinessDateTime, watermarkLines } = await import('../platform/photo.js')
 const { compareVersionCodes } = await import('../utils/version.js')
 const { ApiError, errorMessage, isConflict } = await import('../utils/errors.js')
 const secureStorage = await import('../platform/secure-storage.js')
@@ -89,12 +89,49 @@ test('validates qualitative and quantitative inspection results', () => {
 	assert.match(validateInspectionResults(items, drafts), /防护罩/)
 	drafts[1].resultCode = 'PASS'
 	drafts[2].numericValue = 90
-	drafts[2].abnormal = inferAbnormal(items[1], drafts[2])
+	applyNumericAbnormalState(items[1], drafts[2])
 	drafts[2].abnormalDescription = '超过上限'
 	assert.equal(validateInspectionResults(items, drafts), '')
 	const payload = buildInspectionPayload({ version: 3 }, items, drafts, '现场完成')
 	assert.equal(payload.taskVersion, 3)
 	assert.equal(payload.results[1].numericValue, 90)
+})
+
+test('recalculates numeric abnormal state when a value returns inside its range', () => {
+	const item = { id: 2, resultType: 'NUMBER', minimumValue: 30, maximumValue: 80, abnormalDefaultStopFlag: true }
+	const draft = initialResultDraft(item)
+	assert.equal(draft.equipmentStopRequired, false)
+	draft.numericValue = 90
+	assert.equal(applyNumericAbnormalState(item, draft), true)
+	assert.equal(draft.abnormal, true)
+	assert.equal(draft.equipmentStopRequired, true)
+	draft.abnormalDescription = 'above range'
+	draft.numericValue = 50
+	assert.equal(applyNumericAbnormalState(item, draft), false)
+	assert.equal(draft.abnormal, false)
+	assert.equal(draft.equipmentStopRequired, false)
+	assert.equal(draft.abnormalDescription, '')
+	draft.numericValue = 30
+	assert.equal(inferAbnormal(item, draft), false)
+	draft.numericValue = 80
+	assert.equal(inferAbnormal(item, draft), false)
+})
+
+test('selects camera or phone album as the photo source', async () => {
+	const previousChooseImage = globalThis.uni.chooseImage
+	let receivedSourceType = []
+	globalThis.uni.chooseImage = ({ sourceType, success }) => {
+		receivedSourceType = sourceType
+		success({ tempFilePaths: ['inspection.jpg'] })
+	}
+	try {
+		assert.equal(await choosePhoto(['album']), 'inspection.jpg')
+		assert.deepEqual(receivedSourceType, ['album'])
+		assert.equal(await choosePhoto(['camera']), 'inspection.jpg')
+		assert.deepEqual(receivedSourceType, ['camera'])
+	} finally {
+		globalThis.uni.chooseImage = previousChooseImage
+	}
 })
 
 test('queues photos before pending drafts and writes attachment ids back', () => {

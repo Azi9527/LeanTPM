@@ -10,15 +10,16 @@ export function initialResultDraft(item) {
 	const result = item?.result || {}
 	let selectedValues = []
 	try { selectedValues = JSON.parse(result.selectedValuesJson || '[]') } catch { selectedValues = [] }
+	const abnormal = Boolean(result.abnormalFlag)
 	return {
 		resultCode: result.resultCode || '',
 		numericValue: result.numericValue ?? '',
 		textValue: result.textValue || '',
 		selectedValue: result.selectedValue || '',
 		selectedValues: Array.isArray(selectedValues) ? selectedValues : [],
-		abnormal: Boolean(result.abnormalFlag),
+		abnormal,
 		abnormalDescription: result.abnormalDescription || '',
-		equipmentStopRequired: result.equipmentStopRequired ?? Boolean(item.abnormalDefaultStopFlag),
+		equipmentStopRequired: result.equipmentStopRequired ?? (abnormal && Boolean(item.abnormalDefaultStopFlag)),
 		stopOverrideReason: result.stopOverrideReason || '',
 		skipped: Boolean(result.skippedFlag),
 		skipReason: result.skipReason || '',
@@ -38,6 +39,17 @@ export function inferAbnormal(item, draft) {
 		}
 	}
 	return false
+}
+
+export function applyNumericAbnormalState(item, draft) {
+	const abnormal = inferAbnormal(item, draft)
+	draft.abnormal = abnormal
+	draft.equipmentStopRequired = abnormal ? Boolean(item.abnormalDefaultStopFlag) : false
+	if (!abnormal) {
+		draft.abnormalDescription = ''
+		draft.stopOverrideReason = ''
+	}
+	return abnormal
 }
 
 export function validateInspectionResults(items, drafts) {

@@ -36,7 +36,7 @@
 					<view v-if="executable" class="flags">
 						<view :class="['flag', { active: drafts[item.id].abnormal }]" @click="toggleAbnormal(item)">异常</view>
 						<view v-if="item.skipAllowedFlag" :class="['flag', { active: drafts[item.id].skipped }]" @click="toggleSkip(item)">跳过本项</view>
-						<view class="flag photo" @click="capturePhoto(item)">{{ uploadingItemId === item.id ? '处理中…' : (item.photoRequiredFlag ? '拍照（必需）' : '拍照/附件') }} {{ drafts[item.id].attachmentIds.length }}/{{ item.photoMaxCount }}</view>
+						<view class="flag photo" @click="capturePhoto(item)">{{ uploadingItemId === item.id ? '处理中…' : (item.photoRequiredFlag ? '拍照/相册（必需）' : '拍照/相册') }} {{ drafts[item.id].attachmentIds.length }}/{{ item.photoMaxCount }}</view>
 					</view>
 					<view v-if="attachmentsForItem(item.id).length" class="attachments">
 						<text class="attachments-title">现场附件（{{ attachmentsForItem(item.id).length }}）</text>
@@ -73,7 +73,7 @@
 	import { inspectionApi } from '../../api/inspection.js'
 	import { downloadFile } from '../../api/request.js'
 	import { connected } from '../../platform/network.js'
-	import { chooseCameraPhoto, persistTempFile, renderWatermark, watermarkLines } from '../../platform/photo.js'
+	import { choosePhoto, persistTempFile, renderWatermark, watermarkLines } from '../../platform/photo.js'
 	import { uploadPhotoEvidence, newPhotoQueueId } from '../../services/photo-evidence.js'
 	import { syncPendingWork } from '../../services/offline-sync.js'
 	import { brandingState } from '../../stores/branding.js'
@@ -82,7 +82,7 @@
 	import { displayName } from '../../stores/session.js'
 	import { createIdempotencyKey } from '../../utils/idempotency.js'
 	import { errorMessage, isConflict } from '../../utils/errors.js'
-	import { buildInspectionPayload, inferAbnormal, initialResultDraft, resultOptions, validateInspectionResults } from '../../utils/inspection-results.js'
+	import { applyNumericAbnormalState, buildInspectionPayload, initialResultDraft, resultOptions, validateInspectionResults } from '../../utils/inspection-results.js'
 
 	const taskId = ref(0)
 	const detail = ref(null)
@@ -136,6 +136,9 @@
 				localSavedAt.value = local.updatedAt || ''
 				uni.showToast({ title: local.pendingSubmit ? '已恢复待提交草稿' : '已恢复本地草稿', icon: 'none' })
 			} else if (local) removeDraftEnvelope('inspection', taskId.value)
+			if (executable.value) {
+				for (const item of result.items) if (item.resultType === 'NUMBER') applyNumericAbnormalState(item, drafts[item.id])
+			}
 		} catch (cause) { error.value = errorMessage(cause, '点检任务加载失败') }
 		finally { restoring.value = false; loading.value = false }
 	}
@@ -174,8 +177,7 @@
 	function updateNumber(item, event) {
 		const draft = drafts[item.id]
 		draft.numericValue = eventValue(event)
-		const abnormal = inferAbnormal(item, draft)
-		if (abnormal) { draft.abnormal = true; draft.equipmentStopRequired = Boolean(item.abnormalDefaultStopFlag) }
+		applyNumericAbnormalState(item, draft)
 	}
 	function selectSingle(item, event) { drafts[item.id].selectedValue = options(item)[Number(event.detail.value)] || '' }
 	function toggleMultiple(item, option) {
@@ -209,7 +211,9 @@
 		if (drafts[item.id].attachmentIds.length >= Number(item.photoMaxCount || 10)) return uni.showToast({ title: `最多 ${item.photoMaxCount} 张`, icon: 'none' })
 		uploadingItemId.value = item.id
 		try {
-			const originalPath = await chooseCameraPhoto()
+			const sourceType = await choosePhotoSource()
+			if (!sourceType) return
+			const originalPath = await choosePhoto([sourceType])
 			if (!originalPath) return
 			const capturedAt = new Date()
 			const lines = watermarkLines({ brandName: brandingState.shortName, equipmentName: detail.value.task.equipmentName, equipmentCode: detail.value.task.equipmentCode, taskCode: detail.value.task.taskCode, itemName: item.itemName, executorName: displayName(), faultLocationText: item.inspectionPart || detail.value.task.locationName || item.itemName, capturedAt })
@@ -245,6 +249,16 @@
 		} catch (cause) {
 			if (!String(cause?.errMsg || cause?.message || '').includes('cancel')) uni.showToast({ title: errorMessage(cause, '拍照处理失败'), icon: 'none' })
 		} finally { uploadingItemId.value = 0 }
+	}
+
+	function choosePhotoSource() {
+		return new Promise((resolve) => {
+			uni.showActionSheet({
+				itemList: ['相机拍照', '从手机相册选择'],
+				success: ({ tapIndex }) => resolve(tapIndex === 0 ? 'camera' : 'album'),
+				fail: () => resolve('')
+			})
+		})
 	}
 
 	async function previewAttachment(attachment) {

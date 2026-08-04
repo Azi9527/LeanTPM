@@ -2,9 +2,18 @@ function promisify(call) {
 	return new Promise((resolve, reject) => call({ success: resolve, fail: reject }))
 }
 
-export function chooseCameraPhoto() {
-	return promisify((callbacks) => uni.chooseImage({ count: 1, sizeType: ['compressed'], sourceType: ['camera'], ...callbacks }))
+export function choosePhoto(sourceType = ['camera', 'album']) {
+	const sources = Array.isArray(sourceType) && sourceType.length ? sourceType : ['camera', 'album']
+	return promisify((callbacks) => uni.chooseImage({ count: 1, sizeType: ['compressed'], sourceType: sources, ...callbacks }))
 		.then((result) => result.tempFilePaths?.[0])
+}
+
+export function chooseCameraPhoto() {
+	return choosePhoto(['camera'])
+}
+
+export function chooseAlbumPhoto() {
+	return choosePhoto(['album'])
 }
 
 export function imageInfo(src) {
