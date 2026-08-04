@@ -20,6 +20,8 @@ export type TaskStatus =
   | 'CANCELLED'
   | 'VOIDED'
 
+export type DispatchStatus = 'UNASSIGNED' | 'ASSIGNED' | 'PENDING_EXECUTION' | 'COMPLETED'
+
 export interface ItemRow {
   id: number
   itemCode: string
@@ -209,6 +211,7 @@ export interface TaskRow {
   assigneeUserIdsCsv?: string
   teamCode?: string
   taskStatus: TaskStatus
+  dispatchStatus?: DispatchStatus
   sourceType: 'PLAN' | 'MANUAL' | 'BACKFILL'
   backfillFlag: boolean
   reviewRequiredFlag: boolean
@@ -362,6 +365,7 @@ export interface GenerationResult {
 export interface TaskQuery {
   keyword?: string
   taskStatus?: TaskStatus
+  dispatchStatus?: DispatchStatus
   plannedDate?: string
   timeField?: 'PLANNED_DATE' | 'STARTED_TIME' | 'SUBMITTED_TIME' | 'COMPLETED_TIME'
   startDate?: string

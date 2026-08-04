@@ -334,6 +334,7 @@ class InspectionMySqlIntegrationTest {
         taskService.submit(task.id(), submissionRequest);
         InspectionDtos.TaskDetail submitted = taskService.detail(task.id());
         assertThat(submitted.task().taskStatus()).isEqualTo("COMPLETED");
+        assertThat(submitted.task().dispatchStatus()).isEqualTo("COMPLETED");
         assertThat(submitted.abnormalities()).singleElement().satisfies(abnormal -> {
             assertThat(abnormal.abnormalStatus()).isEqualTo("OPEN");
             assertThat(abnormal.equipmentStopRequired()).isTrue();
@@ -406,6 +407,7 @@ class InspectionMySqlIntegrationTest {
 
         InspectionDtos.TaskQuery resultQuery = new InspectionDtos.TaskQuery(
                 generated.taskCodes().getFirst(),
+                "COMPLETED",
                 "COMPLETED",
                 null,
                 "COMPLETED_TIME",

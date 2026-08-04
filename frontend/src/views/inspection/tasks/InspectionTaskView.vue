@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { pinyin } from 'pinyin-pro'
-import { inspectionApi, type InspectionExportJob, type SchemeRow, type TaskDetail, type TaskQuery, type TaskRow, type TaskStatus } from '@/api/inspection'
+import { inspectionApi, type DispatchStatus, type InspectionExportJob, type SchemeRow, type TaskDetail, type TaskQuery, type TaskRow, type TaskStatus } from '@/api/inspection'
 import { equipmentApi, type EquipmentRow } from '@/api/equipment'
 import { masterDataApi, type OrganizationRow, type ReferenceUser } from '@/api/masterData'
 import { useAuthStore } from '@/stores/auth'
@@ -17,6 +17,7 @@ const total = ref(0)
 const page = ref(1)
 const keyword = ref('')
 const status = ref<TaskStatus>()
+const dispatchStatus = ref<DispatchStatus>()
 const detailVisible = ref(false)
 const createVisible = ref(false)
 const assignVisible = ref(false)
@@ -79,12 +80,22 @@ const statusMeta: Record<TaskStatus, { label: string; type: '' | 'success' | 'wa
   VOIDED: { label: '已作废', type: 'info' },
 }
 
+const dispatchStatusMeta: Record<DispatchStatus, { label: string; type: 'success' | 'warning' | 'danger' | 'info' }> = {
+  UNASSIGNED: { label: '未派工', type: 'danger' },
+  ASSIGNED: { label: '已派工', type: 'success' },
+  PENDING_EXECUTION: { label: '待执行', type: 'warning' },
+  COMPLETED: { label: '已完成', type: 'success' },
+}
+
 onMounted(async () => {
   if (typeof route.query.startDate === 'string' && typeof route.query.endDate === 'string') {
     filters.dateRange = [route.query.startDate, route.query.endDate]
   }
   if (typeof route.query.taskStatus === 'string') {
     status.value = route.query.taskStatus as TaskStatus
+  }
+  if (typeof route.query.dispatchStatus === 'string') {
+    dispatchStatus.value = route.query.dispatchStatus as DispatchStatus
   }
   filters.abnormalOnly = route.query.abnormalOnly === 'true'
   const equipmentId = Number(route.query.equipmentId)
@@ -109,6 +120,7 @@ function taskQuery(includePage: boolean): TaskQuery {
   return {
     keyword: keyword.value || undefined,
     taskStatus: status.value,
+    dispatchStatus: dispatchStatus.value,
     timeField: filters.timeField,
     startDate: filters.dateRange[0] || undefined,
     endDate: filters.dateRange[1] || undefined,
@@ -181,6 +193,7 @@ function formatBytes(value: number) {
 function resetFilters() {
   keyword.value = ''
   status.value = undefined
+  dispatchStatus.value = undefined
   Object.assign(filters, {
     timeField: 'PLANNED_DATE',
     dateRange: [],
@@ -346,8 +359,11 @@ async function close(row: TaskRow, targetStatus: 'CANCELLED' | 'VOIDED') {
       <el-button v-if="auth.can('inspection:task:create')" type="primary" @click="openCreate">创建任务</el-button>
     </header>
     <section class="surface-card query-bar">
-      <el-input v-model="keyword" clearable placeholder="任务、方案或设备" @keyup.enter="page = 1; load()" />
+      <el-input v-model="keyword" clearable placeholder="任务、方案、设备、执行人或班组" @keyup.enter="page = 1; load()" />
       <el-select v-model="status" clearable placeholder="任务状态"><el-option v-for="(meta, value) in statusMeta" :key="value" :label="meta.label" :value="value" /></el-select>
+      <el-select v-model="dispatchStatus" clearable placeholder="派工进度">
+        <el-option v-for="(meta, value) in dispatchStatusMeta" :key="value" :label="meta.label" :value="value" />
+      </el-select>
       <el-select v-model="filters.timeField" placeholder="时间口径">
         <el-option label="计划日期" value="PLANNED_DATE" />
         <el-option label="开始时间" value="STARTED_TIME" />
@@ -398,9 +414,17 @@ async function close(row: TaskRow, targetStatus: 'CANCELLED' | 'VOIDED') {
         <el-table-column label="设备" min-width="190"><template #default="{ row }"><strong>{{ row.equipmentName }}</strong><div class="muted mono">{{ row.equipmentCode }}</div></template></el-table-column>
         <el-table-column prop="plannedDate" label="计划日期" width="115" />
         <el-table-column prop="dueTime" label="截止时间" min-width="175" />
-        <el-table-column prop="assigneeName" label="执行人" min-width="150"><template #default="{ row }">{{ row.assigneeName || '待派工' }}</template></el-table-column>
+        <el-table-column prop="assigneeName" label="执行人" min-width="150"><template #default="{ row }">{{ row.assigneeName || '未派工' }}</template></el-table-column>
         <el-table-column label="进度" width="110"><template #default="{ row }">{{ row.completedItemCount }}/{{ row.itemCount }}<el-badge v-if="row.abnormalItemCount" :value="row.abnormalItemCount" type="danger" /></template></el-table-column>
-        <el-table-column label="状态" width="100"><template #default="{ row }"><el-tag :type="statusMeta[row.taskStatus as TaskStatus].type">{{ statusMeta[row.taskStatus as TaskStatus].label }}</el-tag></template></el-table-column>
+        <el-table-column label="派工进度" width="105">
+          <template #default="{ row }">
+            <el-tag v-if="row.dispatchStatus" :type="dispatchStatusMeta[row.dispatchStatus as DispatchStatus].type">
+              {{ dispatchStatusMeta[row.dispatchStatus as DispatchStatus].label }}
+            </el-tag>
+            <span v-else class="muted">—</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="任务状态" width="100"><template #default="{ row }"><el-tag :type="statusMeta[row.taskStatus as TaskStatus].type">{{ statusMeta[row.taskStatus as TaskStatus].label }}</el-tag></template></el-table-column>
         <el-table-column label="操作" width="260" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="showDetail(row)">详情</el-button>

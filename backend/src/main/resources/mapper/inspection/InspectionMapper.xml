@@ -739,10 +739,70 @@
             AND (task.task_code LIKE CONCAT('%', #{query.keyword}, '%')
                  OR task.scheme_name_snapshot LIKE CONCAT('%', #{query.keyword}, '%')
                  OR e.equipment_code LIKE CONCAT('%', #{query.keyword}, '%')
-                 OR e.equipment_name LIKE CONCAT('%', #{query.keyword}, '%'))
+                 OR e.equipment_name LIKE CONCAT('%', #{query.keyword}, '%')
+                 OR task.team_code LIKE CONCAT('%', #{query.keyword}, '%')
+                 OR EXISTS (
+                     SELECT 1
+                     FROM inspection_task_assignee searched_assignee
+                     JOIN system_user searched_user
+                       ON searched_user.tenant_id = searched_assignee.tenant_id
+                      AND searched_user.id = searched_assignee.user_id
+                      AND searched_user.deleted = 0
+                     WHERE searched_assignee.tenant_id = task.tenant_id
+                       AND searched_assignee.task_id = task.id
+                       AND (
+                           searched_user.real_name LIKE CONCAT('%', #{query.keyword}, '%')
+                           OR searched_user.username LIKE CONCAT('%', #{query.keyword}, '%')
+                       )
+                 ))
         </if>
         <if test="query.taskStatus != null and query.taskStatus != ''">
             AND task.task_status = #{query.taskStatus}
+        </if>
+        <if test="query.dispatchStatus != null and query.dispatchStatus != ''">
+            <choose>
+                <when test="query.dispatchStatus == 'UNASSIGNED'">
+                    AND task.task_status IN ('PENDING', 'IN_PROGRESS', 'OVERDUE')
+                    AND task.assignee_user_id IS NULL
+                    AND NOT EXISTS (
+                        SELECT 1 FROM inspection_task_assignee dispatch_assignee
+                        WHERE dispatch_assignee.tenant_id = task.tenant_id
+                          AND dispatch_assignee.task_id = task.id
+                    )
+                </when>
+                <when test="query.dispatchStatus == 'ASSIGNED'">
+                    AND task.task_status = 'PENDING'
+                    AND COALESCE(task.planned_start_time, TIMESTAMP(task.planned_date))
+                        &gt; CURRENT_TIMESTAMP(3)
+                    AND (
+                        task.assignee_user_id IS NOT NULL
+                        OR EXISTS (
+                            SELECT 1 FROM inspection_task_assignee dispatch_assignee
+                            WHERE dispatch_assignee.tenant_id = task.tenant_id
+                              AND dispatch_assignee.task_id = task.id
+                        )
+                    )
+                </when>
+                <when test="query.dispatchStatus == 'PENDING_EXECUTION'">
+                    AND task.task_status IN ('PENDING', 'IN_PROGRESS', 'OVERDUE')
+                    AND (
+                        task.assignee_user_id IS NOT NULL
+                        OR EXISTS (
+                            SELECT 1 FROM inspection_task_assignee dispatch_assignee
+                            WHERE dispatch_assignee.tenant_id = task.tenant_id
+                              AND dispatch_assignee.task_id = task.id
+                        )
+                    )
+                    AND (
+                        task.task_status != 'PENDING'
+                        OR COALESCE(task.planned_start_time, TIMESTAMP(task.planned_date))
+                            &lt;= CURRENT_TIMESTAMP(3)
+                    )
+                </when>
+                <when test="query.dispatchStatus == 'COMPLETED'">
+                    AND task.task_status IN ('COMPLETED', 'PENDING_REVIEW')
+                </when>
+            </choose>
         </if>
         <if test="query.plannedDate != null">AND task.planned_date = #{query.plannedDate}</if>
         <if test="query.startDate != null">
@@ -853,6 +913,21 @@
             CAST(task.assignee_user_id AS CHAR)
         ) AS assignee_user_ids_csv,
         task.team_code, task.task_status,
+        CASE
+            WHEN task.task_status IN ('COMPLETED', 'PENDING_REVIEW') THEN 'COMPLETED'
+            WHEN task.task_status IN ('PENDING', 'IN_PROGRESS', 'OVERDUE')
+                 AND task.assignee_user_id IS NULL
+                 AND NOT EXISTS (
+                     SELECT 1 FROM inspection_task_assignee dispatch_assignee
+                     WHERE dispatch_assignee.tenant_id = task.tenant_id
+                       AND dispatch_assignee.task_id = task.id
+                 ) THEN 'UNASSIGNED'
+            WHEN task.task_status = 'PENDING'
+                 AND COALESCE(task.planned_start_time, TIMESTAMP(task.planned_date))
+                     &gt; CURRENT_TIMESTAMP(3) THEN 'ASSIGNED'
+            WHEN task.task_status IN ('PENDING', 'IN_PROGRESS', 'OVERDUE') THEN 'PENDING_EXECUTION'
+            ELSE NULL
+        END AS dispatch_status,
         task.source_type, task.backfill_flag, task.review_required_flag,
         task.started_time, task.submitted_time, task.completed_time,
         reviewer.real_name AS reviewer_name, task.review_comment, task.execution_remark,

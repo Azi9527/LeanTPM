@@ -252,6 +252,7 @@ public class InspectionController {
     public ApiResponse<PageResult<InspectionDtos.TaskRow>> tasks(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String taskStatus,
+            @RequestParam(required = false) String dispatchStatus,
             @RequestParam(required = false) LocalDate plannedDate,
             @RequestParam(defaultValue = "PLANNED_DATE") String timeField,
             @RequestParam(required = false) LocalDate startDate,
@@ -268,7 +269,7 @@ public class InspectionController {
             @RequestParam(defaultValue = "20") @Min(1) @Max(200) int pageSize
     ) {
         return ApiResponse.success(taskService.tasks(new InspectionDtos.TaskQuery(
-                keyword, taskStatus, plannedDate, timeField, startDate, endDate,
+                keyword, taskStatus, dispatchStatus, plannedDate, timeField, startDate, endDate,
                 organizationId, teamCode, assigneeUserId, equipmentId, schemeId,
                 abnormalOnly, abnormalSeverity, mineOnly
         ), page, pageSize));
@@ -279,6 +280,7 @@ public class InspectionController {
     public ResponseEntity<byte[]> exportResults(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String taskStatus,
+            @RequestParam(required = false) String dispatchStatus,
             @RequestParam(defaultValue = "PLANNED_DATE") String timeField,
             @RequestParam(required = false) LocalDate startDate,
             @RequestParam(required = false) LocalDate endDate,
@@ -292,7 +294,7 @@ public class InspectionController {
             @RequestParam(defaultValue = "false") boolean mineOnly
     ) {
         byte[] workbook = taskService.exportResults(new InspectionDtos.TaskQuery(
-                keyword, taskStatus, null, timeField, startDate, endDate,
+                keyword, taskStatus, dispatchStatus, null, timeField, startDate, endDate,
                 organizationId, teamCode, assigneeUserId, equipmentId, schemeId,
                 abnormalOnly, abnormalSeverity, mineOnly
         ));

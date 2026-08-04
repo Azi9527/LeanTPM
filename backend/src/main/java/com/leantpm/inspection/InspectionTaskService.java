@@ -52,6 +52,8 @@ public class InspectionTaskService {
             Set.of("PLANNED_DATE", "STARTED_TIME", "SUBMITTED_TIME", "COMPLETED_TIME");
     private static final Set<String> ABNORMAL_SEVERITIES =
             Set.of("LOW", "MEDIUM", "HIGH", "CRITICAL");
+    private static final Set<String> DISPATCH_STATUSES =
+            Set.of("UNASSIGNED", "ASSIGNED", "PENDING_EXECUTION", "COMPLETED");
 
     private final InspectionMapper mapper;
     private final InspectionCalendarMapper calendarMapper;
@@ -92,7 +94,7 @@ public class InspectionTaskService {
             int pageSize
     ) {
         return tasks(new InspectionDtos.TaskQuery(
-                keyword, taskStatus, plannedDate, "PLANNED_DATE", null, null,
+                keyword, taskStatus, null, plannedDate, "PLANNED_DATE", null, null,
                 null, null, null, null, null, false, null, mineOnly
         ), page, pageSize);
     }
@@ -1170,7 +1172,7 @@ public class InspectionTaskService {
     ) {
         InspectionDtos.TaskQuery source = query == null
                 ? new InspectionDtos.TaskQuery(
-                        null, null, null, "PLANNED_DATE", null, null,
+                        null, null, null, null, "PLANNED_DATE", null, null,
                         null, null, null, null, null, false, null, false
                 ) : query;
         String timeField = upper(source.timeField());
@@ -1194,8 +1196,14 @@ public class InspectionTaskService {
                     "INSPECTION_ABNORMAL_SEVERITY_INVALID", "异常等级查询条件不正确"
             );
         }
+        String dispatchStatus = upper(source.dispatchStatus());
+        if (dispatchStatus != null && !DISPATCH_STATUSES.contains(dispatchStatus)) {
+            throw new BusinessException(
+                    "INSPECTION_DISPATCH_STATUS_INVALID", "派工进度查询条件不正确"
+            );
+        }
         return new InspectionDtos.TaskQuery(
-                clean(source.keyword()), upper(source.taskStatus()), source.plannedDate(),
+                clean(source.keyword()), upper(source.taskStatus()), dispatchStatus, source.plannedDate(),
                 timeField, source.startDate(), source.endDate(), source.organizationId(),
                 clean(source.teamCode()), source.assigneeUserId(), source.equipmentId(),
                 source.schemeId(), source.abnormalOnly(), abnormalSeverity,

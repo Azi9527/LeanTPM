@@ -311,6 +311,7 @@ public final class InspectionDtos {
             String assigneeUserIdsCsv,
             String teamCode,
             String taskStatus,
+            String dispatchStatus,
             String sourceType,
             Boolean backfillFlag,
             Boolean reviewRequiredFlag,
@@ -330,6 +331,7 @@ public final class InspectionDtos {
     public record TaskQuery(
             String keyword,
             String taskStatus,
+            String dispatchStatus,
             LocalDate plannedDate,
             String timeField,
             LocalDate startDate,
