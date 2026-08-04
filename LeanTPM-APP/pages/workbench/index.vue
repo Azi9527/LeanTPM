@@ -45,8 +45,12 @@
 				<view class="action primary" @click="openScan"><text class="action-icon">扫</text><text>设备扫码</text></view>
 				<view class="action" @click="openInspections"><text class="action-icon">检</text><text>我的点检</text></view>
 				<view class="action" @click="openAbnormalities"><text class="action-icon danger-bg">异</text><text>点检异常</text></view>
-				<view class="action" @click="openProfile"><text class="action-icon neutral-bg">我</text><text>个人报表</text></view>
+				<view class="action" @click="openReport"><text class="action-icon neutral-bg">我</text><text>个人报表</text></view>
 			</view>
+		</view>
+
+		<view class="section message-card" @click="openMessages">
+			<view><text class="message-title">现场消息</text><text class="message-subtitle">逾期提醒、异常升级与确认事项</text></view><text class="message-count">{{ unreadMessages }}</text>
 		</view>
 
 		<view class="section report-card">
@@ -71,6 +75,7 @@
 	import { mobileState, refreshMobileBootstrap } from '../../stores/mobile.js'
 	import { displayName, sessionState } from '../../stores/session.js'
 	import { ROUTES, navigateTo, routeWithQuery } from '../../constants/routes.js'
+	import { checkAndroidUpgrade } from '../../utils/version.js'
 
 	const todayText = ref('')
 	const avatarText = computed(() => displayName().slice(0, 1))
@@ -78,6 +83,7 @@
 	const inspection = computed(() => mobileState.bootstrap?.inspection || { dueToday: 0, pending: 0, overdue: 0, completedToday: 0 })
 	const report = computed(() => mobileState.bootstrap?.personalInspectionReport || {})
 	const completionRate = computed(() => report.value.due ? Math.round((report.value.completed || 0) * 100 / report.value.due) : 0)
+	const unreadMessages = computed(() => (mobileState.bootstrap?.messages || []).filter((item) => !item.readTime).length)
 
 	onLoad(() => {
 		initializeNetwork()
@@ -92,13 +98,18 @@
 
 	async function load() {
 		if (!sessionState.user) return
-		try { await refreshMobileBootstrap() } catch { /* visible error card is populated by the store */ }
+		try {
+			const bootstrap = await refreshMobileBootstrap()
+			checkAndroidUpgrade(bootstrap?.androidVersion)
+		} catch { /* visible error card is populated by the store */ }
 	}
 
 	function openProfile() { navigateTo(ROUTES.profile) }
 	function openScan() { navigateTo(ROUTES.scan) }
 	function openInspections() { navigateTo(ROUTES.inspectionTasks) }
 	function openAbnormalities() { navigateTo(ROUTES.abnormalities) }
+	function openMessages() { navigateTo(ROUTES.messages) }
+	function openReport() { navigateTo(ROUTES.report) }
 	function openEquipmentStatus(status) { navigateTo(routeWithQuery(ROUTES.equipmentStatus, { status })) }
 </script>
 
@@ -143,6 +154,11 @@
 	.report-title { font-size: 28rpx; font-weight: 700; }
 	.report-range { margin-top: 8rpx; color: rgba(255,255,255,.65); font-size: 20rpx; }
 	.report-rate { font-size: 44rpx; font-weight: 800; }
+	.message-card { display: flex; align-items: center; justify-content: space-between; padding: 28rpx 30rpx; border-radius: 24rpx; background: #fff; box-shadow: 0 12rpx 38rpx rgba(25,53,42,.06); }
+	.message-title, .message-subtitle { display: block; }
+	.message-title { color: #2b4539; font-size: 28rpx; font-weight: 750; }
+	.message-subtitle { margin-top: 6rpx; color: #89938e; font-size: 21rpx; }
+	.message-count { display: flex; min-width: 54rpx; height: 54rpx; align-items: center; justify-content: center; border-radius: 27rpx; color: #fff; background: #c4000a; font-size: 23rpx; font-weight: 800; }
 	.bottom-space { height: calc(130rpx + env(safe-area-inset-bottom)); }
 	.bottom-nav { position: fixed; z-index: 20; right: 0; bottom: 0; left: 0; display: grid; grid-template-columns: repeat(4, 1fr); padding: 15rpx 12rpx calc(15rpx + env(safe-area-inset-bottom)); border-top: 1rpx solid #e5ebe8; background: rgba(255,255,255,.97); }
 	.nav-item { display: flex; align-items: center; flex-direction: column; color: #89948e; font-size: 21rpx; }

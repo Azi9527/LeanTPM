@@ -88,6 +88,20 @@
       }
     },
     {
+      "path": "pages/messages/index",
+      "style": {
+        "navigationBarTitleText": "现场消息",
+        "enablePullDownRefresh": true
+      }
+    },
+    {
+      "path": "pages/report/index",
+      "style": {
+        "navigationBarTitleText": "个人报表",
+        "enablePullDownRefresh": true
+      }
+    },
+    {
       "path": "pages/index/index",
       "style": {
         "navigationBarTitleText": "LeanTPM"

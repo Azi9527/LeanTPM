@@ -15,6 +15,7 @@ const { extractEquipmentToken, requireEquipmentToken } = await import('../utils/
 const { initialResultDraft, inferAbnormal, validateInspectionResults, buildInspectionPayload } = await import('../utils/inspection-results.js')
 const { saveDraftEnvelope, loadDraftEnvelope, queuePhoto, attachQueuedPhotoToDraft, listQueuedPhotos, removeDraftEnvelope } = await import('../stores/offline.js')
 const { watermarkLines } = await import('../platform/photo.js')
+const { compareVersionCodes } = await import('../utils/version.js')
 const { ApiError, errorMessage, isConflict } = await import('../utils/errors.js')
 
 test('normalizes enterprise server URLs', () => {
@@ -76,6 +77,12 @@ test('builds a GPS-free equipment location watermark', () => {
 	assert.equal(lines.length, 5)
 	assert.match(lines.join(' '), /机加二线/)
 	assert.doesNotMatch(lines.join(' '), /GPS|经度|纬度/)
+})
+
+test('enforces minimum Android version codes', () => {
+	assert.equal(compareVersionCodes(99, 100).upgradeRequired, true)
+	assert.equal(compareVersionCodes('100', 100).upgradeRequired, false)
+	assert.equal(compareVersionCodes(101, 100).upgradeRequired, false)
 })
 
 test('preserves API conflict semantics', () => {
