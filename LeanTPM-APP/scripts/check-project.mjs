@@ -14,6 +14,11 @@ const manifestSource = fs.readFileSync(path.join(root, 'manifest.json'), 'utf8')
 const withoutComments = manifestSource.replace(/\/\*[\s\S]*?\*\//g, '')
 const manifest = JSON.parse(withoutComments)
 const android = manifest['app-plus']?.distribute?.android
+assert.equal(
+	manifest['mp-weixin']?.lazyCodeLoading,
+	'requiredComponents',
+	'WeChat mini program must enable component lazy loading'
+)
 assert.equal(android?.packagename, 'com.leantpm.mobile')
 assert.equal(android?.minSdkVersion, 29)
 assert.equal(android?.targetSdkVersion, 36)
@@ -28,6 +33,21 @@ const permissions = JSON.stringify(android.permissions || [])
 for (const permission of forbiddenPermissions) {
 	assert.ok(!permissions.includes(permission), `Forbidden Android permission: ${permission}`)
 }
+
+const mediaExtensions = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.mp3', '.wav', '.aac', '.m4a'])
+const staticRoot = path.join(root, 'static')
+const oversizedMedia = []
+function collectOversizedMedia(directory) {
+	for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+		const fullPath = path.join(directory, entry.name)
+		if (entry.isDirectory()) collectOversizedMedia(fullPath)
+		else if (mediaExtensions.has(path.extname(entry.name).toLowerCase()) && fs.statSync(fullPath).size > 200 * 1024) {
+			oversizedMedia.push(path.relative(root, fullPath))
+		}
+	}
+}
+collectOversizedMedia(staticRoot)
+assert.deepEqual(oversizedMedia, [], `Static media exceeds WeChat's 200 KB recommendation: ${oversizedMedia.join(', ')}`)
 
 const sourceFiles = []
 function collect(directory) {

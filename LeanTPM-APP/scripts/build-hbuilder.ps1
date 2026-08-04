@@ -21,7 +21,7 @@ $env:NODE_ENV = 'production'
 
 Push-Location $compilerDir
 try {
-    & $compiler build
+    & $compiler build --platform $Platform
     if ($LASTEXITCODE -ne 0) {
         throw "uni-app $Platform build failed with exit code $LASTEXITCODE"
     }
