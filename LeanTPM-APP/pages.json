@@ -1,0 +1,24 @@
+{
+  "pages": [
+    {
+      "path": "pages/setup/index",
+      "style": {
+        "navigationBarTitleText": "企业服务配置",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/index/index",
+      "style": {
+        "navigationBarTitleText": "LeanTPM"
+      }
+    }
+  ],
+  "globalStyle": {
+    "navigationBarTextStyle": "white",
+    "navigationBarTitleText": "LeanTPM",
+    "navigationBarBackgroundColor": "#1c7d50",
+    "backgroundColor": "#F5F7F6"
+  },
+  "uniIdRouter": {}
+}
