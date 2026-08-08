@@ -60,6 +60,60 @@ public final class SystemDtos {
     ) {
     }
 
+    public record PersonnelOrganizationRow(
+            long id,
+            long parentId,
+            String organizationCode,
+            String organizationName,
+            String organizationType,
+            Long managerUserId,
+            String managerName,
+            Integer status,
+            Integer version,
+            List<Long> memberUserIds,
+            List<Long> managerUserIds,
+            String managerNames
+    ) {
+    }
+
+    public record PersonnelUserRow(
+            long id,
+            String username,
+            String realName,
+            String employeeNo,
+            Long organizationId,
+            String organizationName,
+            Integer status,
+            List<String> roleCodes,
+            List<Long> teamIds,
+            Long primaryTeamId
+    ) {
+    }
+
+    public record PersonnelOrganizationSnapshot(
+            List<PersonnelOrganizationRow> organizations,
+            List<PersonnelUserRow> users
+    ) {
+    }
+
+    public record UpdateOrganizationManagerRequest(
+            @NotNull List<Long> managerUserIds,
+            @NotNull Integer version
+    ) {
+    }
+
+    public record UpdateOrganizationMembersRequest(
+            @NotNull List<Long> userIds
+    ) {
+    }
+
+    public record UpdateTeamRelationshipsRequest(
+            @NotNull List<Long> managerUserIds,
+            @NotNull List<Long> userIds,
+            @NotNull Integer version
+    ) {
+    }
+
     public record StatusRequest(@NotNull Boolean enabled, @NotNull Integer version) {
     }
 
@@ -138,6 +192,9 @@ public final class SystemDtos {
             Integer status,
             Integer sortOrder
     ) {
+    }
+
+    public record MenuStatusRequest(@NotNull Boolean enabled) {
     }
 
     public record DictionaryTypeRow(

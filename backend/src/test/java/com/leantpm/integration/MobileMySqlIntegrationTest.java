@@ -101,9 +101,166 @@ class MobileMySqlIntegrationTest {
         assertThat(context.equipment().statusCode()).isEqualTo("RUNNING");
         assertThat(context.equipment().statusColor()).startsWith("#");
         assertThat(context.activeTasks()).isNotNull();
+        assertThat(context.todayInspections()).isNotNull();
         assertThat(context.inspectionSchemes())
                 .extracting(MobileDtos.ApplicableInspectionScheme::schemeCode)
                 .contains("ISP-DEMO-CNC-DAILY");
+    }
+
+    @Test
+    void directRegistrationFallsBackToPublishedTemplateWhenEquipmentHasNoDedicatedScheme() {
+        long equipmentId = 3L;
+        String equipmentToken = "b".repeat(64);
+        jdbc.update("""
+                INSERT INTO equipment_barcode
+                    (tenant_id, equipment_id, access_token, barcode_type,
+                     active_slot, generated_by)
+                VALUES (1, ?, ?, 'QR', 1, ?)
+                """, equipmentId, equipmentToken, USER_ID);
+        Long dedicatedSchemeCount = jdbc.queryForObject("""
+                SELECT COUNT(*)
+                FROM inspection_scheme scheme
+                JOIN inspection_scheme_version version
+                  ON version.tenant_id = scheme.tenant_id
+                 AND version.id = scheme.current_version_id
+                JOIN equipment equipment_row
+                  ON equipment_row.tenant_id = scheme.tenant_id
+                 AND equipment_row.id = ?
+                WHERE scheme.tenant_id = 1
+                  AND scheme.status = 1 AND scheme.deleted = 0
+                  AND version.version_status = 'PUBLISHED'
+                  AND (
+                      EXISTS (
+                          SELECT 1 FROM inspection_scheme_equipment relation
+                          WHERE relation.tenant_id = version.tenant_id
+                            AND relation.scheme_version_id = version.id
+                            AND relation.equipment_id = equipment_row.id
+                      )
+                      OR EXISTS (
+                          SELECT 1 FROM inspection_scheme_category relation
+                          WHERE relation.tenant_id = version.tenant_id
+                            AND relation.scheme_version_id = version.id
+                            AND relation.equipment_category_id = equipment_row.category_id
+                      )
+                  )
+                """, Long.class, equipmentId);
+        assertThat(dedicatedSchemeCount).isZero();
+
+        MobileDtos.EquipmentContext context = service.equipment(equipmentToken);
+        assertThat(context.inspectionSchemes()).isNotEmpty();
+
+        MobileDtos.ApplicableInspectionScheme template = context.inspectionSchemes().getFirst();
+        long taskId = service.createDirectInspectionReport(
+                equipmentToken,
+                new MobileDtos.DirectInspectionReportRequest(
+                        template.schemeVersionId(), "无专属方案时扫码登记", false
+                ),
+                "mobile-direct-fallback-it"
+        );
+
+        assertThat(jdbc.queryForObject(
+                "SELECT equipment_id FROM inspection_task WHERE tenant_id = 1 AND id = ?",
+                Long.class,
+                taskId
+        )).isEqualTo(equipmentId);
+        assertThat(jdbc.queryForObject(
+                "SELECT source_type FROM inspection_task WHERE tenant_id = 1 AND id = ?",
+                String.class,
+                taskId
+        )).isEqualTo("QUICK_ENTRY");
+    }
+
+    @Test
+    void upperOrganizationUsesTheSameDescendantScopeForSummaryAndScannedEquipment() {
+        long scopedUserId = 9502L;
+        Long equipmentOrganizationId = jdbc.queryForObject(
+                "SELECT organization_id FROM equipment WHERE tenant_id = 1 AND id = 1",
+                Long.class
+        );
+        Long upperOrganizationId = jdbc.queryForObject(
+                "SELECT parent_id FROM organization WHERE tenant_id = 1 AND id = ?",
+                Long.class,
+                equipmentOrganizationId
+        );
+        Long managerRoleId = jdbc.queryForObject("""
+                SELECT id FROM system_role
+                WHERE tenant_id = 1 AND role_code = 'WORKSHOP_MANAGER' AND deleted = 0
+                LIMIT 1
+                """, Long.class);
+        jdbc.update("""
+                INSERT INTO system_user
+                    (id, tenant_id, username, password_hash, real_name,
+                     organization_id, status, mobile_enabled, must_change_password)
+                VALUES (?, 1, 'mobile_scope_it', 'not-used', '移动端范围测试',
+                        ?, 1, 1, 0)
+                """, scopedUserId, upperOrganizationId);
+        jdbc.update(
+                "INSERT INTO system_user_role (tenant_id, user_id, role_id) VALUES (1, ?, ?)",
+                scopedUserId,
+                managerRoleId
+        );
+        authenticate(scopedUserId, "mobile_scope_it", Set.of("WORKSHOP_MANAGER"));
+
+        Long expectedEquipmentCount = jdbc.queryForObject("""
+                WITH RECURSIVE organization_tree AS (
+                    SELECT id FROM organization
+                    WHERE tenant_id = 1 AND id = ? AND status = 1 AND deleted = 0
+                    UNION ALL
+                    SELECT child.id
+                    FROM organization child
+                    JOIN organization_tree parent ON child.parent_id = parent.id
+                    WHERE child.tenant_id = 1 AND child.status = 1 AND child.deleted = 0
+                )
+                SELECT COUNT(*) FROM equipment
+                WHERE tenant_id = 1 AND status = 1 AND deleted = 0
+                  AND organization_id IN (SELECT id FROM organization_tree)
+                """, Long.class, upperOrganizationId);
+
+        MobileDtos.Bootstrap bootstrap = service.bootstrap();
+        MobileDtos.EquipmentContext context = service.equipment(TOKEN.toUpperCase());
+
+        assertThat(bootstrap.equipmentStatus().total()).isEqualTo(expectedEquipmentCount);
+        assertThat(context.equipment().equipmentId()).isEqualTo(1L);
+    }
+
+    @Test
+    void selfScopeEmployeeCanScanEquipmentInOwnTeam() {
+        long employeeUserId = 9503L;
+        Long equipmentOrganizationId = jdbc.queryForObject(
+                "SELECT organization_id FROM equipment WHERE tenant_id = 1 AND id = 1",
+                Long.class
+        );
+        Long operatorRoleId = jdbc.queryForObject("""
+                SELECT id FROM system_role
+                WHERE tenant_id = 1 AND role_code = 'OPERATOR' AND deleted = 0
+                LIMIT 1
+                """, Long.class);
+        jdbc.update("""
+                INSERT INTO system_user
+                    (id, tenant_id, username, password_hash, real_name,
+                     organization_id, status, mobile_enabled, must_change_password)
+                VALUES (?, 1, 'mobile_self_scope_it', 'not-used', '本班组扫码测试',
+                        ?, 1, 1, 0)
+                """, employeeUserId, equipmentOrganizationId);
+        jdbc.update(
+                "INSERT INTO system_user_role (tenant_id, user_id, role_id) VALUES (1, ?, ?)",
+                employeeUserId,
+                operatorRoleId
+        );
+        authenticate(employeeUserId, "mobile_self_scope_it", Set.of("OPERATOR"));
+
+        Long expectedEquipmentCount = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM equipment
+                WHERE tenant_id = 1 AND status = 1 AND deleted = 0
+                  AND organization_id = ?
+                """, Long.class, equipmentOrganizationId);
+
+        MobileDtos.Bootstrap bootstrap = service.bootstrap();
+        MobileDtos.EquipmentContext context = service.equipment(TOKEN.toUpperCase());
+
+        assertThat(bootstrap.equipmentStatus().total()).isEqualTo(expectedEquipmentCount);
+        assertThat(context.equipment().equipmentId()).isEqualTo(1L);
+        assertThat(context.equipment().organizationName()).isNotBlank();
     }
 
     @Test
@@ -139,11 +296,49 @@ class MobileMySqlIntegrationTest {
         assertThat(report.completed()).isEqualTo(3);
         assertThat(report.pending()).isEqualTo(2);
         assertThat(report.overdue()).isEqualTo(1);
+        assertThat(report.planDue()).isZero();
+        assertThat(report.planCompleted()).isZero();
+        assertThat(report.planOverdue()).isZero();
+        assertThat(report.registered()).isEqualTo(3);
+        assertThat(report.quickRegistered()).isZero();
+        assertThat(report.equipmentCovered()).isEqualTo(1);
         assertThatThrownBy(() -> service.personalInspectionReport(
                 LocalDate.now(), LocalDate.now().minusDays(1)
         )).isInstanceOf(BusinessException.class)
                 .extracting("code")
                 .isEqualTo("MOBILE_REPORT_DATE_RANGE_INVALID");
+    }
+
+    @Test
+    void createsQuickEntryAndWarnsBeforeSameDayDuplicate() {
+        MobileDtos.EquipmentContext context = service.equipment(TOKEN);
+        MobileDtos.ApplicableInspectionScheme scheme = context.inspectionSchemes().getFirst();
+
+        long taskId = service.createDirectInspectionReport(
+                TOKEN,
+                new MobileDtos.DirectInspectionReportRequest(
+                        scheme.schemeVersionId(), "扫码直接登记", true
+                ),
+                "mobile-direct-it-first"
+        );
+
+        assertThat(jdbc.queryForObject(
+                "SELECT source_type FROM inspection_task WHERE tenant_id = 1 AND id = ?",
+                String.class,
+                taskId
+        )).isEqualTo("QUICK_ENTRY");
+        assertThat(service.equipment(TOKEN).todayInspections())
+                .extracting(MobileDtos.TodayInspectionRecord::taskId)
+                .contains(taskId);
+        assertThatThrownBy(() -> service.createDirectInspectionReport(
+                TOKEN,
+                new MobileDtos.DirectInspectionReportRequest(
+                        scheme.schemeVersionId(), "重复扫码", false
+                ),
+                "mobile-direct-it-duplicate"
+        )).isInstanceOf(BusinessException.class)
+                .extracting("code")
+                .isEqualTo("MOBILE_INSPECTION_TODAY_EXISTS");
     }
 
     @Test
@@ -209,6 +404,17 @@ class MobileMySqlIntegrationTest {
         assertThat(service.photoEvidence(created.id()).faultLocationText())
                 .isEqualTo("主轴箱");
         assertThat(service.photoEvidence(created.id()).latitude()).isNull();
+
+        insertAttachment(9603L, "task-original.jpeg", "c".repeat(64));
+        insertAttachment(9604L, "task-watermarked.jpeg", "d".repeat(64));
+        MobileDtos.PhotoEvidence taskLevel = service.registerPhotoEvidence(
+                new MobileDtos.RegisterPhotoEvidenceRequest(
+                        "INSPECTION", taskId, null, 9603L, 9604L,
+                        captured, captured.minusSeconds(12), 12,
+                        "设备现场", "大宝山矿业\n整单现场图片\n2026-08-07 09:00:00"
+                )
+        );
+        assertThat(taskLevel.taskItemId()).isNull();
     }
 
     private void insertAttachment(long id, String name, String sha256) {
@@ -277,13 +483,17 @@ class MobileMySqlIntegrationTest {
     }
 
     private void authenticate() {
+        authenticate(USER_ID, "mobile_it", Set.of("ADMIN"));
+    }
+
+    private void authenticate(long userId, String username, Set<String> roles) {
         CurrentUser current = new CurrentUser(
-                USER_ID,
+                userId,
                 1L,
-                "mobile_it",
+                username,
                 "移动端集成测试",
                 false,
-                Set.of("ADMIN"),
+                roles,
                 Set.of(
                         "mobile:access",
                         "mobile:workbench:view",

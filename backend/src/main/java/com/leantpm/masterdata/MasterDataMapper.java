@@ -86,6 +86,13 @@ public interface MasterDataMapper {
             @Param("operatorId") long operatorId
     );
 
+    int updateLocationOrganizations(
+            @Param("tenantId") long tenantId,
+            @Param("ids") List<Long> ids,
+            @Param("organizationId") long organizationId,
+            @Param("operatorId") long operatorId
+    );
+
     int softDeleteLocation(
             @Param("tenantId") long tenantId,
             @Param("id") long id,

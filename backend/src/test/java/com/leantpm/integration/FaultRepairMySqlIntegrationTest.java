@@ -41,6 +41,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @DirtiesContext
 @Transactional
 class FaultRepairMySqlIntegrationTest {
+    private static final long OPERATOR_ID = 9301L;
     @Autowired
     private FaultService service;
 
@@ -52,14 +53,23 @@ class FaultRepairMySqlIntegrationTest {
 
     @BeforeEach
     void prepare() {
+        jdbc.update("INSERT IGNORE INTO system_user_role (tenant_id, user_id, role_id) VALUES (1, 1, 1)");
         equipmentId = jdbc.queryForObject(
                 "SELECT id FROM equipment WHERE tenant_id = 1 AND equipment_code = 'VIZ-PUMP-01'",
                 Long.class
         );
-        operatorId = jdbc.queryForObject(
-                "SELECT id FROM system_user WHERE tenant_id = 1 AND username = 'operator01'",
-                Long.class
+        jdbc.update("""
+                INSERT INTO system_user
+                    (id, tenant_id, username, password_hash, real_name,
+                     organization_id, status, must_change_password)
+                VALUES (?, 1, 'fault_operator_it', 'not-used',
+                        '故障维修集成测试操作工', 5, 1, 0)
+                """, OPERATOR_ID);
+        jdbc.update(
+                "INSERT INTO system_user_role (tenant_id, user_id, role_id) VALUES (1, ?, 3)",
+                OPERATOR_ID
         );
+        operatorId = OPERATOR_ID;
         authenticateAdmin();
     }
 
@@ -76,7 +86,7 @@ class FaultRepairMySqlIntegrationTest {
         ));
         FaultDtos.ReportRow reported = service.report(reportId);
         assertThat(reported.reportStatus()).isEqualTo("REPORTED");
-        assertThat(status()).isEqualTo("FAULT");
+        assertThat(status()).isEqualTo("STOPPED");
 
         service.acceptReport(reportId, new FaultDtos.VersionRequest(reported.version()));
         FaultDtos.ReportRow accepted = service.report(reportId);
@@ -90,7 +100,7 @@ class FaultRepairMySqlIntegrationTest {
         FaultDtos.RepairRow assigned = service.repair(repairId);
         authenticateOperator();
         service.start(repairId, new FaultDtos.ActionRequest("开始拆检", assigned.version()));
-        assertThat(status()).isEqualTo("REPAIR");
+        assertThat(status()).isEqualTo("STOPPED");
 
         FaultDtos.RepairRow started = service.repair(repairId);
         assertThatThrownBy(() -> service.start(

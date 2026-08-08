@@ -11,11 +11,13 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
+import java.util.Map;
 
 @Validated
 @RestController
@@ -59,6 +61,24 @@ public class MobileController {
             String token
     ) {
         return ApiResponse.success(service.equipment(token));
+    }
+
+    @PostMapping("/equipment/{token}/inspection-reports")
+    @Idempotent
+    @PreAuthorize("hasAuthority('mobile:access') and hasAuthority('mobile:scan') and hasAuthority('inspection:task:execute')")
+    public ApiResponse<Map<String, Long>> createDirectInspectionReport(
+            @PathVariable
+            @Pattern(
+                    regexp = "^[a-fA-F0-9]{64}$",
+                    message = "设备访问令牌格式不正确"
+            )
+            String token,
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @Valid @RequestBody MobileDtos.DirectInspectionReportRequest request
+    ) {
+        return ApiResponse.success(Map.of(
+                "id", service.createDirectInspectionReport(token, request, idempotencyKey)
+        ));
     }
 
     @PostMapping("/photo-evidence")

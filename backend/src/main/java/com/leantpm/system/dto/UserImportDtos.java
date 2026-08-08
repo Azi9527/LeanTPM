@@ -35,7 +35,10 @@ public final class UserImportDtos {
             List<String> roleCodes,
             boolean mobileEnabled,
             String initialPassword,
-            String strategy
+            String strategy,
+            List<String> teamOrganizationCodes,
+            String primaryTeamOrganizationCode,
+            List<String> managedOrganizationCodes
     ) {
     }
 

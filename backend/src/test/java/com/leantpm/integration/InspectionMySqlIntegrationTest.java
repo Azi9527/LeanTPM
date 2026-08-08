@@ -243,9 +243,12 @@ class InspectionMySqlIntegrationTest {
                 1L,
                 null,
                 OPERATOR_ID,
+                List.of(OPERATOR_ID, COLLABORATOR_ID),
                 null,
                 true,
                 true,
+                false,
+                9,
                 LocalDate.now(),
                 null,
                 List.of(
@@ -262,6 +265,8 @@ class InspectionMySqlIntegrationTest {
         ));
         InspectionDtos.SchemeDetail draft = catalogService.scheme(schemeId, null);
         assertThat(draft.version().versionStatus()).isEqualTo("DRAFT");
+        assertThat(draft.version().submissionPhotoRequiredFlag()).isFalse();
+        assertThat(draft.version().submissionPhotoMaxCount()).isEqualTo(9);
 
         catalogService.publish(schemeId, draft.version().id());
         assertThat(catalogService.plans(null, "ACTIVE", 1, 20).records())
@@ -277,6 +282,10 @@ class InspectionMySqlIntegrationTest {
         InspectionDtos.TaskRow generatedTask = taskService.tasks(
                 generated.taskCodes().getFirst(), null, null, false, 1, 20
         ).records().getFirst();
+        assertThat(generatedTask.submissionPhotoRequiredFlag()).isFalse();
+        assertThat(generatedTask.submissionPhotoMaxCount()).isEqualTo(9);
+        assertThat(generatedTask.assigneeUserIdsCsv())
+                .isEqualTo(OPERATOR_ID + "," + COLLABORATOR_ID);
         taskService.assign(
                 generatedTask.id(),
                 new InspectionDtos.AssignTaskRequest(
@@ -329,22 +338,42 @@ class InspectionMySqlIntegrationTest {
 
         InspectionDtos.SaveTaskResultsRequest submissionRequest =
                 new InspectionDtos.SaveTaskResultsRequest(
-                        results, "完成现场点检", task.version()
+                        results, List.of(9199L), "完成现场点检", task.version()
                 );
+        jdbc.update("""
+                INSERT INTO system_attachment
+                    (id, tenant_id, original_name, stored_name, storage_path,
+                     content_type, extension, file_size, sha256, created_by, updated_by)
+                VALUES (9199, 1, '整单现场图片.jpg', 'task-photo.jpg',
+                        'it/task-photo.jpg', 'image/jpeg', 'jpg', 1024, ?, ?, ?)
+                """, "c".repeat(64), USER_ID, USER_ID);
         taskService.submit(task.id(), submissionRequest);
         InspectionDtos.TaskDetail submitted = taskService.detail(task.id());
         assertThat(submitted.task().taskStatus()).isEqualTo("COMPLETED");
         assertThat(submitted.task().dispatchStatus()).isEqualTo("COMPLETED");
+        assertThat(taskService.taskAttachments(task.id()))
+                .filteredOn(attachment -> "TASK_PHOTO".equals(attachment.attachmentType()))
+                .singleElement()
+                .extracting(InspectionDtos.InspectionAttachmentRow::id)
+                .isEqualTo(9199L);
         assertThat(submitted.abnormalities()).singleElement().satisfies(abnormal -> {
             assertThat(abnormal.abnormalStatus()).isEqualTo("OPEN");
             assertThat(abnormal.equipmentStopRequired()).isTrue();
             assertThat(abnormal.equipmentStatusChanged()).isTrue();
         });
+        assertThat(taskService.abnormalities(null, "OPEN", 1, 20).records())
+                .singleElement()
+                .extracting(InspectionDtos.AbnormalRow::taskId)
+                .isEqualTo(task.id());
         authenticateAdmin();
         assertThat(equipmentService.detail(generatedTask.equipmentId())
                 .equipment().currentStatusCode()).isEqualTo("STOPPED");
 
         authenticateCollaborator();
+        assertThat(taskService.abnormalities(null, "OPEN", 1, 20).records())
+                .singleElement()
+                .extracting(InspectionDtos.AbnormalRow::taskId)
+                .isEqualTo(task.id());
         assertThatThrownBy(() -> taskService.submit(task.id(), submissionRequest))
                 .isInstanceOf(BusinessException.class)
                 .extracting("code", "message")
@@ -408,6 +437,7 @@ class InspectionMySqlIntegrationTest {
         InspectionDtos.TaskQuery resultQuery = new InspectionDtos.TaskQuery(
                 generated.taskCodes().getFirst(),
                 "COMPLETED",
+                null,
                 "COMPLETED",
                 null,
                 "COMPLETED_TIME",
@@ -433,7 +463,7 @@ class InspectionMySqlIntegrationTest {
             assertThat(workbook.getSheet("任务汇总").getLastRowNum()).isEqualTo(1);
             assertThat(workbook.getSheet("逐项结果").getLastRowNum()).isEqualTo(3);
             assertThat(workbook.getSheet("异常记录").getLastRowNum()).isEqualTo(1);
-            assertThat(workbook.getSheet("附件索引").getLastRowNum()).isZero();
+            assertThat(workbook.getSheet("附件索引").getLastRowNum()).isEqualTo(1);
             assertThat(workbook.getSheet("逐项结果").getRow(1).getCell(0).getStringCellValue())
                     .isEqualTo(generated.taskCodes().getFirst());
         } catch (Exception exception) {
@@ -478,11 +508,77 @@ class InspectionMySqlIntegrationTest {
         );
         assertThat(manualResult.processedPlans()).isEqualTo(2);
         assertThat(manualResult.nextGenerationDate()).isEqualTo(LocalDate.now());
-        assertThat(catalogService.plans(
+        List<InspectionDtos.PlanRow> manualPlans = catalogService.plans(
                 "EQ-INSPECTION-MANUAL", "ACTIVE", 1, 20
-        ).records())
+        ).records();
+        assertThat(manualPlans)
                 .extracting(InspectionDtos.PlanRow::equipmentId)
                 .containsExactlyInAnyOrder(manualEquipmentOne, manualEquipmentTwo);
+
+        taskService.generate(1L, USER_ID, LocalDate.now());
+        InspectionDtos.PlanRow taskDeletePlan = manualPlans.getFirst();
+        InspectionDtos.PlanRow cascadeDeletePlan = manualPlans.getLast();
+        Long taskDeleteId = jdbc.queryForObject(
+                "SELECT id FROM inspection_task WHERE tenant_id = 1 AND plan_id = ? AND deleted = 0 LIMIT 1",
+                Long.class, taskDeletePlan.id()
+        );
+        Integer taskDeleteVersion = jdbc.queryForObject(
+                "SELECT version FROM inspection_task WHERE tenant_id = 1 AND id = ?",
+                Integer.class, taskDeleteId
+        );
+        taskService.deleteTask(taskDeleteId, taskDeleteVersion);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM inspection_task WHERE id = ? AND deleted = 0",
+                Integer.class, taskDeleteId
+        )).isZero();
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM inspection_task_item WHERE task_id = ? AND deleted = 0",
+                Integer.class, taskDeleteId
+        )).isZero();
+
+        Long cascadeTaskId = jdbc.queryForObject(
+                "SELECT id FROM inspection_task WHERE tenant_id = 1 AND plan_id = ? AND deleted = 0 LIMIT 1",
+                Long.class, cascadeDeletePlan.id()
+        );
+        Integer cascadePlanVersion = jdbc.queryForObject(
+                "SELECT version FROM inspection_plan WHERE tenant_id = 1 AND id = ?",
+                Integer.class, cascadeDeletePlan.id()
+        );
+        catalogService.deletePlan(cascadeDeletePlan.id(), cascadePlanVersion);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM inspection_plan WHERE id = ? AND deleted = 0",
+                Integer.class, cascadeDeletePlan.id()
+        )).isZero();
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM inspection_task WHERE id = ? AND deleted = 0",
+                Integer.class, cascadeTaskId
+        )).isZero();
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM inspection_task_assignee WHERE task_id = ? AND deleted = 0",
+                Integer.class, cascadeTaskId
+        )).isZero();
+
+        InspectionDtos.TaskRow completedBeforeDelete = taskService.detail(task.id()).task();
+        taskService.deleteTask(task.id(), completedBeforeDelete.version());
+        assertThat(taskService.tasks(
+                generated.taskCodes().getFirst(), null, null, false, 1, 20
+        ).records()).isEmpty();
+        for (String table : List.of(
+                "inspection_task_item",
+                "inspection_task_result",
+                "inspection_attachment",
+                "inspection_task_event",
+                "inspection_task_assignee"
+        )) {
+            assertThat(jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM " + table + " WHERE task_id = ? AND deleted = 0",
+                    Integer.class, task.id()
+            )).as(table + " must be hidden after aggregate deletion").isZero();
+        }
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM inspection_abnormal WHERE task_id = ? AND deleted = 0",
+                Integer.class, task.id()
+        )).isZero();
     }
 
     @Test
@@ -496,7 +592,9 @@ class InspectionMySqlIntegrationTest {
         );
 
         InspectionImportDtos.ImportResult validated = importService.validate(file);
-        assertThat(validated.status()).isEqualTo("VALIDATED");
+        assertThat(validated.status())
+                .withFailMessage("validation errors: %s", validated.errors())
+                .isEqualTo("VALIDATED");
         assertThat(validated.errors()).isEmpty();
         assertThat(validated.itemRows()).isEqualTo(1);
         assertThat(validated.schemeRows()).isEqualTo(1);
@@ -538,7 +636,7 @@ class InspectionMySqlIntegrationTest {
         assertThat(repeated.status()).isEqualTo("COMMITTED");
         assertThat(repeated.committedTime()).isEqualTo(committed.committedTime());
         assertThat(catalogService.items(
-                "IMP-LUB-001", null, null, null, 1, 20
+                "IMP-LUB-001", null, null, null, null, 1, 20
         ).records())
                 .singleElement()
                 .extracting(InspectionDtos.ItemRow::itemName)
@@ -612,9 +710,12 @@ class InspectionMySqlIntegrationTest {
                 calendarId,
                 null,
                 OPERATOR_ID,
+                List.of(OPERATOR_ID),
                 null,
                 false,
                 true,
+                true,
+                3,
                 LocalDate.now(),
                 null,
                 List.of(new InspectionDtos.SaveSchemeItemRequest(
@@ -628,6 +729,8 @@ class InspectionMySqlIntegrationTest {
                 null
         ));
         InspectionDtos.SchemeDetail scheme = catalogService.scheme(schemeId, null);
+        assertThat(scheme.version().submissionPhotoRequiredFlag()).isTrue();
+        assertThat(scheme.version().submissionPhotoMaxCount()).isEqualTo(3);
         catalogService.publish(schemeId, scheme.version().id());
 
         assertThat(catalogService.plans(
@@ -646,6 +749,12 @@ class InspectionMySqlIntegrationTest {
                 1L, USER_ID, generationThreshold
         );
         assertThat(generated.generatedTasks()).isEqualTo(1);
+        assertThat(taskService.tasks(
+                generated.taskCodes().getFirst(), null, null, false, 1, 20
+        ).records()).singleElement().satisfies(task -> {
+            assertThat(task.submissionPhotoRequiredFlag()).isTrue();
+            assertThat(task.submissionPhotoMaxCount()).isEqualTo(3);
+        });
         assertThat(taskService.generateReady(
                 1L, USER_ID, generationThreshold
         ).generatedTasks()).isZero();

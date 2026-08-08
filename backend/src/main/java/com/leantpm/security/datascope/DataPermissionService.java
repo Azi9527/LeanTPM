@@ -4,7 +4,7 @@ import com.leantpm.security.CurrentUser;
 import com.leantpm.security.SecurityUtils;
 import org.springframework.stereotype.Service;
 
-import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -21,6 +21,9 @@ public class DataPermissionService {
     }
 
     public DataPermission resolve(CurrentUser user) {
+        if (user.roles().contains("ADMIN") || user.roles().contains("SUPER_ADMIN")) {
+            return DataPermission.all(user.userId());
+        }
         List<DataPermissionMapper.RoleScopeGrant> grants =
                 mapper.findRoleScopeGrants(user.tenantId(), user.userId());
         if (grants.stream().anyMatch(grant -> "ALL".equals(grant.scopeType()))) {
@@ -28,15 +31,22 @@ public class DataPermissionService {
         }
 
         boolean selfData = grants.stream().anyMatch(grant -> "SELF".equals(grant.scopeType()));
-        Set<Long> organizations = new HashSet<>();
+        Set<Long> organizations = new LinkedHashSet<>();
         Long ownOrganizationId = mapper.findUserOrganizationId(user.tenantId(), user.userId());
 
         boolean includeOwn = grants.stream().anyMatch(grant ->
                 "ORGANIZATION".equals(grant.scopeType())
                         || "ORGANIZATION_AND_CHILDREN".equals(grant.scopeType())
         );
-        if (includeOwn && ownOrganizationId != null) {
-            organizations.add(ownOrganizationId);
+        Set<Long> organizationRoots = new LinkedHashSet<>();
+        if (includeOwn) {
+            if (ownOrganizationId != null) {
+                organizationRoots.add(ownOrganizationId);
+            }
+            organizationRoots.addAll(
+                    mapper.findManagedOrganizationIds(user.tenantId(), user.userId())
+            );
+            organizations.addAll(organizationRoots);
         }
 
         grants.stream()
@@ -47,11 +57,11 @@ public class DataPermissionService {
 
         boolean includeChildren = grants.stream()
                 .anyMatch(grant -> "ORGANIZATION_AND_CHILDREN".equals(grant.scopeType()));
-        if (includeChildren && ownOrganizationId != null) {
+        if (includeChildren && !organizationRoots.isEmpty()) {
             organizations.addAll(
                     mapper.findOrganizationAndDescendantIds(
                             user.tenantId(),
-                            List.of(ownOrganizationId)
+                            List.copyOf(organizationRoots)
                     )
             );
         }

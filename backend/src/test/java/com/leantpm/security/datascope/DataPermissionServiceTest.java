@@ -8,6 +8,7 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class DataPermissionServiceTest {
@@ -31,6 +32,20 @@ class DataPermissionServiceTest {
     }
 
     @Test
+    void administratorAlwaysHasAllDataWithoutDependingOnScopeRows() {
+        CurrentUser administrator = new CurrentUser(
+                1L, 1L, "admin", "系统管理员", false,
+                Set.of("ADMIN"), Set.of(), "sid"
+        );
+
+        DataPermission result = service.resolve(administrator);
+
+        assertThat(result.allData()).isTrue();
+        assertThat(result.canAccess(999L, 999L)).isTrue();
+        verifyNoInteractions(mapper);
+    }
+
+    @Test
     void combinesSelfCustomAndOrganizationDescendants() {
         when(mapper.findRoleScopeGrants(1L, 20L)).thenReturn(List.of(
                 new DataPermissionMapper.RoleScopeGrant("SELF", null),
@@ -38,6 +53,7 @@ class DataPermissionServiceTest {
                 new DataPermissionMapper.RoleScopeGrant("CUSTOM", 90L)
         ));
         when(mapper.findUserOrganizationId(1L, 20L)).thenReturn(10L);
+        when(mapper.findManagedOrganizationIds(1L, 20L)).thenReturn(List.of());
         when(mapper.findOrganizationAndDescendantIds(1L, List.of(10L)))
                 .thenReturn(List.of(10L, 11L, 12L));
 
@@ -49,6 +65,25 @@ class DataPermissionServiceTest {
         assertThat(result.canAccess(20L, null)).isTrue();
         assertThat(result.canAccess(99L, 11L)).isTrue();
         assertThat(result.canAccess(99L, 100L)).isFalse();
+    }
+
+    @Test
+    void includesManagedOrganizationsAndTheirDescendantsForUpperLevelManagers() {
+        when(mapper.findRoleScopeGrants(1L, 20L)).thenReturn(List.of(
+                new DataPermissionMapper.RoleScopeGrant(
+                        "ORGANIZATION_AND_CHILDREN", null
+                )
+        ));
+        when(mapper.findUserOrganizationId(1L, 20L)).thenReturn(10L);
+        when(mapper.findManagedOrganizationIds(1L, 20L)).thenReturn(List.of(20L, 30L));
+        when(mapper.findOrganizationAndDescendantIds(1L, List.of(10L, 20L, 30L)))
+                .thenReturn(List.of(10L, 11L, 20L, 21L, 30L, 31L));
+
+        DataPermission result = service.resolve(user);
+
+        assertThat(result.organizationIds()).containsExactlyInAnyOrder(
+                10L, 11L, 20L, 21L, 30L, 31L
+        );
     }
 
     @Test

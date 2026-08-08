@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leantpm.common.api.PageResult;
 import com.leantpm.common.exception.BusinessException;
+import com.leantpm.common.query.TableQuery;
 import com.leantpm.equipment.EquipmentDtos;
 import com.leantpm.equipment.EquipmentService;
 import com.leantpm.foundation.service.NumberRuleService;
@@ -54,6 +55,8 @@ public class InspectionTaskService {
             Set.of("LOW", "MEDIUM", "HIGH", "CRITICAL");
     private static final Set<String> DISPATCH_STATUSES =
             Set.of("UNASSIGNED", "ASSIGNED", "PENDING_EXECUTION", "COMPLETED");
+    private static final Set<String> TASK_STATUS_GROUPS =
+            Set.of("PENDING", "IN_PROGRESS", "COMPLETED");
 
     private final InspectionMapper mapper;
     private final InspectionCalendarMapper calendarMapper;
@@ -94,7 +97,7 @@ public class InspectionTaskService {
             int pageSize
     ) {
         return tasks(new InspectionDtos.TaskQuery(
-                keyword, taskStatus, null, plannedDate, "PLANNED_DATE", null, null,
+                keyword, taskStatus, null, null, plannedDate, "PLANNED_DATE", null, null,
                 null, null, null, null, null, false, null, mineOnly
         ), page, pageSize);
     }
@@ -115,6 +118,30 @@ public class InspectionTaskService {
                 ),
                 mapper.countTasks(
                         current.tenantId(), scope, query
+                ),
+                page,
+                pageSize
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public PageResult<InspectionDtos.TaskRow> tasks(
+            InspectionDtos.TaskQuery requestedQuery,
+            TableQuery tableQuery,
+            int page,
+            int pageSize
+    ) {
+        var current = SecurityUtils.currentUser();
+        DataPermission scope = dataPermissionService.current();
+        int offset = (page - 1) * pageSize;
+        InspectionDtos.TaskQuery query = normalizeTaskQuery(requestedQuery);
+        TableQuery safeTableQuery = tableQuery == null ? TableQuery.empty() : tableQuery;
+        return PageResult.of(
+                mapper.findTasksTable(
+                        current.tenantId(), scope, query, safeTableQuery, offset, pageSize
+                ),
+                mapper.countTasksTable(
+                        current.tenantId(), scope, query, safeTableQuery
                 ),
                 page,
                 pageSize
@@ -309,7 +336,10 @@ public class InspectionTaskService {
                             mapper.copyTaskItems(
                                     tenantId, taskId, plan.schemeVersionId()
                             );
-                            if (plan.assigneeUserId() != null) {
+                            int copiedAssignees = mapper.copySchemeDefaultAssigneesToTask(
+                                    tenantId, taskId, plan.schemeVersionId(), operatorId
+                            );
+                            if (copiedAssignees == 0 && plan.assigneeUserId() != null) {
                                 mapper.insertTaskAssignee(
                                         tenantId, taskId, plan.assigneeUserId(),
                                         true, 0, operatorId
@@ -350,8 +380,42 @@ public class InspectionTaskService {
             InspectionDtos.ManualTaskRequest request,
             String idempotencyKey
     ) {
+        return createManualTask(
+                request, idempotencyKey, dataPermissionService.current(), "MANUAL", true
+        );
+    }
+
+    @Transactional
+    public long createMobileSelfTask(
+            InspectionDtos.ManualTaskRequest request,
+            String idempotencyKey
+    ) {
         var current = SecurityUtils.currentUser();
-        DataPermission scope = dataPermissionService.current();
+        List<Long> assignees = normalizeAssigneeUserIds(request.assigneeUserIds());
+        if (assignees.size() != 1 || assignees.getFirst() != current.userId()) {
+            throw new BusinessException(
+                    "MOBILE_INSPECTION_SELF_ASSIGNMENT_REQUIRED",
+                    "扫码直接点检只能分派给当前登录用户",
+                    HttpStatus.FORBIDDEN
+            );
+        }
+        return createManualTask(
+                request,
+                idempotencyKey,
+                DataPermission.all(current.userId()),
+                "QUICK_ENTRY",
+                false
+        );
+    }
+
+    private long createManualTask(
+            InspectionDtos.ManualTaskRequest request,
+            String idempotencyKey,
+            DataPermission scope,
+            String sourceType,
+            boolean requireSchemeApplicability
+    ) {
+        var current = SecurityUtils.currentUser();
         InspectionDtos.SchemeVersionRow version =
                 mapper.findSchemeVersion(current.tenantId(), request.schemeVersionId());
         if (version == null || !"PUBLISHED".equals(version.versionStatus())) {
@@ -390,15 +454,17 @@ public class InspectionTaskService {
                     HttpStatus.NOT_FOUND
             );
         }
-        boolean applicable = mapper.findApplicableEquipment(
-                current.tenantId(), version.id(), scope
-        ).stream().anyMatch(item -> item.id() == request.equipmentId());
-        if (!applicable) {
-            throw new BusinessException(
-                    "INSPECTION_SCHEME_NOT_APPLICABLE",
-                    "所选点检方案不适用于该设备",
-                    HttpStatus.CONFLICT
-            );
+        if (requireSchemeApplicability) {
+            boolean applicable = mapper.findApplicableEquipment(
+                    current.tenantId(), version.id(), scope
+            ).stream().anyMatch(item -> item.id() == request.equipmentId());
+            if (!applicable) {
+                throw new BusinessException(
+                        "INSPECTION_SCHEME_NOT_APPLICABLE",
+                        "所选点检方案不适用于该设备",
+                        HttpStatus.CONFLICT
+                );
+            }
         }
         List<Long> assigneeUserIds = normalizeAssigneeUserIds(request.assigneeUserIds());
         validateAssigneeUsers(current.tenantId(), assigneeUserIds);
@@ -411,7 +477,7 @@ public class InspectionTaskService {
         String requestHash = requestHash(request);
         int inserted = mapper.insertManualTask(
                 current.tenantId(), code, scheme, version, equipment, request,
-                primaryAssigneeUserId, normalizedKey, requestHash, current.userId()
+                primaryAssigneeUserId, normalizedKey, requestHash, sourceType, current.userId()
         );
         if (inserted == 0 && normalizedKey != null) {
             InspectionMapper.ManualTaskIdentity existing =
@@ -530,6 +596,28 @@ public class InspectionTaskService {
                     "点检照片数量、大小或文件类型不符合项目配置"
             );
         }
+        int taskPhotoCount = mapper.countTaskSubmissionPhotos(current.tenantId(), id);
+        if (Boolean.TRUE.equals(task.submissionPhotoRequiredFlag()) && taskPhotoCount == 0) {
+            throw new BusinessException(
+                    "INSPECTION_SUBMISSION_PHOTO_REQUIRED",
+                    "该点检方案要求提交任务前至少上传一张现场水印图片"
+            );
+        }
+        int taskPhotoMaxCount = task.submissionPhotoMaxCount() == null
+                ? 9 : task.submissionPhotoMaxCount();
+        if (taskPhotoCount > taskPhotoMaxCount) {
+            throw new BusinessException(
+                    "INSPECTION_SUBMISSION_PHOTO_LIMIT_EXCEEDED",
+                    "该点检任务最多允许上传 " + taskPhotoMaxCount + " 张现场图片"
+            );
+        }
+        if (Boolean.TRUE.equals(task.submissionPhotoRequiredFlag()) && taskPhotoCount > 0
+                && mapper.countNonWatermarkedTaskSubmissionPhotos(current.tenantId(), id) > 0) {
+            throw new BusinessException(
+                    "INSPECTION_SUBMISSION_WATERMARK_REQUIRED",
+                    "现场图片必须通过拍照/相册入口生成水印后上传"
+            );
+        }
         mapper.submitResults(current.tenantId(), id);
         createAbnormalities(current, task);
         applyAbnormalStop(current, task);
@@ -568,6 +656,7 @@ public class InspectionTaskService {
         for (InspectionDtos.SaveResultRequest resultRequest : request.results()) {
             saveResult(current, task, resultRequest);
         }
+        saveTaskSubmissionAttachments(current, task, request.taskAttachmentIds());
         if (mapper.updateTaskAfterDraft(
                 current.tenantId(), task.id(), task.version(),
                 clean(request.executionRemark()), current.userId()
@@ -656,10 +745,49 @@ public class InspectionTaskService {
         );
     }
 
+    @Transactional
+    public void deleteTask(long id, int version) {
+        var current = SecurityUtils.currentUser();
+        InspectionDtos.TaskRow before = requireTask(
+                current.tenantId(), id, dataPermissionService.current()
+        );
+        softDeleteTaskCascade(current.tenantId(), id, version, current.userId());
+        changeLogService.record("INSPECTION_TASK", id, "DELETE", before, null);
+    }
+
+    void softDeleteTaskCascade(
+            long tenantId,
+            long taskId,
+            Integer version,
+            long operatorId
+    ) {
+        mapper.softDeleteTaskPhotoEvidence(tenantId, taskId, operatorId);
+        mapper.softDeleteTaskAttachments(tenantId, taskId);
+        mapper.softDeleteTaskAbnormalities(tenantId, taskId, operatorId);
+        mapper.softDeleteTaskResults(tenantId, taskId);
+        mapper.softDeleteTaskItems(tenantId, taskId);
+        mapper.softDeleteTaskAssignees(tenantId, taskId);
+        mapper.softDeleteTaskEvents(tenantId, taskId);
+        if (mapper.softDeleteTask(tenantId, taskId, version, operatorId) == 0) {
+            throw optimisticConflict();
+        }
+    }
+
     @Transactional(readOnly = true)
     public PageResult<InspectionDtos.AbnormalRow> abnormalities(
             String keyword,
             String status,
+            int page,
+            int pageSize
+    ) {
+        return abnormalities(keyword, status, TableQuery.empty(), page, pageSize);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResult<InspectionDtos.AbnormalRow> abnormalities(
+            String keyword,
+            String status,
+            TableQuery tableQuery,
             int page,
             int pageSize
     ) {
@@ -669,10 +797,10 @@ public class InspectionTaskService {
         return PageResult.of(
                 mapper.findAbnormalities(
                         current.tenantId(), scope, clean(keyword), upper(status),
-                        offset, pageSize
+                        tableQuery, offset, pageSize
                 ),
                 mapper.countAbnormalities(
-                        current.tenantId(), scope, clean(keyword), upper(status)
+                        current.tenantId(), scope, clean(keyword), upper(status), tableQuery
                 ),
                 page,
                 pageSize
@@ -747,10 +875,23 @@ public class InspectionTaskService {
     }
 
     @Transactional(readOnly = true)
-    public InspectionDtos.Statistics statistics() {
+    public InspectionDtos.Statistics statistics(
+            LocalDate startDate,
+            LocalDate endDate,
+            Long organizationId
+    ) {
         var current = SecurityUtils.currentUser();
+        LocalDate effectiveStart = startDate == null ? LocalDate.now() : startDate;
+        LocalDate effectiveEnd = endDate == null ? effectiveStart : endDate;
+        if (effectiveEnd.isBefore(effectiveStart)) {
+            throw new BusinessException("INSPECTION_STATISTICS_DATE_INVALID", "结束日期不能早于开始日期");
+        }
+        if (effectiveStart.plusYears(2).isBefore(effectiveEnd)) {
+            throw new BusinessException("INSPECTION_STATISTICS_RANGE_TOO_LARGE", "统计日期范围不能超过两年");
+        }
         InspectionDtos.Statistics value = mapper.statistics(
-                current.tenantId(), dataPermissionService.current(), LocalDate.now()
+                current.tenantId(), dataPermissionService.current(), effectiveStart,
+                effectiveEnd, organizationId
         );
         if (value != null) {
             return value;
@@ -814,6 +955,38 @@ public class InspectionTaskService {
             mapper.replaceResultAttachments(
                     current.tenantId(), task.id(), saved.id(), attachmentId,
                     attachmentType, current.userId()
+            );
+        }
+    }
+
+    private void saveTaskSubmissionAttachments(
+            CurrentUser current,
+            InspectionDtos.TaskRow task,
+            List<Long> attachmentIds
+    ) {
+        List<Long> normalized = attachmentIds == null
+                ? List.of()
+                : attachmentIds.stream().filter(java.util.Objects::nonNull).distinct().toList();
+        int maximum = task.submissionPhotoMaxCount() == null
+                ? 9 : task.submissionPhotoMaxCount();
+        if (normalized.size() > maximum) {
+            throw new BusinessException(
+                    "INSPECTION_SUBMISSION_PHOTO_LIMIT_EXCEEDED",
+                    "该点检任务最多允许上传 " + maximum + " 张整单现场图片"
+            );
+        }
+        for (Long attachmentId : normalized) {
+            if (mapper.countAvailableAttachment(current.tenantId(), attachmentId) == 0) {
+                throw new BusinessException(
+                        "ATTACHMENT_NOT_FOUND", "整单现场图片不存在或不可用",
+                        HttpStatus.NOT_FOUND
+                );
+            }
+        }
+        mapper.deleteTaskSubmissionAttachments(current.tenantId(), task.id());
+        for (Long attachmentId : normalized) {
+            mapper.insertTaskSubmissionAttachment(
+                    current.tenantId(), task.id(), attachmentId, current.userId()
             );
         }
     }
@@ -1172,7 +1345,7 @@ public class InspectionTaskService {
     ) {
         InspectionDtos.TaskQuery source = query == null
                 ? new InspectionDtos.TaskQuery(
-                        null, null, null, null, "PLANNED_DATE", null, null,
+                        null, null, null, null, null, "PLANNED_DATE", null, null,
                         null, null, null, null, null, false, null, false
                 ) : query;
         String timeField = upper(source.timeField());
@@ -1202,8 +1375,15 @@ public class InspectionTaskService {
                     "INSPECTION_DISPATCH_STATUS_INVALID", "派工进度查询条件不正确"
             );
         }
+        String statusGroup = upper(source.statusGroup());
+        if (statusGroup != null && !TASK_STATUS_GROUPS.contains(statusGroup)) {
+            throw new BusinessException(
+                    "INSPECTION_TASK_STATUS_GROUP_INVALID", "点检任务状态分组不正确"
+            );
+        }
         return new InspectionDtos.TaskQuery(
-                clean(source.keyword()), upper(source.taskStatus()), dispatchStatus, source.plannedDate(),
+                clean(source.keyword()), upper(source.taskStatus()), statusGroup,
+                dispatchStatus, source.plannedDate(),
                 timeField, source.startDate(), source.endDate(), source.organizationId(),
                 clean(source.teamCode()), source.assigneeUserId(), source.equipmentId(),
                 source.schemeId(), source.abnormalOnly(), abnormalSeverity,

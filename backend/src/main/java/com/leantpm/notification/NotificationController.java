@@ -7,6 +7,11 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.core.io.Resource;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -17,6 +22,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
@@ -64,6 +70,34 @@ public class NotificationController {
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int pageSize
     ) {
         return ApiResponse.success(service.messages(unreadOnly, page, pageSize));
+    }
+
+    @GetMapping("/messages/{id}/business-detail")
+    @PreAuthorize("hasAuthority('notification:message:view') or hasAuthority('mobile:message:view')")
+    public ApiResponse<NotificationDtos.BusinessDetail> businessDetail(@PathVariable long id) {
+        return ApiResponse.success(service.businessDetail(id));
+    }
+
+    @GetMapping("/messages/{id}/attachments/{attachmentId}/content")
+    @PreAuthorize("hasAuthority('notification:message:view') or hasAuthority('mobile:message:view')")
+    public ResponseEntity<Resource> businessAttachmentContent(
+            @PathVariable long id, @PathVariable long attachmentId
+    ) {
+        var download = service.businessAttachmentContent(id, attachmentId);
+        String contentType = download.record().contentType() == null
+                ? MediaType.APPLICATION_OCTET_STREAM_VALUE
+                : download.record().contentType();
+        boolean image = contentType.toLowerCase().startsWith("image/");
+        ContentDisposition disposition = (image
+                ? ContentDisposition.inline()
+                : ContentDisposition.attachment())
+                .filename(download.record().originalName(), StandardCharsets.UTF_8)
+                .build();
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(contentType))
+                .contentLength(download.record().fileSize())
+                .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
+                .body(download.resource());
     }
 
     @PostMapping("/messages/{id}/read")

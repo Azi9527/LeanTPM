@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leantpm.common.api.PageResult;
 import com.leantpm.common.exception.BusinessException;
 import com.leantpm.security.SecurityUtils;
+import com.leantpm.system.attachment.AttachmentService;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -26,10 +27,14 @@ public class NotificationService {
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
+    private final AttachmentService attachmentService;
 
-    public NotificationService(JdbcTemplate jdbc, ObjectMapper objectMapper) {
+    public NotificationService(
+            JdbcTemplate jdbc, ObjectMapper objectMapper, AttachmentService attachmentService
+    ) {
         this.jdbc = jdbc;
         this.objectMapper = objectMapper;
+        this.attachmentService = attachmentService;
     }
 
     @Transactional(readOnly = true)
@@ -125,6 +130,330 @@ public class NotificationService {
                 ), current.tenantId(), current.userId(), pageSize, (page - 1) * pageSize
         );
         return PageResult.of(rows, total == null ? 0 : total, page, pageSize);
+    }
+
+    /**
+     * Returns a read-only task snapshot for a message recipient.  Authorization is deliberately
+     * based on ownership of the notification instead of the operational task data scope: an
+     * escalated supervisor must be able to understand a warning without receiving permission to
+     * execute or dispatch the underlying task.
+     */
+    @Transactional(readOnly = true)
+    public NotificationDtos.BusinessDetail businessDetail(long messageId) {
+        var current = SecurityUtils.currentUser();
+        MessageTarget target = messageTarget(messageId);
+        return switch (target.businessType()) {
+            case "INSPECTION" -> inspectionBusinessDetail(current.tenantId(), target);
+            case "MAINTENANCE" -> maintenanceBusinessDetail(current.tenantId(), target);
+            default -> throw new BusinessException(
+                    "NOTIFICATION_BUSINESS_UNSUPPORTED", "该消息暂不支持业务详情查看",
+                    HttpStatus.UNPROCESSABLE_ENTITY
+            );
+        };
+    }
+
+    @Transactional(readOnly = true)
+    public AttachmentService.DownloadedAttachment businessAttachmentContent(
+            long messageId, long attachmentId
+    ) {
+        var current = SecurityUtils.currentUser();
+        MessageTarget target = messageTarget(messageId);
+        String relationTable;
+        String taskTable;
+        String activeRelation;
+        if ("INSPECTION".equals(target.businessType())) {
+            relationTable = "inspection_attachment";
+            taskTable = "inspection_task";
+            activeRelation = " AND relation.deleted = 0";
+        } else if ("MAINTENANCE".equals(target.businessType())) {
+            relationTable = "maintenance_attachment";
+            taskTable = "maintenance_task";
+            activeRelation = "";
+        } else {
+            throw new BusinessException(
+                    "NOTIFICATION_BUSINESS_UNSUPPORTED", "该消息暂不支持附件查看",
+                    HttpStatus.UNPROCESSABLE_ENTITY
+            );
+        }
+        Integer count = jdbc.queryForObject("""
+                SELECT COUNT(*)
+                FROM %s relation
+                JOIN %s task
+                  ON task.tenant_id = relation.tenant_id
+                 AND task.id = relation.task_id AND task.deleted = 0
+                JOIN system_attachment attachment
+                  ON attachment.tenant_id = relation.tenant_id
+                 AND attachment.id = relation.attachment_id AND attachment.deleted = 0
+                WHERE relation.tenant_id = ? AND relation.task_id = ?
+                  AND relation.attachment_id = ?%s
+                """.formatted(relationTable, taskTable, activeRelation), Integer.class,
+                current.tenantId(), target.businessId(), attachmentId);
+        if (count == null || count < 1) {
+            throw new BusinessException(
+                    "NOTIFICATION_ATTACHMENT_NOT_FOUND", "任务图片不存在或无权查看",
+                    HttpStatus.NOT_FOUND
+            );
+        }
+        return attachmentService.load(attachmentId);
+    }
+
+    private MessageTarget messageTarget(long messageId) {
+        var current = SecurityUtils.currentUser();
+        List<MessageTarget> targets = jdbc.query("""
+                SELECT id, business_type, business_id, business_code
+                FROM notification_message
+                WHERE tenant_id = ? AND id = ? AND recipient_user_id = ? AND deleted = 0
+                """, (rs, rowNumber) -> new MessageTarget(
+                        rs.getLong("id"), rs.getString("business_type"),
+                        rs.getLong("business_id"), rs.getString("business_code")
+                ), current.tenantId(), messageId, current.userId());
+        if (targets.isEmpty()) {
+            throw new BusinessException(
+                    "NOTIFICATION_MESSAGE_NOT_FOUND", "消息不存在或无权查看",
+                    HttpStatus.NOT_FOUND
+            );
+        }
+        return targets.getFirst();
+    }
+
+    private NotificationDtos.BusinessDetail inspectionBusinessDetail(
+            long tenantId, MessageTarget target
+    ) {
+        List<BusinessHeader> headers = jdbc.query("""
+                SELECT task.task_code, task.scheme_name_snapshot,
+                       equipment.equipment_code, equipment.equipment_name,
+                       organization.organization_name, location.location_name,
+                       task.planned_date, task.due_time, task.task_status, task.source_type,
+                       COALESCE((
+                           SELECT GROUP_CONCAT(user.real_name
+                                      ORDER BY relation.primary_flag DESC, relation.sort_order, relation.id
+                                      SEPARATOR '、')
+                           FROM inspection_task_assignee relation
+                           JOIN system_user user
+                             ON user.tenant_id = relation.tenant_id
+                            AND user.id = relation.user_id AND user.deleted = 0
+                           WHERE relation.tenant_id = task.tenant_id
+                             AND relation.task_id = task.id AND relation.deleted = 0
+                       ), assignee.real_name, '未派工') AS assignee_names,
+                       task.started_time, task.submitted_time, task.completed_time
+                FROM inspection_task task
+                JOIN equipment
+                  ON equipment.tenant_id = task.tenant_id
+                 AND equipment.id = task.equipment_id AND equipment.deleted = 0
+                JOIN organization
+                  ON organization.tenant_id = task.tenant_id
+                 AND organization.id = task.organization_id AND organization.deleted = 0
+                LEFT JOIN location
+                  ON location.tenant_id = task.tenant_id
+                 AND location.id = task.location_id AND location.deleted = 0
+                LEFT JOIN system_user assignee
+                  ON assignee.tenant_id = task.tenant_id
+                 AND assignee.id = task.assignee_user_id AND assignee.deleted = 0
+                WHERE task.tenant_id = ? AND task.id = ? AND task.deleted = 0
+                """, this::businessHeader, tenantId, target.businessId());
+        BusinessHeader header = requireBusinessHeader(headers);
+
+        List<NotificationDtos.BusinessItemDetail> items = jdbc.query("""
+                SELECT item.id, item.item_code, item.item_name,
+                       item.inspection_part AS item_part,
+                       item.inspection_content AS item_content,
+                       item.inspection_standard AS item_standard,
+                       item.result_type, item.unit, result.result_code,
+                       result.numeric_value, result.text_value, result.selected_value,
+                       COALESCE(result.abnormal_flag, 0) AS abnormal_flag,
+                       result.abnormal_description,
+                       COALESCE(result.skipped_flag, 0) AS skipped_flag,
+                       result.skip_reason, executor.real_name AS executed_by_name,
+                       result.executed_time
+                FROM inspection_task_item item
+                LEFT JOIN inspection_task_result result
+                  ON result.tenant_id = item.tenant_id
+                 AND result.task_id = item.task_id
+                 AND result.task_item_id = item.id AND result.deleted = 0
+                LEFT JOIN system_user executor
+                  ON executor.tenant_id = result.tenant_id
+                 AND executor.id = result.executed_by AND executor.deleted = 0
+                WHERE item.tenant_id = ? AND item.task_id = ? AND item.deleted = 0
+                ORDER BY item.sort_order, item.id
+                """, this::businessItem, tenantId, target.businessId());
+        return businessDetail(target, header, items, inspectionAttachments(tenantId, target));
+    }
+
+    private NotificationDtos.BusinessDetail maintenanceBusinessDetail(
+            long tenantId, MessageTarget target
+    ) {
+        List<BusinessHeader> headers = jdbc.query("""
+                SELECT task.task_code, task.scheme_name_snapshot,
+                       equipment.equipment_code, equipment.equipment_name,
+                       organization.organization_name, location.location_name,
+                       task.planned_date, task.due_time, task.task_status, task.source_type,
+                       CONCAT_WS('、', assignee.real_name, (
+                           SELECT GROUP_CONCAT(user.real_name ORDER BY relation.id SEPARATOR '、')
+                           FROM maintenance_task_collaborator relation
+                           JOIN system_user user
+                             ON user.tenant_id = relation.tenant_id
+                            AND user.id = relation.user_id AND user.deleted = 0
+                           WHERE relation.tenant_id = task.tenant_id
+                             AND relation.task_id = task.id
+                             AND (task.assignee_user_id IS NULL OR relation.user_id != task.assignee_user_id)
+                       )) AS assignee_names,
+                       task.started_time, task.submitted_time, task.completed_time
+                FROM maintenance_task task
+                JOIN equipment
+                  ON equipment.tenant_id = task.tenant_id
+                 AND equipment.id = task.equipment_id AND equipment.deleted = 0
+                JOIN organization
+                  ON organization.tenant_id = task.tenant_id
+                 AND organization.id = task.organization_id AND organization.deleted = 0
+                LEFT JOIN location
+                  ON location.tenant_id = task.tenant_id
+                 AND location.id = task.location_id AND location.deleted = 0
+                LEFT JOIN system_user assignee
+                  ON assignee.tenant_id = task.tenant_id
+                 AND assignee.id = task.assignee_user_id AND assignee.deleted = 0
+                WHERE task.tenant_id = ? AND task.id = ? AND task.deleted = 0
+                """, this::businessHeader, tenantId, target.businessId());
+        BusinessHeader header = requireBusinessHeader(headers);
+
+        List<NotificationDtos.BusinessItemDetail> items = jdbc.query("""
+                SELECT item.id, item.item_code, item.item_name,
+                       item.maintenance_part AS item_part,
+                       item.maintenance_content AS item_content,
+                       item.maintenance_standard AS item_standard,
+                       item.result_type, item.unit, result.result_code,
+                       result.numeric_value, result.text_value, result.selected_value,
+                       COALESCE(result.abnormal_flag, 0) AS abnormal_flag,
+                       result.abnormal_description,
+                       COALESCE(result.skipped_flag, 0) AS skipped_flag,
+                       result.skip_reason, executor.real_name AS executed_by_name,
+                       result.executed_time
+                FROM maintenance_task_item item
+                LEFT JOIN maintenance_task_result result
+                  ON result.tenant_id = item.tenant_id
+                 AND result.task_id = item.task_id
+                 AND result.task_item_id = item.id
+                LEFT JOIN system_user executor
+                  ON executor.tenant_id = result.tenant_id
+                 AND executor.id = result.executed_by AND executor.deleted = 0
+                WHERE item.tenant_id = ? AND item.task_id = ?
+                ORDER BY item.sort_order, item.id
+                """, this::businessItem, tenantId, target.businessId());
+        return businessDetail(target, header, items, maintenanceAttachments(tenantId, target));
+    }
+
+    private List<NotificationDtos.BusinessAttachmentDetail> inspectionAttachments(
+            long tenantId, MessageTarget target
+    ) {
+        return jdbc.query("""
+                SELECT attachment.id, relation.task_result_id, result.task_item_id,
+                       item.item_name, attachment.original_name, attachment.content_type,
+                       attachment.extension, attachment.file_size, relation.attachment_type,
+                       attachment.created_time
+                FROM inspection_attachment relation
+                JOIN system_attachment attachment
+                  ON attachment.tenant_id = relation.tenant_id
+                 AND attachment.id = relation.attachment_id AND attachment.deleted = 0
+                LEFT JOIN inspection_task_result result
+                  ON result.tenant_id = relation.tenant_id
+                 AND result.id = relation.task_result_id AND result.deleted = 0
+                LEFT JOIN inspection_task_item item
+                  ON item.tenant_id = result.tenant_id
+                 AND item.id = result.task_item_id AND item.deleted = 0
+                WHERE relation.tenant_id = ? AND relation.task_id = ? AND relation.deleted = 0
+                ORDER BY item.sort_order, relation.id
+                """, this::businessAttachment, tenantId, target.businessId());
+    }
+
+    private List<NotificationDtos.BusinessAttachmentDetail> maintenanceAttachments(
+            long tenantId, MessageTarget target
+    ) {
+        return jdbc.query("""
+                SELECT attachment.id, relation.task_result_id, result.task_item_id,
+                       item.item_name, attachment.original_name, attachment.content_type,
+                       attachment.extension, attachment.file_size, relation.attachment_type,
+                       attachment.created_time
+                FROM maintenance_attachment relation
+                JOIN system_attachment attachment
+                  ON attachment.tenant_id = relation.tenant_id
+                 AND attachment.id = relation.attachment_id AND attachment.deleted = 0
+                LEFT JOIN maintenance_task_result result
+                  ON result.tenant_id = relation.tenant_id
+                 AND result.id = relation.task_result_id
+                LEFT JOIN maintenance_task_item item
+                  ON item.tenant_id = result.tenant_id AND item.id = result.task_item_id
+                WHERE relation.tenant_id = ? AND relation.task_id = ?
+                ORDER BY item.sort_order, relation.id
+                """, this::businessAttachment, tenantId, target.businessId());
+    }
+
+    private NotificationDtos.BusinessAttachmentDetail businessAttachment(
+            java.sql.ResultSet rs, int rowNumber
+    ) throws java.sql.SQLException {
+        return new NotificationDtos.BusinessAttachmentDetail(
+                rs.getLong("id"), nullableLong(rs, "task_result_id"),
+                nullableLong(rs, "task_item_id"), rs.getString("item_name"),
+                rs.getString("original_name"), rs.getString("content_type"),
+                rs.getString("extension"), rs.getLong("file_size"),
+                rs.getString("attachment_type"),
+                timestamp(rs.getTimestamp("created_time"))
+        );
+    }
+
+    private BusinessHeader businessHeader(java.sql.ResultSet rs, int rowNumber)
+            throws java.sql.SQLException {
+        return new BusinessHeader(
+                rs.getString("task_code"), rs.getString("scheme_name_snapshot"),
+                rs.getString("equipment_code"), rs.getString("equipment_name"),
+                rs.getString("organization_name"), rs.getString("location_name"),
+                rs.getDate("planned_date").toLocalDate(),
+                timestamp(rs.getTimestamp("due_time")), rs.getString("task_status"),
+                rs.getString("source_type"), rs.getString("assignee_names"),
+                timestamp(rs.getTimestamp("started_time")),
+                timestamp(rs.getTimestamp("submitted_time")),
+                timestamp(rs.getTimestamp("completed_time"))
+        );
+    }
+
+    private NotificationDtos.BusinessItemDetail businessItem(
+            java.sql.ResultSet rs, int rowNumber
+    ) throws java.sql.SQLException {
+        return new NotificationDtos.BusinessItemDetail(
+                rs.getLong("id"), rs.getString("item_code"), rs.getString("item_name"),
+                rs.getString("item_part"), rs.getString("item_content"),
+                rs.getString("item_standard"), rs.getString("result_type"),
+                rs.getString("unit"), rs.getString("result_code"),
+                rs.getBigDecimal("numeric_value"), rs.getString("text_value"),
+                rs.getString("selected_value"), rs.getBoolean("abnormal_flag"),
+                rs.getString("abnormal_description"), rs.getBoolean("skipped_flag"),
+                rs.getString("skip_reason"), rs.getString("executed_by_name"),
+                timestamp(rs.getTimestamp("executed_time"))
+        );
+    }
+
+    private BusinessHeader requireBusinessHeader(List<BusinessHeader> headers) {
+        if (headers.isEmpty()) {
+            throw new BusinessException(
+                    "NOTIFICATION_BUSINESS_NOT_FOUND", "关联任务不存在或已删除",
+                    HttpStatus.NOT_FOUND
+            );
+        }
+        return headers.getFirst();
+    }
+
+    private NotificationDtos.BusinessDetail businessDetail(
+            MessageTarget target, BusinessHeader header,
+            List<NotificationDtos.BusinessItemDetail> items,
+            List<NotificationDtos.BusinessAttachmentDetail> attachments
+    ) {
+        return new NotificationDtos.BusinessDetail(
+                target.messageId(), target.businessType(), target.businessId(),
+                target.businessCode(), header.taskCode(), header.schemeName(),
+                header.equipmentCode(), header.equipmentName(), header.organizationName(),
+                header.locationName(), header.plannedDate(), header.dueTime(),
+                header.taskStatus(), header.sourceType(), header.assigneeNames(),
+                header.startedTime(), header.submittedTime(), header.completedTime(),
+                items, attachments
+        );
     }
 
     @Transactional
@@ -316,7 +645,7 @@ public class NotificationService {
             parameters.add(now);
             parameters.add(now.plusMinutes(rule.advanceMinutes()));
         } else if ("MANUAL_CREATED".equals(rule.triggerType())) {
-            trigger = " AND task.source_type = 'MANUAL'";
+            trigger = " AND task.source_type IN ('MANUAL', 'QUICK_ENTRY')";
         } else {
             trigger = " AND task.due_time <= ?";
             parameters.add(now.minusMinutes(rule.advanceMinutes()));
@@ -347,34 +676,74 @@ public class NotificationService {
 
     private List<Long> recipients(
             long tenantId, NotificationDtos.RuleRow rule,
-            NotificationDtos.TaskCandidate task
+        NotificationDtos.TaskCandidate task
     ) {
         if ("ASSIGNEE".equals(rule.recipientType())) {
-            LinkedHashSet<Long> ids = new LinkedHashSet<>();
-            if (task.assigneeUserId() != null) {
-                ids.add(task.assigneeUserId());
-            }
-            String table = "INSPECTION".equals(rule.businessType())
-                    ? "inspection_task_assignee" : "maintenance_task_collaborator";
-            ids.addAll(jdbc.queryForList("""
-                    SELECT user_id FROM %s
-                    WHERE tenant_id = ? AND task_id = ?
-                    """.formatted(table), Long.class, tenantId, task.id()));
-            return activeUsers(tenantId, ids);
+            return assigneeUsers(tenantId, rule, task);
         }
         if ("TEAM_LEADER".equals(rule.recipientType())) {
-            Long organizationId = task.organizationId();
+            LinkedHashSet<Long> teamOrganizationIds = new LinkedHashSet<>();
             if (task.teamCode() != null && !task.teamCode().isBlank()) {
-                List<Long> teamIds = jdbc.queryForList("""
+                teamOrganizationIds.addAll(jdbc.queryForList("""
                         SELECT id FROM organization
                         WHERE tenant_id = ? AND organization_code = ?
-                          AND status = 1 AND deleted = 0
-                        """, Long.class, tenantId, task.teamCode());
-                if (!teamIds.isEmpty()) {
-                    organizationId = teamIds.getFirst();
-                }
+                          AND organization_type = 'TEAM' AND status = 1 AND deleted = 0
+                        """, Long.class, tenantId, task.teamCode()));
             }
-            return roleUsers(tenantId, "TEAM_LEADER", List.of(organizationId));
+            teamOrganizationIds.addAll(jdbc.queryForList("""
+                    SELECT id FROM organization
+                    WHERE tenant_id = ? AND id = ? AND organization_type = 'TEAM'
+                      AND status = 1 AND deleted = 0
+                    """, Long.class, tenantId, task.organizationId()));
+
+            List<Long> assigneeUserIds = assigneeUsers(tenantId, rule, task);
+            if (!assigneeUserIds.isEmpty()) {
+                teamOrganizationIds.addAll(jdbc.queryForList("""
+                        SELECT DISTINCT organization.id
+                        FROM system_user user
+                        JOIN organization
+                          ON organization.tenant_id = user.tenant_id
+                         AND organization.id = user.organization_id
+                         AND organization.organization_type = 'TEAM'
+                         AND organization.status = 1 AND organization.deleted = 0
+                        WHERE user.tenant_id = ? AND user.id IN (%s)
+                          AND user.status = 1 AND user.deleted = 0
+                        """.formatted(placeholders(assigneeUserIds.size())), Long.class,
+                        prepend(tenantId, assigneeUserIds)));
+                teamOrganizationIds.addAll(jdbc.queryForList("""
+                        SELECT DISTINCT membership.team_organization_id
+                        FROM system_user_team_membership membership
+                        JOIN organization
+                          ON organization.tenant_id = membership.tenant_id
+                         AND organization.id = membership.team_organization_id
+                         AND organization.organization_type = 'TEAM'
+                         AND organization.status = 1 AND organization.deleted = 0
+                        WHERE membership.tenant_id = ?
+                          AND membership.user_id IN (%s)
+                          AND membership.deleted = 0
+                        ORDER BY membership.team_organization_id
+                        """.formatted(placeholders(assigneeUserIds.size())), Long.class,
+                        prepend(tenantId, assigneeUserIds)));
+            }
+            if (teamOrganizationIds.isEmpty()) {
+                return List.of();
+            }
+
+            List<Long> organizationIds = new ArrayList<>(teamOrganizationIds);
+            LinkedHashSet<Long> result = new LinkedHashSet<>(jdbc.queryForList("""
+                    SELECT user_id FROM organization_manager_relation
+                    WHERE tenant_id = ? AND organization_id IN (%s) AND deleted = 0
+                    ORDER BY organization_id, sort_order, id
+                    """.formatted(placeholders(organizationIds.size())), Long.class,
+                    prepend(tenantId, organizationIds)));
+            result.addAll(jdbc.queryForList("""
+                    SELECT manager_user_id FROM organization
+                    WHERE tenant_id = ? AND id IN (%s) AND organization_type = 'TEAM'
+                      AND manager_user_id IS NOT NULL AND status = 1 AND deleted = 0
+                    """.formatted(placeholders(organizationIds.size())), Long.class,
+                    prepend(tenantId, organizationIds)));
+            result.addAll(roleUsers(tenantId, "TEAM_LEADER", organizationIds));
+            return activeUsers(tenantId, result);
         }
         List<Long> workshopIds = jdbc.queryForList("""
                 WITH RECURSIVE ancestors AS (
@@ -394,6 +763,12 @@ public class NotificationService {
         );
         if (!workshopIds.isEmpty()) {
             result.addAll(jdbc.queryForList("""
+                    SELECT user_id FROM organization_manager_relation
+                    WHERE tenant_id = ? AND organization_id IN (%s) AND deleted = 0
+                    ORDER BY organization_id, sort_order, id
+                    """.formatted(placeholders(workshopIds.size())), Long.class,
+                    prepend(tenantId, workshopIds)));
+            result.addAll(jdbc.queryForList("""
                     SELECT manager_user_id FROM organization
                     WHERE tenant_id = ? AND id IN (%s)
                       AND manager_user_id IS NOT NULL AND deleted = 0
@@ -401,6 +776,25 @@ public class NotificationService {
                     prepend(tenantId, workshopIds)));
         }
         return activeUsers(tenantId, result);
+    }
+
+    private List<Long> assigneeUsers(
+            long tenantId, NotificationDtos.RuleRow rule,
+            NotificationDtos.TaskCandidate task
+    ) {
+        LinkedHashSet<Long> ids = new LinkedHashSet<>();
+        if (task.assigneeUserId() != null) {
+            ids.add(task.assigneeUserId());
+        }
+        String table = "INSPECTION".equals(rule.businessType())
+                ? "inspection_task_assignee" : "maintenance_task_collaborator";
+        String activePredicate = "INSPECTION".equals(rule.businessType())
+                ? " AND deleted = 0" : "";
+        ids.addAll(jdbc.queryForList("""
+                SELECT user_id FROM %s
+                WHERE tenant_id = ? AND task_id = ?%s
+                """.formatted(table, activePredicate), Long.class, tenantId, task.id()));
+        return activeUsers(tenantId, ids);
     }
 
     private List<Long> roleUsers(long tenantId, String roleCode, List<Long> organizationIds) {
@@ -576,5 +970,24 @@ public class NotificationService {
 
     private LocalDateTime timestamp(java.sql.Timestamp value) {
         return value == null ? null : value.toLocalDateTime();
+    }
+
+    private Long nullableLong(java.sql.ResultSet rs, String column)
+            throws java.sql.SQLException {
+        long value = rs.getLong(column);
+        return rs.wasNull() ? null : value;
+    }
+
+    private record MessageTarget(
+            long messageId, String businessType, long businessId, String businessCode
+    ) {
+    }
+
+    private record BusinessHeader(
+            String taskCode, String schemeName, String equipmentCode, String equipmentName,
+            String organizationName, String locationName, java.time.LocalDate plannedDate,
+            LocalDateTime dueTime, String taskStatus, String sourceType, String assigneeNames,
+            LocalDateTime startedTime, LocalDateTime submittedTime, LocalDateTime completedTime
+    ) {
     }
 }

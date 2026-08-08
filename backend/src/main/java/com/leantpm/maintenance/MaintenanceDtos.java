@@ -213,7 +213,7 @@ public final class MaintenanceDtos {
             @NotNull Boolean backfillAllowed,
             @NotNull Boolean stopRequired,
             @Pattern(
-                    regexp = "^$|^(IDLE|FAULT|STOPPED|OFFLINE)$",
+                    regexp = "^$|^(IDLE|RUNNING|STOPPED)$",
                     message = "恢复设备状态不正确"
             )
             String restoreStatusCode,
@@ -301,7 +301,7 @@ public final class MaintenanceDtos {
             String equipmentName,
             long organizationId,
             String organizationName,
-            long locationId,
+            Long locationId,
             String locationName,
             LocalDate plannedDate,
             LocalDateTime plannedStartTime,
@@ -558,7 +558,7 @@ public final class MaintenanceDtos {
             @Size(max = 2000) String temporaryAction,
             @Size(max = 2000) String finalResult,
             @Pattern(
-                    regexp = "^$|^(IDLE|RUNNING|INSPECTION|MAINTENANCE|FAULT|REPAIR|STOPPED|OFFLINE)$",
+                    regexp = "^$|^(IDLE|RUNNING|STOPPED|SCRAPPED)$",
                     message = "设备状态不正确"
             )
             String requestedEquipmentStatus,

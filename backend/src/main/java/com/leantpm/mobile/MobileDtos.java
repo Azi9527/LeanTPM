@@ -2,6 +2,7 @@ package com.leantpm.mobile;
 
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -29,7 +30,9 @@ public final class MobileDtos {
             long running,
             long stopped,
             long fault,
-            long offline
+            long offline,
+            long idle,
+            long scrapped
     ) {
     }
 
@@ -47,7 +50,13 @@ public final class MobileDtos {
             long completed,
             long pending,
             long overdue,
-            long abnormal
+            long abnormal,
+            long planDue,
+            long planCompleted,
+            long planOverdue,
+            long registered,
+            long quickRegistered,
+            long equipmentCovered
     ) {
     }
 
@@ -83,7 +92,15 @@ public final class MobileDtos {
     }
 
     public record PhotoPolicy(
-            int clockSkewWarningSeconds
+            int clockSkewWarningSeconds,
+            boolean watermarkEnabled,
+            boolean saveOriginal,
+            boolean saveWatermarked,
+            String template,
+            String position,
+            int backgroundOpacity,
+            String fontColor,
+            String backgroundColor
     ) {
     }
 
@@ -98,14 +115,14 @@ public final class MobileDtos {
     public record RegisterPhotoEvidenceRequest(
             @NotBlank @Pattern(regexp = "^(INSPECTION|MAINTENANCE)$") String workflowType,
             long taskId,
-            long taskItemId,
-            long originalAttachmentId,
-            long watermarkedAttachmentId,
+            Long taskItemId,
+            Long originalAttachmentId,
+            Long watermarkedAttachmentId,
             @NotNull LocalDateTime capturedDeviceTime,
             @NotNull LocalDateTime serverReferenceTime,
             int deviceClockOffsetSeconds,
             @NotBlank @Size(max = 300) String faultLocationText,
-            @NotBlank @Size(max = 1000) String watermarkText
+            @Size(max = 1000) String watermarkText
     ) {
     }
 
@@ -113,9 +130,9 @@ public final class MobileDtos {
             long id,
             String workflowType,
             long taskId,
-            long taskItemId,
-            long originalAttachmentId,
-            long watermarkedAttachmentId,
+            Long taskItemId,
+            Long originalAttachmentId,
+            Long watermarkedAttachmentId,
             LocalDateTime capturedDeviceTime,
             LocalDateTime receivedServerTime,
             int deviceClockOffsetSeconds,
@@ -161,6 +178,20 @@ public final class MobileDtos {
     ) {
     }
 
+    public record EquipmentAccessProbe(
+            long equipmentId,
+            String equipmentCode,
+            String equipmentName,
+            Long organizationId,
+            String organizationName,
+            Integer equipmentStatus,
+            Integer organizationStatus,
+            boolean equipmentDeleted,
+            boolean organizationDeleted,
+            boolean barcodeActive
+    ) {
+    }
+
     public record TaskLink(
             long taskId,
             String taskCode,
@@ -182,6 +213,26 @@ public final class MobileDtos {
     ) {
     }
 
+    public record DirectInspectionReportRequest(
+            @NotNull @Min(1) Long schemeVersionId,
+            @Size(max = 500) String remark,
+            Boolean allowRepeat
+    ) {
+    }
+
+    public record TodayInspectionRecord(
+            long taskId,
+            String taskCode,
+            long schemeVersionId,
+            String schemeName,
+            String taskStatus,
+            String sourceType,
+            String executorName,
+            LocalDateTime submittedTime,
+            LocalDateTime completedTime
+    ) {
+    }
+
     public record AssigneeOption(
             long userId,
             String username,
@@ -197,6 +248,7 @@ public final class MobileDtos {
             EquipmentBase equipment,
             List<TaskLink> activeTasks,
             List<ApplicableInspectionScheme> inspectionSchemes,
+            List<TodayInspectionRecord> todayInspections,
             List<AssigneeOption> assignees,
             List<TeamOption> teams
     ) {

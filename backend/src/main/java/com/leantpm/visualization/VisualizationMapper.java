@@ -61,6 +61,23 @@ public interface VisualizationMapper {
             @Param("endDate") LocalDate endDate
     );
 
+    VisualizationDtos.InspectionRegistrationMetrics inspectionRegistrationMetrics(
+            @Param("tenantId") long tenantId,
+            @Param("scope") DataPermission scope,
+            @Param("organizationIds") List<Long> organizationIds,
+            @Param("startDate") LocalDate startDate,
+            @Param("endDate") LocalDate endDate
+    );
+
+    List<VisualizationDtos.RecentInspectionRegistration> recentInspectionRegistrations(
+            @Param("tenantId") long tenantId,
+            @Param("scope") DataPermission scope,
+            @Param("organizationIds") List<Long> organizationIds,
+            @Param("startDate") LocalDate startDate,
+            @Param("endDate") LocalDate endDate,
+            @Param("limit") int limit
+    );
+
     Integer integerParameter(
             @Param("tenantId") long tenantId,
             @Param("parameterKey") String parameterKey

@@ -65,7 +65,11 @@ public class AttachmentController {
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Idempotent
-    @PreAuthorize("hasAuthority('system:attachment:upload')")
+    @PreAuthorize(
+            "hasAuthority('system:attachment:upload') "
+                    + "or hasAuthority('inspection:task:execute') "
+                    + "or hasAuthority('maintenance:task:execute')"
+    )
     public ApiResponse<SystemMapper.AttachmentRecord> upload(
             @RequestParam MultipartFile file,
             @RequestParam(required = false) String businessType,

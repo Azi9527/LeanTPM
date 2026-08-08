@@ -70,6 +70,30 @@ public final class FoundationDtos {
     ) {
     }
 
+    public record PhotoWatermarkSettings(
+            boolean watermarkEnabled,
+            boolean saveOriginal,
+            boolean saveWatermarked,
+            String template,
+            String position,
+            int backgroundOpacity,
+            String fontColor,
+            String backgroundColor
+    ) {
+    }
+
+    public record SavePhotoWatermarkSettingsRequest(
+            @NotNull Boolean watermarkEnabled,
+            @NotNull Boolean saveOriginal,
+            @NotNull Boolean saveWatermarked,
+            @NotBlank @Size(max = 2000) String template,
+            @NotBlank @Pattern(regexp = "TOP|BOTTOM") String position,
+            @Min(0) @Max(100) int backgroundOpacity,
+            @NotBlank @Pattern(regexp = "^#[0-9a-fA-F]{6}$") String fontColor,
+            @NotBlank @Pattern(regexp = "^#[0-9a-fA-F]{6}$") String backgroundColor
+    ) {
+    }
+
     public record NumberRuleRow(
             long id,
             String ruleCode,

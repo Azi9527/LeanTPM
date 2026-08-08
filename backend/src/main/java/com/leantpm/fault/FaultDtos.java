@@ -64,7 +64,7 @@ public final class FaultDtos {
     public record CreateRepairRequest(
             Long primaryRepairerUserId,
             List<Long> collaboratorUserIds,
-            @Pattern(regexp = "^(IDLE|RUNNING|STOPPED|OFFLINE)$") String restoreStatusCode,
+            @Pattern(regexp = "^(IDLE|RUNNING|STOPPED)$") String restoreStatusCode,
             @NotNull Integer reportVersion
     ) {
     }
@@ -93,7 +93,7 @@ public final class FaultDtos {
     public record AcceptanceRequest(
             @NotNull Boolean passed,
             @NotBlank @Size(max = 1000) String comment,
-            @Pattern(regexp = "^(IDLE|RUNNING|STOPPED|OFFLINE)$") String restoreStatusCode,
+            @Pattern(regexp = "^(IDLE|RUNNING|STOPPED)$") String restoreStatusCode,
             List<Long> attachmentIds,
             @NotNull Integer version
     ) {

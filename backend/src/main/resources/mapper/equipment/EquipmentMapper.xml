@@ -11,12 +11,64 @@
                         e.created_by = #{scope.userId}
                         OR e.primary_responsible_user_id = #{scope.userId}
                         OR EXISTS (
+                            SELECT 1
+                            FROM system_user scoped_user
+                            WHERE scoped_user.tenant_id = e.tenant_id
+                              AND scoped_user.id = #{scope.userId}
+                              AND scoped_user.organization_id = e.organization_id
+                              AND scoped_user.status = 1
+                              AND scoped_user.deleted = 0
+                        )
+                        OR EXISTS (
+                            SELECT 1
+                            FROM system_user_team_membership scoped_membership
+                            WHERE scoped_membership.tenant_id = e.tenant_id
+                              AND scoped_membership.user_id = #{scope.userId}
+                              AND scoped_membership.team_organization_id = e.organization_id
+                              AND scoped_membership.deleted = 0
+                        )
+                        OR EXISTS (
                             SELECT 1 FROM equipment_responsible_person scoped_person
                             WHERE scoped_person.tenant_id = e.tenant_id
                               AND scoped_person.equipment_id = e.id
                               AND scoped_person.user_id = #{scope.userId}
                               AND scoped_person.status = 1
                               AND scoped_person.deleted = 0
+                        )
+                        OR EXISTS (
+                            SELECT 1
+                            FROM inspection_task scoped_inspection
+                            WHERE scoped_inspection.tenant_id = e.tenant_id
+                              AND scoped_inspection.equipment_id = e.id
+                              AND scoped_inspection.deleted = 0
+                              AND (
+                                  scoped_inspection.assignee_user_id = #{scope.userId}
+                                  OR EXISTS (
+                                      SELECT 1
+                                      FROM inspection_task_assignee scoped_assignee
+                                      WHERE scoped_assignee.tenant_id = scoped_inspection.tenant_id
+                                        AND scoped_assignee.task_id = scoped_inspection.id
+                                        AND scoped_assignee.user_id = #{scope.userId}
+                                        AND scoped_assignee.deleted = 0
+                                  )
+                              )
+                        )
+                        OR EXISTS (
+                            SELECT 1
+                            FROM maintenance_task scoped_maintenance
+                            WHERE scoped_maintenance.tenant_id = e.tenant_id
+                              AND scoped_maintenance.equipment_id = e.id
+                              AND scoped_maintenance.deleted = 0
+                              AND (
+                                  scoped_maintenance.assignee_user_id = #{scope.userId}
+                                  OR EXISTS (
+                                      SELECT 1
+                                      FROM maintenance_task_collaborator scoped_collaborator
+                                      WHERE scoped_collaborator.tenant_id = scoped_maintenance.tenant_id
+                                        AND scoped_collaborator.task_id = scoped_maintenance.id
+                                        AND scoped_collaborator.user_id = #{scope.userId}
+                                  )
+                              )
                         )
                     </if>
                     <if test="scope.selfData and scope.organizationIds != null and !scope.organizationIds.isEmpty()">
@@ -60,6 +112,102 @@
         <if test="status != null">AND e.status = #{status}</if>
     </sql>
 
+    <sql id="stringFilter">
+        <choose>
+            <when test="filter.operator.name() == 'EQ'">${column} = #{filter.value}</when>
+            <when test="filter.operator.name() == 'NE'">COALESCE(${column}, '') != #{filter.value}</when>
+            <when test="filter.operator.name() == 'NOT_CONTAINS'">COALESCE(${column}, '') NOT LIKE CONCAT('%', #{filter.value}, '%')</when>
+            <when test="filter.operator.name() == 'STARTS_WITH'">${column} LIKE CONCAT(#{filter.value}, '%')</when>
+            <when test="filter.operator.name() == 'ENDS_WITH'">${column} LIKE CONCAT('%', #{filter.value})</when>
+            <when test="filter.operator.name() == 'EMPTY'">(${column} IS NULL OR ${column} = '')</when>
+            <when test="filter.operator.name() == 'NOT_EMPTY'">(${column} IS NOT NULL AND ${column} != '')</when>
+            <otherwise>${column} LIKE CONCAT('%', #{filter.value}, '%')</otherwise>
+        </choose>
+    </sql>
+
+    <sql id="numberFilter">
+        <choose>
+            <when test="filter.operator.name() == 'NE'">${column} != CAST(#{filter.value} AS DECIMAL(30,6))</when>
+            <when test="filter.operator.name() == 'GT'">${column} &gt; CAST(#{filter.value} AS DECIMAL(30,6))</when>
+            <when test="filter.operator.name() == 'GTE'">${column} &gt;= CAST(#{filter.value} AS DECIMAL(30,6))</when>
+            <when test="filter.operator.name() == 'LT'">${column} &lt; CAST(#{filter.value} AS DECIMAL(30,6))</when>
+            <when test="filter.operator.name() == 'LTE'">${column} &lt;= CAST(#{filter.value} AS DECIMAL(30,6))</when>
+            <when test="filter.operator.name() == 'BETWEEN'">${column} BETWEEN CAST(#{filter.values[0]} AS DECIMAL(30,6)) AND CAST(#{filter.values[1]} AS DECIMAL(30,6))</when>
+            <when test="filter.operator.name() == 'EMPTY'">${column} IS NULL</when>
+            <when test="filter.operator.name() == 'NOT_EMPTY'">${column} IS NOT NULL</when>
+            <otherwise>${column} = CAST(#{filter.value} AS DECIMAL(30,6))</otherwise>
+        </choose>
+    </sql>
+
+    <sql id="smartTableFilters">
+        <if test="tableQuery != null and tableQuery.filters != null and !tableQuery.filters.isEmpty()">
+            AND (
+            <foreach collection="tableQuery.filters" item="filter" index="index">
+                <if test="index &gt; 0">
+                    <choose>
+                        <when test="tableQuery.logic.name() == 'OR'">OR</when>
+                        <otherwise>AND</otherwise>
+                    </choose>
+                </if>
+                <choose>
+                    <when test="filter.field == 'equipmentCode'">
+                        <include refid="stringFilter"><property name="column" value="e.equipment_code"/></include>
+                    </when>
+                    <when test="filter.field == 'equipmentName'">
+                        <include refid="stringFilter"><property name="column" value="e.equipment_name"/></include>
+                    </when>
+                    <when test="filter.field == 'categoryName'">
+                        <include refid="stringFilter"><property name="column" value="category.category_name"/></include>
+                    </when>
+                    <when test="filter.field == 'organizationName'">
+                        <include refid="stringFilter"><property name="column" value="organization.organization_name"/></include>
+                    </when>
+                    <when test="filter.field == 'locationName'">
+                        <include refid="stringFilter"><property name="column" value="location.location_name"/></include>
+                    </when>
+                    <when test="filter.field == 'primaryResponsibleName'">
+                        <include refid="stringFilter"><property name="column" value="responsible.real_name"/></include>
+                    </when>
+                    <when test="filter.field == 'currentStatusCode'">
+                        <include refid="stringFilter"><property name="column" value="current_status.status_code"/></include>
+                    </when>
+                    <when test="filter.field == 'statusDurationSeconds'">
+                        <include refid="numberFilter"><property name="column" value="TIMESTAMPDIFF(SECOND, current_status.status_since, CURRENT_TIMESTAMP(3))"/></include>
+                    </when>
+                    <when test="filter.field == 'criticalFlag'">
+                        <include refid="numberFilter"><property name="column" value="e.critical_flag"/></include>
+                    </when>
+                    <when test="filter.field == 'status'">
+                        <include refid="numberFilter"><property name="column" value="e.status"/></include>
+                    </when>
+                    <otherwise>1 = 0</otherwise>
+                </choose>
+            </foreach>
+            )
+        </if>
+    </sql>
+
+    <sql id="smartTableOrder">
+        <choose>
+            <when test="tableQuery != null and tableQuery.sortBy == 'equipmentCode'">e.equipment_code</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'equipmentName'">e.equipment_name</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'categoryName'">category.category_name</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'organizationName'">organization.organization_name</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'locationName'">location.location_name</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'primaryResponsibleName'">responsible.real_name</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'currentStatusCode'">current_status.status_code</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'statusDurationSeconds'">status_duration_seconds</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'criticalFlag'">e.critical_flag</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'status'">e.status</when>
+            <otherwise>e.updated_time</otherwise>
+        </choose>
+        <choose>
+            <when test="tableQuery != null and tableQuery.sortDirection != null and tableQuery.sortDirection.name() == 'ASC'">ASC</when>
+            <otherwise>DESC</otherwise>
+        </choose>
+        , e.id DESC
+    </sql>
+
     <sql id="equipmentColumns">
         e.id, e.equipment_code, e.equipment_name, e.category_id,
         category.category_code, category.category_name,
@@ -91,7 +239,7 @@
           ON organization.tenant_id = e.tenant_id
          AND organization.id = e.organization_id
          AND organization.deleted = 0
-        JOIN location
+        LEFT JOIN location
           ON location.tenant_id = e.tenant_id
          AND location.id = e.location_id
          AND location.deleted = 0
@@ -114,7 +262,8 @@
         FROM equipment e
         <include refid="equipmentJoins"/>
         WHERE <include refid="filters"/>
-        ORDER BY e.updated_time DESC, e.id DESC
+        <include refid="smartTableFilters"/>
+        ORDER BY <include refid="smartTableOrder"/>
         LIMIT #{offset}, #{pageSize}
     </select>
 
@@ -123,6 +272,18 @@
         FROM equipment e
         <include refid="equipmentJoins"/>
         WHERE <include refid="filters"/>
+        <include refid="smartTableFilters"/>
+    </select>
+
+    <select id="summarizeEquipmentStatus"
+            resultType="com.leantpm.equipment.EquipmentDtos$StatusSummaryRow">
+        SELECT COALESCE(current_status.status_code, 'IDLE') AS status_code,
+               COUNT(*) AS equipment_count
+        FROM equipment e
+        <include refid="equipmentJoins"/>
+        WHERE <include refid="filters"/>
+        <include refid="smartTableFilters"/>
+        GROUP BY COALESCE(current_status.status_code, 'IDLE')
     </select>
 
     <select id="findEquipment"
@@ -426,7 +587,7 @@
         LEFT JOIN location from_location
           ON from_location.tenant_id = transfer.tenant_id
          AND from_location.id = transfer.from_location_id
-        JOIN location to_location
+        LEFT JOIN location to_location
           ON to_location.tenant_id = transfer.tenant_id
          AND to_location.id = transfer.to_location_id
         LEFT JOIN system_user from_user
@@ -459,7 +620,8 @@
     <select id="findBarcodes"
             resultType="com.leantpm.equipment.EquipmentDtos$BarcodeRow">
         SELECT barcode.id, barcode.equipment_id, e.equipment_code,
-               e.equipment_name, barcode.access_token, barcode.barcode_type,
+               e.equipment_name, e.organization_id, organization.organization_name,
+               barcode.access_token, barcode.barcode_type,
                CASE WHEN barcode.active_slot = 1 THEN TRUE ELSE FALSE END AS active,
                barcode.generated_time, barcode.invalidated_time,
                barcode.invalidation_reason
@@ -468,9 +630,14 @@
           ON e.tenant_id = barcode.tenant_id
          AND e.id = barcode.equipment_id
          AND e.deleted = 0
+        JOIN organization
+          ON organization.tenant_id = e.tenant_id
+         AND organization.id = e.organization_id
+         AND organization.deleted = 0
         WHERE barcode.tenant_id = #{tenantId}
           AND <include refid="dataScope"/>
         <if test="equipmentId != null">AND barcode.equipment_id = #{equipmentId}</if>
+        <if test="organizationId != null">AND e.organization_id = #{organizationId}</if>
         <if test="activeOnly">AND barcode.active_slot = 1</if>
         ORDER BY barcode.generated_time DESC, barcode.id DESC
     </select>
@@ -493,7 +660,8 @@
     <select id="findBarcode"
             resultType="com.leantpm.equipment.EquipmentDtos$BarcodeRow">
         SELECT barcode.id, barcode.equipment_id, equipment.equipment_code,
-               equipment.equipment_name, barcode.access_token, barcode.barcode_type,
+               equipment.equipment_name, equipment.organization_id,
+               organization.organization_name, barcode.access_token, barcode.barcode_type,
                CASE WHEN barcode.active_slot = 1 THEN TRUE ELSE FALSE END AS active,
                barcode.generated_time, barcode.invalidated_time,
                barcode.invalidation_reason
@@ -502,6 +670,10 @@
           ON equipment.tenant_id = barcode.tenant_id
          AND equipment.id = barcode.equipment_id
          AND equipment.deleted = 0
+        JOIN organization
+          ON organization.tenant_id = equipment.tenant_id
+         AND organization.id = equipment.organization_id
+         AND organization.deleted = 0
         WHERE barcode.tenant_id = #{tenantId} AND barcode.id = #{barcodeId}
         LIMIT 1
     </select>
@@ -509,7 +681,8 @@
     <select id="findActiveBarcode"
             resultType="com.leantpm.equipment.EquipmentDtos$BarcodeRow">
         SELECT barcode.id, barcode.equipment_id, equipment.equipment_code,
-               equipment.equipment_name, barcode.access_token, barcode.barcode_type,
+               equipment.equipment_name, equipment.organization_id,
+               organization.organization_name, barcode.access_token, barcode.barcode_type,
                TRUE AS active, barcode.generated_time, barcode.invalidated_time,
                barcode.invalidation_reason
         FROM equipment_barcode barcode
@@ -517,6 +690,10 @@
           ON equipment.tenant_id = barcode.tenant_id
          AND equipment.id = barcode.equipment_id
          AND equipment.deleted = 0
+        JOIN organization
+          ON organization.tenant_id = equipment.tenant_id
+         AND organization.id = equipment.organization_id
+         AND organization.deleted = 0
         WHERE barcode.tenant_id = #{tenantId}
           AND barcode.equipment_id = #{equipmentId}
           AND barcode.active_slot = 1
@@ -555,7 +732,7 @@
           ON category.tenant_id = equipment.tenant_id
          AND category.id = equipment.category_id
          AND category.deleted = 0
-        JOIN location
+        LEFT JOIN location
           ON location.tenant_id = equipment.tenant_id
          AND location.id = equipment.location_id
          AND location.deleted = 0

@@ -67,6 +67,7 @@ public class SecurityConfig {
                                 "/api/v1/auth/login",
                                 "/api/v1/auth/refresh",
                                 "/api/v1/public/branding",
+                                "/api/v1/public/app/android/**",
                                 "/api/v1/public/equipment/**"
                         ).permitAll()
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
@@ -102,7 +103,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource(
             @Value("${leantpm.security.cors-allowed-origins:"
-                    + "http://localhost:5173,http://127.0.0.1:5173,"
+                    + "http://localhost:15173,http://127.0.0.1:15173,"
                     + "https://localhost,capacitor://localhost}")
             List<String> allowedOrigins
     ) {

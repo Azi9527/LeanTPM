@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leantpm.common.api.PageResult;
 import com.leantpm.common.exception.BusinessException;
+import com.leantpm.common.query.TableQuery;
 import com.leantpm.foundation.service.NumberRuleService;
 import com.leantpm.security.SecurityUtils;
 import com.leantpm.security.datascope.DataPermission;
@@ -31,6 +32,7 @@ public class InspectionCatalogService {
     private final DataPermissionService dataPermissionService;
     private final ChangeLogService changeLogService;
     private final ObjectMapper objectMapper;
+    private final InspectionTaskService taskService;
 
     public InspectionCatalogService(
             InspectionMapper mapper,
@@ -38,7 +40,8 @@ public class InspectionCatalogService {
             NumberRuleService numberRuleService,
             DataPermissionService dataPermissionService,
             ChangeLogService changeLogService,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            InspectionTaskService taskService
     ) {
         this.mapper = mapper;
         this.calendarMapper = calendarMapper;
@@ -46,29 +49,49 @@ public class InspectionCatalogService {
         this.dataPermissionService = dataPermissionService;
         this.changeLogService = changeLogService;
         this.objectMapper = objectMapper;
+        this.taskService = taskService;
     }
 
     @Transactional(readOnly = true)
     public PageResult<InspectionDtos.ItemRow> items(
             String keyword,
+            Long organizationId,
             String category,
             String resultType,
             Integer status,
             int page,
             int pageSize
     ) {
+        return items(keyword, organizationId, category, resultType, status,
+                TableQuery.empty(), page, pageSize);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResult<InspectionDtos.ItemRow> items(
+            String keyword,
+            Long organizationId,
+            String category,
+            String resultType,
+            Integer status,
+            TableQuery tableQuery,
+            int page,
+            int pageSize
+    ) {
         var current = SecurityUtils.currentUser();
+        DataPermission scope = dataPermissionService.current();
         int offset = (page - 1) * pageSize;
         String normalizedCategory = upper(category);
         String normalizedResultType = upper(resultType);
         return PageResult.of(
                 mapper.findItems(
-                        current.tenantId(), clean(keyword), normalizedCategory,
-                        normalizedResultType, status, offset, pageSize
+                        current.tenantId(), scope, clean(keyword), organizationId,
+                        normalizedCategory,
+                        normalizedResultType, status, tableQuery, offset, pageSize
                 ),
                 mapper.countItems(
-                        current.tenantId(), clean(keyword), normalizedCategory,
-                        normalizedResultType, status
+                        current.tenantId(), scope, clean(keyword), organizationId,
+                        normalizedCategory,
+                        normalizedResultType, status, tableQuery
                 ),
                 page,
                 pageSize
@@ -77,13 +100,15 @@ public class InspectionCatalogService {
 
     @Transactional(readOnly = true)
     public InspectionDtos.ItemRow item(long id) {
-        return requireItem(SecurityUtils.currentUser().tenantId(), id);
+        var current = SecurityUtils.currentUser();
+        return requireItem(current.tenantId(), id, dataPermissionService.current());
     }
 
     @Transactional
     public long createItem(InspectionDtos.SaveItemRequest request) {
         var current = SecurityUtils.currentUser();
         InspectionDtos.SaveItemRequest normalized = normalizeItem(request);
+        requireOrganizationAccess(normalized.organizationId());
         validateItem(normalized);
         if (mapper.countItemCode(current.tenantId(), normalized.itemCode(), null) > 0) {
             throw new BusinessException(
@@ -109,11 +134,14 @@ public class InspectionCatalogService {
     @Transactional
     public void updateItem(long id, InspectionDtos.SaveItemRequest request) {
         var current = SecurityUtils.currentUser();
-        InspectionDtos.ItemRow before = requireItem(current.tenantId(), id);
+        InspectionDtos.ItemRow before = requireItem(
+                current.tenantId(), id, dataPermissionService.current()
+        );
         if (request.version() == null) {
             throw new BusinessException("VERSION_REQUIRED", "缺少数据版本");
         }
         InspectionDtos.SaveItemRequest normalized = normalizeItem(request);
+        requireOrganizationAccess(normalized.organizationId());
         validateItem(normalized);
         if (!before.itemCode().equals(normalized.itemCode())) {
             throw new BusinessException("INSPECTION_ITEM_CODE_IMMUTABLE", "点检项目编码不可修改");
@@ -131,7 +159,9 @@ public class InspectionCatalogService {
     @Transactional
     public void deleteItem(long id, int version) {
         var current = SecurityUtils.currentUser();
-        InspectionDtos.ItemRow before = requireItem(current.tenantId(), id);
+        InspectionDtos.ItemRow before = requireItem(
+                current.tenantId(), id, dataPermissionService.current()
+        );
         if (mapper.countPublishedItemReferences(current.tenantId(), id) > 0) {
             throw new BusinessException(
                     "INSPECTION_ITEM_IN_USE", "点检项目已被已发布方案引用，不能删除",
@@ -152,15 +182,28 @@ public class InspectionCatalogService {
             int page,
             int pageSize
     ) {
+        return schemes(keyword, inspectionType, status, TableQuery.empty(), page, pageSize);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResult<InspectionDtos.SchemeRow> schemes(
+            String keyword,
+            String inspectionType,
+            Integer status,
+            TableQuery tableQuery,
+            int page,
+            int pageSize
+    ) {
         var current = SecurityUtils.currentUser();
         int offset = (page - 1) * pageSize;
         return PageResult.of(
                 mapper.findSchemes(
                         current.tenantId(), clean(keyword), upper(inspectionType),
-                        status, offset, pageSize
+                        status, tableQuery, offset, pageSize
                 ),
                 mapper.countSchemes(
-                        current.tenantId(), clean(keyword), upper(inspectionType), status
+                        current.tenantId(), clean(keyword), upper(inspectionType), status,
+                        tableQuery
                 ),
                 page,
                 pageSize
@@ -200,6 +243,19 @@ public class InspectionCatalogService {
                 ),
                 mapper.findSchemeVersions(tenantId, id)
         );
+    }
+
+    @Transactional(readOnly = true)
+    public List<Long> applicableEquipmentIds(long schemeId) {
+        var current = SecurityUtils.currentUser();
+        InspectionDtos.SchemeRow scheme = requireScheme(current.tenantId(), schemeId);
+        if (scheme.currentVersionId() == null
+                || !"PUBLISHED".equals(scheme.currentVersionStatus())) {
+            return List.of();
+        }
+        return mapper.findApplicableEquipment(
+                current.tenantId(), scheme.currentVersionId(), dataPermissionService.current()
+        ).stream().map(InspectionMapper.ApplicableEquipment::id).toList();
     }
 
     @Transactional
@@ -263,6 +319,51 @@ public class InspectionCatalogService {
     }
 
     @Transactional
+    public long createAndPublishScheme(InspectionDtos.SaveSchemeRequest request) {
+        long schemeId = createScheme(request);
+        List<InspectionDtos.SchemeVersionRow> versions = mapper.findSchemeVersions(
+                SecurityUtils.currentUser().tenantId(), schemeId
+        );
+        InspectionDtos.SchemeVersionRow draft = versions.stream()
+                .filter(version -> "DRAFT".equals(version.versionStatus()))
+                .findFirst()
+                .orElseThrow(() -> new BusinessException(
+                        "INSPECTION_SCHEME_VERSION_NOT_FOUND", "点检方案版本创建失败"
+                ));
+        publish(schemeId, draft.id());
+        return schemeId;
+    }
+
+    @Transactional
+    public long createAndPublishSchemeVersion(
+            long schemeId,
+            InspectionDtos.SaveSchemeRequest request
+    ) {
+        long versionId = createSchemeVersion(schemeId, request);
+        publish(schemeId, versionId);
+        return versionId;
+    }
+
+    @Transactional
+    public void updateSchemeStatus(
+            long schemeId,
+            InspectionDtos.UpdateSchemeStatusRequest request
+    ) {
+        var current = SecurityUtils.currentUser();
+        InspectionDtos.SchemeRow before = requireScheme(current.tenantId(), schemeId);
+        if (mapper.updateSchemeStatus(
+                current.tenantId(), schemeId, request.enabled(), request.version(), current.userId()
+        ) == 0) {
+            throw optimisticConflict();
+        }
+        changeLogService.record(
+                "INSPECTION_SCHEME", schemeId,
+                request.enabled() ? "ENABLE" : "DISABLE", before,
+                mapper.findScheme(current.tenantId(), schemeId)
+        );
+    }
+
+    @Transactional
     public void publish(long schemeId, long versionId) {
         var current = SecurityUtils.currentUser();
         InspectionDtos.SchemeRow before = requireScheme(current.tenantId(), schemeId);
@@ -323,6 +424,17 @@ public class InspectionCatalogService {
             int page,
             int pageSize
     ) {
+        return plans(keyword, planStatus, TableQuery.empty(), page, pageSize);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResult<InspectionDtos.PlanRow> plans(
+            String keyword,
+            String planStatus,
+            TableQuery tableQuery,
+            int page,
+            int pageSize
+    ) {
         var current = SecurityUtils.currentUser();
         DataPermission scope = dataPermissionService.current();
         int offset = (page - 1) * pageSize;
@@ -330,10 +442,11 @@ public class InspectionCatalogService {
         return PageResult.of(
                 mapper.findPlans(
                         current.tenantId(), scope, clean(keyword), normalizedStatus,
-                        offset, pageSize
+                        tableQuery, offset, pageSize
                 ),
                 mapper.countPlans(
-                        current.tenantId(), scope, clean(keyword), normalizedStatus
+                        current.tenantId(), scope, clean(keyword), normalizedStatus,
+                        tableQuery
                 ),
                 page,
                 pageSize
@@ -365,6 +478,9 @@ public class InspectionCatalogService {
         }
 
         Set<Long> equipmentIds = distinct(request.equipmentIds());
+        Set<Long> applicableEquipmentIds = mapper.findApplicableEquipment(
+                current.tenantId(), version.id(), scope
+        ).stream().map(InspectionMapper.ApplicableEquipment::id).collect(java.util.stream.Collectors.toSet());
         for (Long equipmentId : equipmentIds) {
             if (mapper.countActiveEquipment(
                     current.tenantId(), equipmentId, scope
@@ -372,6 +488,12 @@ public class InspectionCatalogService {
                 throw new BusinessException(
                         "INSPECTION_PLAN_EQUIPMENT_INVALID",
                         "所选设备不存在、未启用或超出当前数据权限"
+                );
+            }
+            if (!applicableEquipmentIds.contains(equipmentId)) {
+                throw new BusinessException(
+                        "INSPECTION_PLAN_SCHEME_NOT_APPLICABLE",
+                        "所选点检方案不适用于该设备，请重新选择方案或设备"
                 );
             }
         }
@@ -414,6 +536,25 @@ public class InspectionCatalogService {
         );
     }
 
+    @Transactional
+    public void deletePlan(long id, int version) {
+        var current = SecurityUtils.currentUser();
+        InspectionDtos.PlanRow before = requirePlan(
+                current.tenantId(), id, dataPermissionService.current()
+        );
+        for (Long taskId : mapper.findTaskIdsByPlan(current.tenantId(), id)) {
+            taskService.softDeleteTaskCascade(
+                    current.tenantId(), taskId, null, current.userId()
+            );
+        }
+        if (mapper.softDeletePlan(
+                current.tenantId(), id, version, current.userId()
+        ) == 0) {
+            throw optimisticConflict();
+        }
+        changeLogService.record("INSPECTION_PLAN", id, "DELETE", before, null);
+    }
+
     private long createDraftVersion(
             long tenantId,
             long operatorId,
@@ -429,6 +570,13 @@ public class InspectionCatalogService {
                     HttpStatus.INTERNAL_SERVER_ERROR
             );
         }
+        List<Long> assigneeIds = request.defaultAssigneeUserIds();
+        for (int index = 0; index < assigneeIds.size(); index++) {
+            mapper.insertSchemeDefaultAssignee(
+                    tenantId, versionId, assigneeIds.get(index),
+                    index == 0, index * 10, operatorId
+            );
+        }
         for (InspectionDtos.SaveSchemeItemRequest item : request.items()) {
             mapper.insertSchemeItem(tenantId, versionId, item, operatorId);
         }
@@ -442,6 +590,12 @@ public class InspectionCatalogService {
     }
 
     private void validateItem(InspectionDtos.SaveItemRequest request) {
+        if ("NUMBER".equals(request.resultType())
+                && request.minimumValue() == null && request.maximumValue() == null) {
+            throw new BusinessException(
+                    "INSPECTION_ITEM_NUMBER_RANGE_REQUIRED", "数值结果请至少填写数值下限或数值上限"
+            );
+        }
         if (request.minimumValue() != null && request.maximumValue() != null
                 && request.minimumValue().compareTo(request.maximumValue()) > 0) {
             throw new BusinessException(
@@ -495,7 +649,9 @@ public class InspectionCatalogService {
             if (!itemIds.add(item.inspectionItemId())) {
                 throw new BusinessException("INSPECTION_SCHEME_ITEM_DUPLICATE", "方案项目不能重复");
             }
-            InspectionDtos.ItemRow definition = requireItem(tenantId, item.inspectionItemId());
+            InspectionDtos.ItemRow definition = requireItem(
+                    tenantId, item.inspectionItemId(), scope
+            );
             if (definition.status() != 1) {
                 throw new BusinessException(
                         "INSPECTION_SCHEME_ITEM_DISABLED", "方案不能引用停用点检项目"
@@ -525,11 +681,12 @@ public class InspectionCatalogService {
                 );
             }
         }
-        if (request.defaultAssigneeUserId() != null
-                && mapper.countActiveUser(tenantId, request.defaultAssigneeUserId()) == 0) {
+        for (Long userId : request.defaultAssigneeUserIds()) {
+            if (mapper.countActiveUser(tenantId, userId) == 0) {
             throw new BusinessException(
                     "USER_NOT_FOUND", "默认执行人不存在或已停用", HttpStatus.NOT_FOUND
             );
+            }
         }
         if (request.generationLeadMinutes() > 43_200) {
             throw new BusinessException(
@@ -555,22 +712,36 @@ public class InspectionCatalogService {
     private InspectionDtos.SaveItemRequest normalizeItem(
             InspectionDtos.SaveItemRequest request
     ) {
+        String resultType = request.resultType().trim().toUpperCase(Locale.ROOT);
+        boolean numeric = "NUMBER".equals(resultType);
+        boolean normalAbnormal = "NORMAL_ABNORMAL".equals(resultType);
+        boolean passFail = "PASS_FAIL".equals(resultType);
+        String standardValue = clean(request.standardValue());
+        List<String> resultOptions = request.resultOptions() == null ? List.of()
+                : request.resultOptions().stream().map(String::trim).distinct().toList();
+        if (normalAbnormal) {
+            standardValue = "ABNORMAL".equalsIgnoreCase(standardValue) ? "ABNORMAL" : "NORMAL";
+            resultOptions = List.of("NORMAL", "ABNORMAL");
+        } else if (passFail) {
+            standardValue = "FAIL".equalsIgnoreCase(standardValue) ? "FAIL" : "PASS";
+            resultOptions = List.of("PASS", "FAIL");
+        }
         return new InspectionDtos.SaveItemRequest(
                 request.itemCode().trim().toUpperCase(Locale.ROOT),
                 request.itemName().trim(),
+                request.organizationId(),
                 request.itemCategory().trim().toUpperCase(Locale.ROOT),
                 clean(request.inspectionPart()),
                 request.inspectionContent().trim(),
                 clean(request.inspectionMethod()),
                 clean(request.inspectionTool()),
                 request.inspectionStandard().trim(),
-                clean(request.standardValue()),
-                request.minimumValue(),
-                request.maximumValue(),
-                clean(request.unit()),
-                request.resultType().trim().toUpperCase(Locale.ROOT),
-                request.resultOptions() == null ? List.of()
-                        : request.resultOptions().stream().map(String::trim).distinct().toList(),
+                numeric ? null : standardValue,
+                numeric ? request.minimumValue() : null,
+                numeric ? request.maximumValue() : null,
+                numeric ? clean(request.unit()) : null,
+                resultType,
+                resultOptions,
                 request.required(),
                 request.photoRequired(),
                 request.photoMinCount(),
@@ -578,7 +749,7 @@ public class InspectionCatalogService {
                 request.photoMaxSizeMb(),
                 request.photoAllowedTypes().trim().toLowerCase(Locale.ROOT),
                 request.photoCompressionQuality(),
-                request.numericRequired(),
+                numeric,
                 request.skipAllowed(),
                 request.abnormalSeverity().trim().toUpperCase(Locale.ROOT),
                 clean(request.abnormalAdvice()),
@@ -594,6 +765,15 @@ public class InspectionCatalogService {
     private InspectionDtos.SaveSchemeRequest normalizeScheme(
             InspectionDtos.SaveSchemeRequest request
     ) {
+        List<Long> defaultAssigneeUserIds = List.copyOf(distinct(
+                request.defaultAssigneeUserIds() == null
+                        || request.defaultAssigneeUserIds().isEmpty()
+                        ? (request.defaultAssigneeUserId() == null
+                        ? List.of() : List.of(request.defaultAssigneeUserId()))
+                        : request.defaultAssigneeUserIds()
+        ));
+        Long primaryAssigneeUserId = defaultAssigneeUserIds.isEmpty()
+                ? null : defaultAssigneeUserIds.get(0);
         return new InspectionDtos.SaveSchemeRequest(
                 upper(request.schemeCode()),
                 request.schemeName().trim(),
@@ -609,10 +789,13 @@ public class InspectionCatalogService {
                         SecurityUtils.currentUser().tenantId()
                 ) : request.workCalendarId(),
                 upper(request.shiftCode()),
-                request.defaultAssigneeUserId(),
+                primaryAssigneeUserId,
+                defaultAssigneeUserIds,
                 upper(request.defaultTeamCode()),
                 false,
                 request.backfillAllowed(),
+                request.submissionPhotoRequired(),
+                request.submissionPhotoMaxCount(),
                 request.effectiveDate(),
                 request.expiryDate(),
                 request.items(),
@@ -668,14 +851,23 @@ public class InspectionCatalogService {
         return false;
     }
 
-    private InspectionDtos.ItemRow requireItem(long tenantId, long id) {
+    private InspectionDtos.ItemRow requireItem(long tenantId, long id, DataPermission scope) {
         InspectionDtos.ItemRow item = mapper.findItem(tenantId, id);
-        if (item == null) {
+        if (item == null || (item.organizationId() != null
+                && !scope.canCreateIn(item.organizationId()))) {
             throw new BusinessException(
                     "INSPECTION_ITEM_NOT_FOUND", "点检项目不存在", HttpStatus.NOT_FOUND
             );
         }
         return item;
+    }
+
+    private void requireOrganizationAccess(Long organizationId) {
+        if (!dataPermissionService.current().canCreateIn(organizationId)) {
+            throw new BusinessException(
+                    "DATA_SCOPE_FORBIDDEN", "无权维护所选部门的点检项目", HttpStatus.FORBIDDEN
+            );
+        }
     }
 
     private InspectionDtos.SchemeRow requireScheme(long tenantId, long id) {

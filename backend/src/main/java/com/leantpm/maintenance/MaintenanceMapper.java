@@ -631,7 +631,7 @@ public interface MaintenanceMapper {
             @Param("today") LocalDate today
     );
 
-    record ApplicableEquipment(long id, long organizationId, long locationId) {
+    record ApplicableEquipment(long id, long organizationId, Long locationId) {
     }
 
     record EquipmentSnapshot(
@@ -639,7 +639,7 @@ public interface MaintenanceMapper {
             String equipmentCode,
             String equipmentName,
             long organizationId,
-            long locationId
+            Long locationId
     ) {
     }
 

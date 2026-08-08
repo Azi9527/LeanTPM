@@ -8,6 +8,8 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -34,17 +36,35 @@ public final class NotificationDtos {
     }
 
     public record SaveRuleRequest(
-            @NotBlank @Pattern(regexp = "^[A-Z][A-Z0-9_]{2,63}$") String ruleCode,
+            @NotBlank @Pattern(
+                    regexp = "^[A-Z][A-Z0-9_]{2,63}$",
+                    message = "规则编码须以大写字母开头，只能包含大写字母、数字和下划线，长度为 3～64 位"
+            ) String ruleCode,
             @NotBlank @Size(max = 120) String ruleName,
-            @NotBlank @Pattern(regexp = "^(INSPECTION|MAINTENANCE)$") String businessType,
-            @NotBlank @Pattern(regexp = "^(DUE_SOON|MANUAL_CREATED|OVERDUE)$") String triggerType,
+            @NotBlank @Pattern(
+                    regexp = "^(INSPECTION|MAINTENANCE)$",
+                    message = "业务类型只能选择点检或维保"
+            ) String businessType,
+            @NotBlank @Pattern(
+                    regexp = "^(DUE_SOON|MANUAL_CREATED|OVERDUE)$",
+                    message = "请选择系统支持的触发类型"
+            ) String triggerType,
             @NotNull @Min(0) @Max(525600) Integer advanceMinutes,
             @NotNull @Min(0) @Max(525600) Integer repeatMinutes,
             @NotNull @Min(0) @Max(9) Integer escalationLevel,
-            @NotBlank @Pattern(regexp = "^(ASSIGNEE|TEAM_LEADER|WORKSHOP_MANAGER)$")
+            @NotBlank @Pattern(
+                    regexp = "^(ASSIGNEE|TEAM_LEADER|WORKSHOP_MANAGER)$",
+                    message = "接收人只能选择执行人、班组长或车间主任"
+            )
             String recipientType,
-            @NotBlank @Pattern(regexp = "^(LOW|MEDIUM|HIGH|CRITICAL)$") String severity,
-            @NotEmpty List<@Pattern(regexp = "^(SYSTEM|ANDROID|SMS|WECHAT|EMAIL)$") String> channels,
+            @NotBlank @Pattern(
+                    regexp = "^(LOW|MEDIUM|HIGH|CRITICAL)$",
+                    message = "请选择系统支持的提醒等级"
+            ) String severity,
+            @NotEmpty List<@Pattern(
+                    regexp = "^(SYSTEM|ANDROID|SMS|WECHAT|EMAIL)$",
+                    message = "请选择系统支持的发送渠道"
+            ) String> channels,
             boolean acknowledgeRequired,
             boolean enabled,
             @NotNull @Min(0) Integer version
@@ -65,6 +85,66 @@ public final class NotificationDtos {
             LocalDateTime readTime,
             LocalDateTime acknowledgedTime,
             LocalDateTime occurredTime
+    ) {
+    }
+
+    public record BusinessDetail(
+            long messageId,
+            String businessType,
+            long businessId,
+            String businessCode,
+            String taskCode,
+            String schemeName,
+            String equipmentCode,
+            String equipmentName,
+            String organizationName,
+            String locationName,
+            LocalDate plannedDate,
+            LocalDateTime dueTime,
+            String taskStatus,
+            String sourceType,
+            String assigneeNames,
+            LocalDateTime startedTime,
+            LocalDateTime submittedTime,
+            LocalDateTime completedTime,
+            List<BusinessItemDetail> items,
+            List<BusinessAttachmentDetail> attachments
+    ) {
+    }
+
+    public record BusinessAttachmentDetail(
+            long id,
+            Long taskResultId,
+            Long taskItemId,
+            String itemName,
+            String originalName,
+            String contentType,
+            String extension,
+            long fileSize,
+            String attachmentType,
+            LocalDateTime createdTime
+    ) {
+    }
+
+    public record BusinessItemDetail(
+            long id,
+            String itemCode,
+            String itemName,
+            String itemPart,
+            String itemContent,
+            String itemStandard,
+            String resultType,
+            String unit,
+            String resultCode,
+            BigDecimal numericValue,
+            String textValue,
+            String selectedValue,
+            boolean abnormalFlag,
+            String abnormalDescription,
+            boolean skippedFlag,
+            String skipReason,
+            String executedByName,
+            LocalDateTime executedTime
     ) {
     }
 

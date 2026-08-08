@@ -22,6 +22,8 @@ public final class InspectionDtos {
             long id,
             String itemCode,
             String itemName,
+            Long organizationId,
+            String organizationName,
             String itemCategory,
             String inspectionPart,
             String inspectionContent,
@@ -59,6 +61,7 @@ public final class InspectionDtos {
             @Pattern(regexp = "^[A-Z][A-Z0-9_-]*$", message = "项目编码格式不正确")
             String itemCode,
             @NotBlank @Size(max = 150) String itemName,
+            @NotNull @Min(1) Long organizationId,
             @NotBlank @Size(max = 64) String itemCategory,
             @Size(max = 150) String inspectionPart,
             @NotBlank @Size(max = 500) String inspectionContent,
@@ -133,9 +136,13 @@ public final class InspectionDtos {
             String shiftCode,
             Long defaultAssigneeUserId,
             String defaultAssigneeName,
+            String defaultAssigneeUserIdsCsv,
+            String defaultAssigneeNames,
             String defaultTeamCode,
             Boolean reviewRequiredFlag,
             Boolean backfillAllowedFlag,
+            Boolean submissionPhotoRequiredFlag,
+            Integer submissionPhotoMaxCount,
             LocalDate effectiveDate,
             LocalDate expiryDate,
             Long publishedBy,
@@ -210,9 +217,12 @@ public final class InspectionDtos {
             Long workCalendarId,
             @Size(max = 32) String shiftCode,
             Long defaultAssigneeUserId,
+            @Size(max = 20) List<@Min(1) Long> defaultAssigneeUserIds,
             @Size(max = 64) String defaultTeamCode,
             @NotNull Boolean reviewRequired,
             @NotNull Boolean backfillAllowed,
+            @NotNull Boolean submissionPhotoRequired,
+            @NotNull @Min(1) @jakarta.validation.constraints.Max(20) Integer submissionPhotoMaxCount,
             @NotNull LocalDate effectiveDate,
             LocalDate expiryDate,
             @NotEmpty List<@Valid SaveSchemeItemRequest> items,
@@ -222,6 +232,12 @@ public final class InspectionDtos {
             @Size(max = 1000) String description,
             @Size(max = 500) String changeSummary,
             Integer version
+    ) {
+    }
+
+    public record UpdateSchemeStatusRequest(
+            @NotNull Boolean enabled,
+            @NotNull Integer version
     ) {
     }
 
@@ -301,7 +317,7 @@ public final class InspectionDtos {
             String equipmentName,
             long organizationId,
             String organizationName,
-            long locationId,
+            Long locationId,
             String locationName,
             LocalDate plannedDate,
             LocalDateTime plannedStartTime,
@@ -315,9 +331,12 @@ public final class InspectionDtos {
             String sourceType,
             Boolean backfillFlag,
             Boolean reviewRequiredFlag,
+            Boolean submissionPhotoRequiredFlag,
+            Integer submissionPhotoMaxCount,
             LocalDateTime startedTime,
             LocalDateTime submittedTime,
             LocalDateTime completedTime,
+            String completedByName,
             String reviewerName,
             String reviewComment,
             String executionRemark,
@@ -331,6 +350,7 @@ public final class InspectionDtos {
     public record TaskQuery(
             String keyword,
             String taskStatus,
+            String statusGroup,
             String dispatchStatus,
             LocalDate plannedDate,
             String timeField,
@@ -601,6 +621,7 @@ public final class InspectionDtos {
 
     public record SaveTaskResultsRequest(
             @NotEmpty List<@Valid SaveResultRequest> results,
+            @Size(max = 20) List<@Min(1) Long> taskAttachmentIds,
             @Size(max = 1000) String executionRemark,
             @NotNull Integer taskVersion
     ) {
@@ -628,6 +649,8 @@ public final class InspectionDtos {
             long equipmentId,
             String equipmentCode,
             String equipmentName,
+            long organizationId,
+            String organizationName,
             Long taskItemId,
             String itemName,
             String abnormalTitle,
@@ -659,7 +682,7 @@ public final class InspectionDtos {
             @Size(max = 2000) String temporaryAction,
             @Size(max = 2000) String finalResult,
             @Pattern(
-                    regexp = "^$|^(IDLE|RUNNING|MAINTENANCE|INSPECTION|FAULT|REPAIR|STOPPED|OFFLINE)$",
+                    regexp = "^$|^(IDLE|RUNNING|STOPPED|SCRAPPED)$",
                     message = "设备状态不正确"
             )
             String requestedEquipmentStatus,

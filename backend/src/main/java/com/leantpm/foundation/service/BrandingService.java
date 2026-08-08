@@ -25,8 +25,8 @@ public class BrandingService {
     @Transactional(readOnly = true)
     public FoundationDtos.BrandingSettings settings() {
         return new FoundationDtos.BrandingSettings(
-                value("system.name", "宝山矿业设备管理系统"),
-                value("branding.short-name", "宝山矿业"),
+                value("system.name", "大宝山矿业设备管理系统"),
+                value("branding.short-name", "大宝山矿业"),
                 value("branding.subtitle", "精益设备管理"),
                 value("branding.logo-url", "/branding/baoshan-mining-logo.png"),
                 value("branding.primary-color", "#1c7d50"),

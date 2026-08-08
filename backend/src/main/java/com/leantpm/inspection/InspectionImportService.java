@@ -132,7 +132,7 @@ public class InspectionImportService {
             ), header);
             addSheet(workbook, SCHEME_SHEET, SCHEME_HEADERS, List.of(
                     "IMP-SCHEME-001", "导入示例日常点检", "DAILY", "DAILY", "1",
-                    "", "", "08:00", "", "operator01", "TEAM-A-1", "是",
+                    "", "", "08:00", "", "planner", "TEAM-A-1", "是",
                     LocalDate.now().toString(), "", "是", "导入示例", "首次导入"
             ), header);
             addSheet(workbook, SCHEME_ITEM_SHEET, SCHEME_ITEM_HEADERS, List.of(
@@ -253,17 +253,36 @@ public class InspectionImportService {
             long tenantId,
             InspectionImportDtos.ImportPayload payload
     ) {
+        long operatorId = SecurityUtils.currentUser().userId();
+        Long defaultOrganizationId = jdbc.queryForObject(
+                "SELECT organization_id FROM system_user "
+                        + "WHERE tenant_id = ? AND id = ? AND deleted = 0",
+                Long.class, tenantId, operatorId
+        );
+        if (defaultOrganizationId == null) {
+            throw new BusinessException(
+                    "INSPECTION_IMPORT_ORGANIZATION_REQUIRED",
+                    "导入人员必须先设置所属部门"
+            );
+        }
         int newItems = 0;
         int updatedItems = 0;
         for (InspectionImportDtos.ItemInput input : payload.items()) {
             Long itemId = inspectionMapper.findItemIdByCode(tenantId, input.itemCode());
-            InspectionDtos.SaveItemRequest request = itemRequest(input, null);
+            InspectionDtos.SaveItemRequest request = itemRequest(
+                    input, defaultOrganizationId, null
+            );
             if (itemId == null) {
                 catalogService.createItem(request);
                 newItems++;
             } else {
                 InspectionDtos.ItemRow existing = inspectionMapper.findItem(tenantId, itemId);
-                catalogService.updateItem(itemId, itemRequest(input, existing.version()));
+                catalogService.updateItem(itemId, itemRequest(
+                        input,
+                        existing.organizationId() == null
+                                ? defaultOrganizationId : existing.organizationId(),
+                        existing.version()
+                ));
                 updatedItems++;
             }
         }
@@ -310,10 +329,11 @@ public class InspectionImportService {
 
     private InspectionDtos.SaveItemRequest itemRequest(
             InspectionImportDtos.ItemInput input,
+            Long organizationId,
             Integer version
     ) {
         return new InspectionDtos.SaveItemRequest(
-                input.itemCode(), input.itemName(), input.itemCategory(),
+                input.itemCode(), input.itemName(), organizationId, input.itemCategory(),
                 input.inspectionPart(), input.inspectionContent(), input.inspectionMethod(),
                 input.inspectionTool(), input.inspectionStandard(), input.standardValue(),
                 input.minimumValue(), input.maximumValue(), input.unit(), input.resultType(),
@@ -366,7 +386,8 @@ public class InspectionImportService {
                 input.cycleType(), input.cycleInterval(), input.weekDays(),
                 input.monthDays(), input.scheduledTime(), 60,
                 inspectionCalendarId(tenantId), input.shiftCode(), assigneeId,
-                input.defaultTeamCode(), false, input.backfillAllowed(),
+                assigneeId == null ? List.of() : List.of(assigneeId),
+                input.defaultTeamCode(), false, input.backfillAllowed(), false, 9,
                 input.effectiveDate(), input.expiryDate(), items, List.copyOf(categoryIds),
                 List.copyOf(equipmentIds), input.enabled(), input.description(),
                 input.changeSummary(), version

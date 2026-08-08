@@ -521,7 +521,7 @@
           ON e.tenant_id = plan.tenant_id AND e.id = plan.equipment_id AND e.deleted = 0
         JOIN organization
           ON organization.tenant_id = e.tenant_id AND organization.id = e.organization_id
-        JOIN location
+        LEFT JOIN location
           ON location.tenant_id = e.tenant_id AND location.id = e.location_id
         LEFT JOIN system_user assignee
           ON assignee.tenant_id = plan.tenant_id AND assignee.id = plan.assignee_user_id
@@ -800,7 +800,7 @@
           ON e.tenant_id = task.tenant_id AND e.id = task.equipment_id AND e.deleted = 0
         JOIN organization
           ON organization.tenant_id = task.tenant_id AND organization.id = task.organization_id
-        JOIN location
+        LEFT JOIN location
           ON location.tenant_id = task.tenant_id AND location.id = task.location_id
         LEFT JOIN system_user assignee
           ON assignee.tenant_id = task.tenant_id AND assignee.id = task.assignee_user_id

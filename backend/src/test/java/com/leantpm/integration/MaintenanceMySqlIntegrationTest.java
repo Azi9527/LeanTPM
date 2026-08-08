@@ -145,7 +145,7 @@ class MaintenanceMySqlIntegrationTest {
                         "协同人员开始保养", detail.task().version()
                 )
         );
-        assertThat(currentEquipmentStatus(equipmentId)).isEqualTo("MAINTENANCE");
+        assertThat(currentEquipmentStatus(equipmentId)).isEqualTo("STOPPED");
         assertThatThrownBy(() -> taskService.start(
                 task.id(),
                 new MaintenanceDtos.TaskActionRequest(

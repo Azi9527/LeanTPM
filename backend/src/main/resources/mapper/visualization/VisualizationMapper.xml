@@ -57,9 +57,10 @@
                COALESCE(SUM(cs.status_code = 'OFFLINE'), 0) AS offline,
                COALESCE(SUM(cs.status_code = 'INSPECTION'), 0) AS inspection,
                COALESCE(SUM(cs.status_code IS NULL OR cs.status_code NOT IN (
-                    'RUNNING', 'STOPPED', 'FAULT', 'REPAIR',
-                    'MAINTENANCE', 'OFFLINE', 'INSPECTION'
-               )), 0) AS other
+                    'IDLE', 'RUNNING', 'STOPPED', 'SCRAPPED'
+               )), 0) AS other,
+               COALESCE(SUM(cs.status_code = 'IDLE'), 0) AS idle,
+               COALESCE(SUM(cs.status_code = 'SCRAPPED'), 0) AS scrapped
         FROM equipment e
         LEFT JOIN equipment_current_status cs
           ON cs.tenant_id = e.tenant_id AND cs.equipment_id = e.id
@@ -113,9 +114,11 @@
                organization.organization_type,
                COUNT(e.id) AS equipment_count,
                COALESCE(SUM(cs.status_code = 'RUNNING'), 0) AS running_count,
-               COALESCE(SUM(cs.status_code = 'FAULT'), 0) AS fault_count,
-               COALESCE(SUM(cs.status_code IN ('STOPPED', 'IDLE')), 0) AS stopped_count,
-               COALESCE(SUM(cs.status_code = 'OFFLINE'), 0) AS offline_count
+               0 AS fault_count,
+               COALESCE(SUM(cs.status_code = 'STOPPED'), 0) AS stopped_count,
+               0 AS offline_count,
+               COALESCE(SUM(cs.status_code = 'IDLE'), 0) AS idle_count,
+               COALESCE(SUM(cs.status_code = 'SCRAPPED'), 0) AS scrapped_count
         FROM equipment e
         JOIN organization
           ON organization.tenant_id = e.tenant_id
@@ -141,20 +144,17 @@
                e.equipment_name,
                e.organization_id,
                organization.organization_name,
-               COALESCE(cs.status_code, 'OFFLINE') AS status_code,
-               COALESCE(palette.status_name, '离线') AS status_name,
+               COALESCE(cs.status_code, 'IDLE') AS status_code,
+               COALESCE(palette.status_name, '空闲') AS status_name,
                COALESCE(palette.display_color, '#475569') AS display_color,
                cs.status_since,
                COALESCE(TIMESTAMPDIFF(SECOND, cs.status_since, CURRENT_TIMESTAMP(3)), 0)
                    AS duration_seconds,
                ROUND(AVG(oee.oee_rate), 6) AS today_oee,
                CASE
-                   WHEN cs.status_code IN ('STOPPED', 'FAULT', 'REPAIR')
+                   WHEN cs.status_code = 'STOPPED'
                         AND TIMESTAMPDIFF(MINUTE, cs.status_since, CURRENT_TIMESTAMP(3))
                             >= #{longStopMinutes} THEN TRUE
-                   WHEN cs.status_code = 'OFFLINE'
-                        AND TIMESTAMPDIFF(MINUTE, cs.status_since, CURRENT_TIMESTAMP(3))
-                            >= #{longOfflineMinutes} THEN TRUE
                    ELSE FALSE
                END AS long_duration
         FROM equipment e
@@ -182,8 +182,7 @@
                  organization.organization_name, cs.status_code, cs.status_since,
                  palette.status_name, palette.display_color
         ORDER BY long_duration DESC,
-                 FIELD(cs.status_code, 'FAULT', 'REPAIR', 'OFFLINE', 'STOPPED',
-                       'MAINTENANCE', 'INSPECTION', 'IDLE', 'RUNNING'),
+                 FIELD(cs.status_code, 'STOPPED', 'RUNNING', 'IDLE', 'SCRAPPED'),
                  cs.status_since, e.id
         LIMIT #{limit}
     </select>
@@ -423,6 +422,105 @@
             ) AS run_time_hours
     </select>
 
+    <select id="inspectionRegistrationMetrics"
+            resultType="com.leantpm.visualization.VisualizationDtos$InspectionRegistrationMetrics">
+        SELECT COUNT(*) AS registered,
+               COALESCE(SUM(task.source_type = 'QUICK_ENTRY'), 0) AS quick_registered,
+               COUNT(DISTINCT task.equipment_id) AS equipment_covered,
+               COALESCE(SUM(COALESCE(abnormality.abnormal_count, 0) &gt; 0), 0)
+                   AS abnormal_registered
+        FROM inspection_task task
+        JOIN equipment e
+          ON e.tenant_id = task.tenant_id
+         AND e.id = task.equipment_id
+         AND e.deleted = 0
+        LEFT JOIN (
+            SELECT result.task_id,
+                   SUM(result.abnormal_flag = 1) AS abnormal_count
+            FROM inspection_task_result result
+            WHERE result.tenant_id = #{tenantId}
+              AND result.deleted = 0
+              AND result.result_status = 'SUBMITTED'
+            GROUP BY result.task_id
+        ) abnormality ON abnormality.task_id = task.id
+        WHERE task.tenant_id = #{tenantId}
+          AND task.deleted = 0
+          AND task.task_status = 'COMPLETED'
+          AND task.completed_time &gt;= #{startDate}
+          AND task.completed_time &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)
+          AND <include refid="equipmentScope"/>
+          <include refid="organizationFilter"/>
+    </select>
+
+    <select id="recentInspectionRegistrations"
+            resultType="com.leantpm.visualization.VisualizationDtos$RecentInspectionRegistration">
+        SELECT task.id AS task_id,
+               task.task_code,
+               e.equipment_code,
+               e.equipment_name,
+               COALESCE(task.scheme_name_snapshot, '现场点检') AS scheme_name,
+               organization.organization_name,
+               task.source_type,
+               COALESCE(
+                   NULLIF((
+                       SELECT GROUP_CONCAT(DISTINCT executor.real_name
+                                           ORDER BY executor.real_name SEPARATOR '、')
+                       FROM inspection_task_result result
+                       JOIN system_user executor
+                         ON executor.tenant_id = result.tenant_id
+                        AND executor.id = result.executed_by
+                        AND executor.deleted = 0
+                       WHERE result.tenant_id = task.tenant_id
+                         AND result.task_id = task.id
+                         AND result.result_status = 'SUBMITTED'
+                         AND result.deleted = 0
+                   ), ''),
+                   NULLIF((
+                       SELECT GROUP_CONCAT(DISTINCT assignee.real_name
+                                           ORDER BY relation.primary_flag DESC, assignee.real_name
+                                           SEPARATOR '、')
+                       FROM inspection_task_assignee relation
+                       JOIN system_user assignee
+                         ON assignee.tenant_id = relation.tenant_id
+                        AND assignee.id = relation.user_id
+                        AND assignee.deleted = 0
+                       WHERE relation.tenant_id = task.tenant_id
+                         AND relation.task_id = task.id
+                         AND relation.deleted = 0
+                   ), ''),
+                   '未记录'
+               ) AS executor_name,
+               task.completed_time,
+               COALESCE(abnormality.abnormal_count, 0) AS abnormal_count
+        FROM inspection_task task
+        JOIN equipment e
+          ON e.tenant_id = task.tenant_id
+         AND e.id = task.equipment_id
+         AND e.deleted = 0
+        JOIN organization
+          ON organization.tenant_id = e.tenant_id
+         AND organization.id = e.organization_id
+         AND organization.deleted = 0
+        LEFT JOIN (
+            SELECT result.task_id,
+                   SUM(result.abnormal_flag = 1) AS abnormal_count
+            FROM inspection_task_result result
+            WHERE result.tenant_id = #{tenantId}
+              AND result.deleted = 0
+              AND result.result_status = 'SUBMITTED'
+            GROUP BY result.task_id
+        ) abnormality ON abnormality.task_id = task.id
+        WHERE task.tenant_id = #{tenantId}
+          AND task.deleted = 0
+          AND task.task_status = 'COMPLETED'
+          AND task.completed_time &gt;= #{startDate}
+          AND task.completed_time &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)
+          AND <include refid="equipmentScope"/>
+          <include refid="organizationFilter"/>
+        ORDER BY task.completed_time DESC, task.id DESC
+        LIMIT #{limit}
+    </select>
+
     <select id="integerParameter" resultType="int">
         SELECT CAST(parameter_value AS SIGNED)
         FROM system_parameter
@@ -548,8 +646,8 @@
                node.rotation_x, node.rotation_y, node.rotation_z,
                node.scale_x, node.scale_y, node.scale_z,
                node.label_visible_flag, node.visible_flag, node.sort_order,
-               COALESCE(cs.status_code, 'OFFLINE') AS status_code,
-               COALESCE(palette.status_name, '离线') AS status_name,
+               COALESCE(cs.status_code, 'IDLE') AS status_code,
+               COALESCE(palette.status_name, '空闲') AS status_name,
                COALESCE(palette.display_color, model.fallback_color) AS display_color,
                COALESCE(palette.pulse_flag, 0) AS pulse_flag,
                node.version
@@ -607,7 +705,7 @@
         SELECT id, status_code, status_name, display_color, emissive_color,
                pulse_flag, sort_order, status, description, version
         FROM visualization_status_color
-        WHERE tenant_id = #{tenantId} AND deleted = 0
+        WHERE tenant_id = #{tenantId} AND deleted = 0 AND status = 1
         ORDER BY sort_order, id
     </select>
 
@@ -616,8 +714,8 @@
         SELECT e.id AS equipment_id, e.equipment_code, e.equipment_name,
                category.category_name, organization.organization_name,
                location.location_name,
-               COALESCE(cs.status_code, 'OFFLINE') AS status_code,
-               COALESCE(palette.status_name, '离线') AS status_name,
+               COALESCE(cs.status_code, 'IDLE') AS status_code,
+               COALESCE(palette.status_name, '空闲') AS status_name,
                COALESCE(palette.display_color, '#475569') AS status_color,
                cs.status_since,
                COALESCE(TIMESTAMPDIFF(SECOND, cs.status_since, CURRENT_TIMESTAMP(3)), 0)
@@ -695,7 +793,7 @@
           ON organization.tenant_id = e.tenant_id
          AND organization.id = e.organization_id
          AND organization.deleted = 0
-        JOIN location
+        LEFT JOIN location
           ON location.tenant_id = e.tenant_id
          AND location.id = e.location_id
          AND location.deleted = 0

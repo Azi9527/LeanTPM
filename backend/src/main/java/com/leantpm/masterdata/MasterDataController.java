@@ -60,10 +60,19 @@ public class MasterDataController {
     @PreAuthorize("hasAuthority('master-data:organization:delete')")
     public ApiResponse<Void> deleteOrganization(
             @PathVariable long id,
-            @RequestParam @Min(0) int version
+            @RequestParam @Min(0) int version,
+            @RequestParam(defaultValue = "false") boolean cascadeRelations
     ) {
-        service.deleteOrganization(id, version);
+        service.deleteOrganization(id, version, cascadeRelations);
         return ApiResponse.success();
+    }
+
+    @GetMapping("/organizations/{id}/delete-impact")
+    @PreAuthorize("hasAuthority('master-data:organization:delete')")
+    public ApiResponse<MasterDataDtos.OrganizationDeleteImpact> organizationDeleteImpact(
+            @PathVariable long id
+    ) {
+        return ApiResponse.success(service.organizationDeleteImpact(id));
     }
 
     @GetMapping("/locations")

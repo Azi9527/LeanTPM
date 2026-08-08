@@ -9,6 +9,7 @@ import com.google.zxing.WriterException;
 import com.google.zxing.common.BitMatrix;
 import com.leantpm.common.api.PageResult;
 import com.leantpm.common.exception.BusinessException;
+import com.leantpm.common.query.TableQuery;
 import com.leantpm.foundation.service.NumberRuleService;
 import com.leantpm.foundation.service.ParameterService;
 import com.leantpm.masterdata.MasterDataDtos;
@@ -63,29 +64,22 @@ import java.util.zip.ZipOutputStream;
 @Service
 public class EquipmentService {
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
-    private static final String DEFAULT_BARCODE_BASE_URL = "http://localhost:5173/m/e";
+    private static final String DEFAULT_BARCODE_BASE_URL = "http://localhost:15173/m/e";
     private static final List<String> IMPORT_HEADERS = List.of(
             "设备编码", "设备名称", "分类编码", "组织编码", "位置编码",
             "型号", "规格", "品牌", "制造商", "出厂编号", "生产日期", "投产日期",
             "负责人账号", "资产编号", "生命周期阶段", "关键设备", "特种设备",
             "OEE启用", "启用"
     );
-    private static final Map<String, Set<String>> STATUS_TRANSITIONS = Map.ofEntries(
-            Map.entry("NOT_ENABLED", Set.of("IDLE", "COMMISSIONING", "OFFLINE")),
-            Map.entry("IDLE", Set.of(
-                    "RUNNING", "MAINTENANCE", "INSPECTION", "FAULT",
-                    "STOPPED", "OFFLINE", "SCRAPPED"
-            )),
-            Map.entry("RUNNING", Set.of("IDLE", "CHANGEOVER", "FAULT", "STOPPED", "OFFLINE")),
-            Map.entry("COMMISSIONING", Set.of("IDLE", "FAULT", "OFFLINE")),
-            Map.entry("CHANGEOVER", Set.of("RUNNING", "IDLE", "FAULT")),
-            Map.entry("MAINTENANCE", Set.of("IDLE", "FAULT", "OFFLINE")),
-            Map.entry("INSPECTION", Set.of("IDLE", "FAULT", "OFFLINE")),
-            Map.entry("FAULT", Set.of("REPAIR", "STOPPED", "OFFLINE")),
-            Map.entry("REPAIR", Set.of("IDLE", "RUNNING", "FAULT", "STOPPED", "OFFLINE")),
-            Map.entry("STOPPED", Set.of("IDLE", "MAINTENANCE", "REPAIR", "FAULT", "SCRAPPED", "OFFLINE")),
-            Map.entry("OFFLINE", Set.of("IDLE", "COMMISSIONING", "FAULT")),
-            Map.entry("SCRAPPED", Set.of())
+    /**
+     * 设备运行状态只描述“能否生产”，点检、保养、故障和维修继续由各自工单记录。
+     * 因此所有作业停机统一落到 STOPPED，不再把业务过程混入设备状态字典。
+     */
+    private static final Map<String, Set<String>> STATUS_TRANSITIONS = Map.of(
+            "IDLE", Set.of("RUNNING", "STOPPED", "SCRAPPED"),
+            "RUNNING", Set.of("IDLE", "STOPPED", "SCRAPPED"),
+            "STOPPED", Set.of("IDLE", "RUNNING", "SCRAPPED"),
+            "SCRAPPED", Set.of()
     );
 
     private final EquipmentMapper mapper;
@@ -123,11 +117,12 @@ public class EquipmentService {
             String currentStatusCode,
             String lifecycleStage,
             Integer status,
+            TableQuery tableQuery,
             int page,
             int pageSize
     ) {
         var current = SecurityUtils.currentUser();
-        DataPermission scope = DataPermission.all(current.userId());
+        DataPermission scope = dataPermissionService.current();
         int offset = (page - 1) * pageSize;
         String normalizedStatus = upper(currentStatusCode);
         String normalizedStage = upper(lifecycleStage);
@@ -135,11 +130,12 @@ public class EquipmentService {
                 mapper.findEquipmentPage(
                         current.tenantId(), scope, clean(keyword), categoryId,
                         organizationId, locationId, normalizedStatus, normalizedStage,
-                        status, offset, pageSize
+                        status, tableQuery, offset, pageSize
                 ),
                 mapper.countEquipment(
                         current.tenantId(), scope, clean(keyword), categoryId,
-                        organizationId, locationId, normalizedStatus, normalizedStage, status
+                        organizationId, locationId, normalizedStatus, normalizedStage, status,
+                        tableQuery
                 ),
                 page,
                 pageSize
@@ -147,9 +143,47 @@ public class EquipmentService {
     }
 
     @Transactional(readOnly = true)
+    public Map<String, Long> statusSummary(
+            String keyword,
+            Long organizationId,
+            TableQuery tableQuery
+    ) {
+        var current = SecurityUtils.currentUser();
+        Map<String, Long> summary = new LinkedHashMap<>();
+        STATUS_TRANSITIONS.keySet().stream().sorted().forEach(code -> summary.put(code, 0L));
+        mapper.summarizeEquipmentStatus(
+                current.tenantId(), dataPermissionService.current(), clean(keyword),
+                null, organizationId, null, null, null, null, tableQuery
+        ).forEach(row -> {
+            String code = upper(row.statusCode());
+            if (code != null) {
+                summary.merge(code, row.equipmentCount(), Long::sum);
+            }
+        });
+        return summary;
+    }
+
+    public PageResult<EquipmentDtos.EquipmentRow> page(
+            String keyword,
+            Long categoryId,
+            Long organizationId,
+            Long locationId,
+            String currentStatusCode,
+            String lifecycleStage,
+            Integer status,
+            int page,
+            int pageSize
+    ) {
+        return page(
+                keyword, categoryId, organizationId, locationId, currentStatusCode,
+                lifecycleStage, status, TableQuery.empty(), page, pageSize
+        );
+    }
+
+    @Transactional(readOnly = true)
     public EquipmentDtos.EquipmentDetail detail(long id) {
         var current = SecurityUtils.currentUser();
-        DataPermission readScope = DataPermission.all(current.userId());
+        DataPermission readScope = dataPermissionService.current();
         EquipmentDtos.EquipmentRow equipment = requireAccessible(
                 current.tenantId(), id, readScope
         );
@@ -194,7 +228,7 @@ public class EquipmentService {
         }
         replaceAttributes(tenantId, id, attributes, operatorId);
         replaceResponsiblePersons(tenantId, id, responsiblePersons, operatorId);
-        String initialStatus = Boolean.TRUE.equals(normalized.enabled()) ? "IDLE" : "NOT_ENABLED";
+        String initialStatus = "IDLE";
         LocalDateTime now = LocalDateTime.now();
         mapper.insertInitialStatus(tenantId, id, initialStatus, now, operatorId);
         mapper.insertStatusHistory(
@@ -317,7 +351,7 @@ public class EquipmentService {
         );
         validateUser(current.tenantId(), request.primaryResponsibleUserId());
         if (existing.organizationId() == request.organizationId()
-                && existing.locationId() == request.locationId()
+                && Objects.equals(existing.locationId(), request.locationId())
                 && Objects.equals(
                         existing.primaryResponsibleUserId(), request.primaryResponsibleUserId()
                 )) {
@@ -397,8 +431,8 @@ public class EquipmentService {
     ) {
         EquipmentDtos.EquipmentRow equipment =
                 requireAccessible(current.tenantId(), id, scope);
-        String next = upper(request.statusCode());
-        if (equipment.status() != 1 && !"NOT_ENABLED".equals(next)) {
+        String next = normalizeOperatingStatus(upper(request.statusCode()));
+        if (equipment.status() != 1) {
             throw new BusinessException(
                     "EQUIPMENT_DISABLED", "设备已停用，请先在台账中启用设备"
             );
@@ -449,18 +483,34 @@ public class EquipmentService {
     @Transactional(readOnly = true)
     public List<EquipmentDtos.StatusHistoryRow> statusHistory(long id) {
         var current = SecurityUtils.currentUser();
-        requireAccessible(current.tenantId(), id, DataPermission.all(current.userId()));
+        requireAccessible(current.tenantId(), id, dataPermissionService.current());
         return mapper.findStatusHistory(current.tenantId(), id);
     }
 
     @Transactional(readOnly = true)
     public List<EquipmentDtos.BarcodeRow> barcodes(Long equipmentId, boolean activeOnly) {
+        return barcodes(equipmentId, null, activeOnly);
+    }
+
+    @Transactional(readOnly = true)
+    public List<EquipmentDtos.BarcodeRow> barcodes(
+            Long equipmentId,
+            Long organizationId,
+            boolean activeOnly
+    ) {
         var current = SecurityUtils.currentUser();
-        DataPermission scope = DataPermission.all(current.userId());
+        DataPermission scope = dataPermissionService.current();
         if (equipmentId != null) {
-            requireAccessible(current.tenantId(), equipmentId, scope);
+            EquipmentDtos.EquipmentRow equipment = requireAccessible(
+                    current.tenantId(), equipmentId, scope
+            );
+            if (organizationId != null && equipment.organizationId() != organizationId) {
+                return List.of();
+            }
         }
-        return mapper.findBarcodes(current.tenantId(), scope, equipmentId, activeOnly);
+        return mapper.findBarcodes(
+                current.tenantId(), scope, equipmentId, organizationId, activeOnly
+        );
     }
 
     @Transactional
@@ -518,7 +568,7 @@ public class EquipmentService {
         var current = SecurityUtils.currentUser();
         DataPermission scope = dataPermissionService.current();
         List<EquipmentDtos.BarcodeRow> existing = mapper.findBarcodes(
-                current.tenantId(), scope, null, true
+                current.tenantId(), scope, null, null, true
         );
         List<Long> missingIds = mapper.findActiveEquipmentIdsWithoutBarcode(
                 current.tenantId(), scope
@@ -569,7 +619,7 @@ public class EquipmentService {
             );
         }
         requireAccessible(
-                current.tenantId(), barcode.equipmentId(), DataPermission.all(current.userId())
+                current.tenantId(), barcode.equipmentId(), dataPermissionService.current()
         );
         String baseUrl = parameterService.getString(
                 current.tenantId(),
@@ -666,7 +716,7 @@ public class EquipmentService {
     public byte[] barcodeArchive(List<Long> barcodeIds, int width, int height) {
         var current = SecurityUtils.currentUser();
         List<EquipmentDtos.BarcodeRow> rows = mapper.findBarcodes(
-                current.tenantId(), DataPermission.all(current.userId()), null, true
+                current.tenantId(), dataPermissionService.current(), null, null, true
         ).stream().filter(row -> barcodeIds == null || barcodeIds.isEmpty()
                         || barcodeIds.contains(row.id()))
                 .toList();
@@ -720,7 +770,7 @@ public class EquipmentService {
         List<EquipmentDtos.EquipmentRow> rows = mapper.findEquipmentPage(
                 current.tenantId(), scope, clean(keyword), categoryId, organizationId,
                 locationId, upper(currentStatusCode), upper(lifecycleStage), status,
-                0, 100_000
+                TableQuery.empty(), 0, 100_000
         );
         try (Workbook workbook = new XSSFWorkbook()) {
             Sheet sheet = workbook.createSheet("设备台账");
@@ -771,7 +821,7 @@ public class EquipmentService {
             writeHeader(sheet, IMPORT_HEADERS);
             Row example = sheet.createRow(1);
             List<String> values = List.of(
-                    "", "示例设备", "PUMP", "FACTORY", "WS-A", "M-100",
+                    "", "示例设备", "PUMP", "FACTORY", "", "M-100",
                     "示例规格", "示例品牌", "示例制造商", "SN-001",
                     "2026-01-01", "2026-02-01", "admin", "ASSET-001",
                     "IN_SERVICE", "否", "否", "是", "是"
@@ -806,7 +856,7 @@ public class EquipmentService {
                 throw new BusinessException("IMPORT_FILE_INVALID", "Excel 文件没有数据");
             }
             Map<String, Integer> columns = headerColumns(sheet.getRow(0));
-            for (String required : List.of("设备名称", "分类编码", "组织编码", "位置编码")) {
+            for (String required : List.of("设备名称", "分类编码", "组织编码")) {
                 if (!columns.containsKey(required)) {
                     throw new BusinessException(
                             "IMPORT_HEADER_INVALID", "缺少必填列：" + required
@@ -865,7 +915,7 @@ public class EquipmentService {
                 equipment,
                 mapper.findAttributeValues(tenantId, equipment.id(), equipment.categoryId()),
                 mapper.findResponsiblePersons(tenantId, equipment.id()),
-                mapper.findBarcodes(tenantId, scope, equipment.id(), false),
+                mapper.findBarcodes(tenantId, scope, equipment.id(), null, false),
                 mapper.findStatusHistory(tenantId, equipment.id()),
                 mapper.findTransfers(tenantId, equipment.id()),
                 mapper.findDocuments(tenantId, equipment.id()),
@@ -897,7 +947,7 @@ public class EquipmentService {
     private void validateOrganizationLocation(
             long tenantId,
             long organizationId,
-            long locationId,
+            Long locationId,
             DataPermission scope
     ) {
         MasterDataDtos.OrganizationRow organization =
@@ -907,6 +957,9 @@ public class EquipmentService {
         }
         if (!scope.canCreateIn(organizationId)) {
             throw dataScopeDenied();
+        }
+        if (locationId == null) {
+            return;
         }
         MasterDataDtos.LocationRow location = masterDataMapper.findLocation(tenantId, locationId);
         if (location == null || location.status() != 1) {
@@ -1125,7 +1178,7 @@ public class EquipmentService {
                     "CURRENT_STATUS_NOT_FOUND", "设备当前状态不存在", HttpStatus.NOT_FOUND
             );
         }
-        String target = enabled ? "IDLE" : "NOT_ENABLED";
+        String target = "IDLE";
         if (target.equals(current.statusCode())) {
             return;
         }
@@ -1153,6 +1206,17 @@ public class EquipmentService {
                 "SYSTEM",
                 operatorId
         );
+    }
+
+    private String normalizeOperatingStatus(String statusCode) {
+        if (statusCode == null) {
+            return null;
+        }
+        return switch (statusCode) {
+            case "IDLE", "RUNNING", "STOPPED", "SCRAPPED" -> statusCode;
+            case "NOT_ENABLED" -> "IDLE";
+            default -> "STOPPED";
+        };
     }
 
     private EquipmentDtos.EquipmentRow requireAccessible(
@@ -1208,21 +1272,21 @@ public class EquipmentService {
         String categoryCode = requiredCell(row, columns, formatter, "分类编码").toUpperCase();
         String organizationCode =
                 requiredCell(row, columns, formatter, "组织编码").toUpperCase();
-        String locationCode = requiredCell(row, columns, formatter, "位置编码").toUpperCase();
+        String locationCode = upper(cell(row, columns, formatter, "位置编码"));
         EquipmentMapper.LookupRow category = mapper.findCategoryByCode(tenantId, categoryCode);
         EquipmentMapper.LookupRow organization =
                 mapper.findOrganizationByCode(tenantId, organizationCode);
-        EquipmentMapper.LocationLookup location =
-                mapper.findLocationByCode(tenantId, locationCode);
+        EquipmentMapper.LocationLookup location = locationCode == null
+                ? null : mapper.findLocationByCode(tenantId, locationCode);
         if (category == null || category.status() != 1) {
             throw new BusinessException("IMPORT_CATEGORY_INVALID", "分类编码不存在或已停用");
         }
         if (organization == null || organization.status() != 1) {
             throw new BusinessException("IMPORT_ORGANIZATION_INVALID", "组织编码不存在或已停用");
         }
-        if (location == null
+        if (locationCode != null && (location == null
                 || location.status() != 1
-                || location.organizationId() != organization.id()) {
+                || location.organizationId() != organization.id())) {
             throw new BusinessException(
                     "IMPORT_LOCATION_INVALID", "位置编码不存在、已停用或不属于所选组织"
             );
@@ -1245,7 +1309,7 @@ public class EquipmentService {
                 parseDate(cell(row, columns, formatter, "生产日期"), "生产日期"),
                 parseDate(cell(row, columns, formatter, "投产日期"), "投产日期"),
                 organization.id(),
-                location.id(),
+                location == null ? null : location.id(),
                 user == null ? null : user.id(),
                 cell(row, columns, formatter, "资产编号"),
                 defaultValue(

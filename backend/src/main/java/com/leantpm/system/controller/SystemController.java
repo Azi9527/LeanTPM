@@ -64,7 +64,7 @@ public class SystemController {
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         ));
         headers.setContentDisposition(ContentDisposition.attachment()
-                .filename("LeanTPM-user-import-template.xlsx", StandardCharsets.UTF_8)
+                .filename("LeanTPM用户导入模板.xlsx", StandardCharsets.UTF_8)
                 .build());
         return ResponseEntity.ok().headers(headers).body(userImportService.template());
     }
@@ -175,6 +175,45 @@ public class SystemController {
         return ApiResponse.success(service.organizations());
     }
 
+    @GetMapping("/personnel-organization")
+    @PreAuthorize("hasAuthority('system:user:view')")
+    public ApiResponse<SystemDtos.PersonnelOrganizationSnapshot> personnelOrganization() {
+        return ApiResponse.success(service.personnelOrganization());
+    }
+
+    @PutMapping("/personnel-organization/organizations/{id}/manager")
+    @Idempotent
+    @PreAuthorize("hasAuthority('system:user:update')")
+    public ApiResponse<Void> updateOrganizationManager(
+            @PathVariable long id,
+            @Valid @RequestBody SystemDtos.UpdateOrganizationManagerRequest request
+    ) {
+        service.updateOrganizationManager(id, request);
+        return ApiResponse.success();
+    }
+
+    @PutMapping("/personnel-organization/organizations/{id}/members")
+    @Idempotent
+    @PreAuthorize("hasAuthority('system:user:update')")
+    public ApiResponse<Void> updateOrganizationMembers(
+            @PathVariable long id,
+            @Valid @RequestBody SystemDtos.UpdateOrganizationMembersRequest request
+    ) {
+        service.updateOrganizationMembers(id, request);
+        return ApiResponse.success();
+    }
+
+    @PutMapping("/personnel-organization/organizations/{id}/team-relationships")
+    @Idempotent
+    @PreAuthorize("hasAuthority('system:user:update')")
+    public ApiResponse<Void> updateTeamRelationships(
+            @PathVariable long id,
+            @Valid @RequestBody SystemDtos.UpdateTeamRelationshipsRequest request
+    ) {
+        service.updateTeamRelationships(id, request);
+        return ApiResponse.success();
+    }
+
     @GetMapping("/data-scopes")
     @PreAuthorize("hasAuthority('system:data-scope:view')")
     public ApiResponse<List<SystemDtos.DataScopeDefinition>> dataScopes() {
@@ -196,6 +235,16 @@ public class SystemController {
     @PreAuthorize("hasAuthority('system:menu:view')")
     public ApiResponse<List<SystemDtos.MenuRow>> menus() {
         return ApiResponse.success(service.menus());
+    }
+
+    @PatchMapping("/menus/{id}/status")
+    @Idempotent
+    @PreAuthorize("hasAuthority('system:menu:manage')")
+    public ApiResponse<Map<String, Integer>> updateMenuStatus(
+            @PathVariable long id,
+            @Valid @RequestBody SystemDtos.MenuStatusRequest request
+    ) {
+        return ApiResponse.success(Map.of("affectedCount", service.updateMenuStatus(id, request)));
     }
 
     @GetMapping("/dictionaries")

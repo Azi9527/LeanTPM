@@ -45,28 +45,72 @@
     <select id="findPermissionCodes" resultType="string">
         SELECT DISTINCT m.permission_code
         FROM system_menu m
-        INNER JOIN system_role_menu rm
-            ON rm.tenant_id = m.tenant_id AND rm.menu_id = m.id AND rm.deleted = 0
-        INNER JOIN system_user_role ur
-            ON ur.tenant_id = rm.tenant_id AND ur.role_id = rm.role_id AND ur.deleted = 0
-        INNER JOIN system_role r
-            ON r.tenant_id = ur.tenant_id AND r.id = ur.role_id AND r.deleted = 0 AND r.status = 1
-        WHERE m.tenant_id = #{tenantId} AND ur.user_id = #{userId}
+        WHERE m.tenant_id = #{tenantId}
           AND m.status = 1 AND m.deleted = 0 AND m.permission_code IS NOT NULL
+          AND (
+              EXISTS (
+                  SELECT 1
+                  FROM system_user_role admin_relation
+                  JOIN system_role admin_role
+                    ON admin_role.tenant_id = admin_relation.tenant_id
+                   AND admin_role.id = admin_relation.role_id
+                   AND admin_role.role_code IN ('ADMIN', 'SUPER_ADMIN')
+                   AND admin_role.status = 1 AND admin_role.deleted = 0
+                  WHERE admin_relation.tenant_id = m.tenant_id
+                    AND admin_relation.user_id = #{userId}
+                    AND admin_relation.deleted = 0
+              )
+              OR EXISTS (
+                  SELECT 1
+                  FROM system_role_menu rm
+                  JOIN system_user_role ur
+                    ON ur.tenant_id = rm.tenant_id
+                   AND ur.role_id = rm.role_id
+                   AND ur.user_id = #{userId}
+                   AND ur.deleted = 0
+                  JOIN system_role r
+                    ON r.tenant_id = ur.tenant_id AND r.id = ur.role_id
+                   AND r.deleted = 0 AND r.status = 1
+                  WHERE rm.tenant_id = m.tenant_id
+                    AND rm.menu_id = m.id AND rm.deleted = 0
+              )
+          )
     </select>
 
     <select id="findMenus" resultType="com.leantpm.auth.dto.UserProfile$MenuItem">
         SELECT DISTINCT m.id, m.parent_id, m.menu_type, m.menu_name, m.route_name, m.route_path,
                m.component_path, m.permission_code, m.icon, m.sort_order
         FROM system_menu m
-        INNER JOIN system_role_menu rm
-            ON rm.tenant_id = m.tenant_id AND rm.menu_id = m.id AND rm.deleted = 0
-        INNER JOIN system_user_role ur
-            ON ur.tenant_id = rm.tenant_id AND ur.role_id = rm.role_id AND ur.deleted = 0
-        INNER JOIN system_role r
-            ON r.tenant_id = ur.tenant_id AND r.id = ur.role_id AND r.deleted = 0 AND r.status = 1
-        WHERE m.tenant_id = #{tenantId} AND ur.user_id = #{userId}
+        WHERE m.tenant_id = #{tenantId}
           AND m.status = 1 AND m.visible = 1 AND m.deleted = 0
+          AND (
+              EXISTS (
+                  SELECT 1
+                  FROM system_user_role admin_relation
+                  JOIN system_role admin_role
+                    ON admin_role.tenant_id = admin_relation.tenant_id
+                   AND admin_role.id = admin_relation.role_id
+                   AND admin_role.role_code IN ('ADMIN', 'SUPER_ADMIN')
+                   AND admin_role.status = 1 AND admin_role.deleted = 0
+                  WHERE admin_relation.tenant_id = m.tenant_id
+                    AND admin_relation.user_id = #{userId}
+                    AND admin_relation.deleted = 0
+              )
+              OR EXISTS (
+                  SELECT 1
+                  FROM system_role_menu rm
+                  JOIN system_user_role ur
+                    ON ur.tenant_id = rm.tenant_id
+                   AND ur.role_id = rm.role_id
+                   AND ur.user_id = #{userId}
+                   AND ur.deleted = 0
+                  JOIN system_role r
+                    ON r.tenant_id = ur.tenant_id AND r.id = ur.role_id
+                   AND r.deleted = 0 AND r.status = 1
+                  WHERE rm.tenant_id = m.tenant_id
+                    AND rm.menu_id = m.id AND rm.deleted = 0
+              )
+          )
         ORDER BY m.sort_order, m.id
     </select>
 

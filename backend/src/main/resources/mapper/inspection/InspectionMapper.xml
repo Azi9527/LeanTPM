@@ -54,46 +54,83 @@
     </select>
 
     <sql id="itemFilters">
-        tenant_id = #{tenantId} AND deleted = 0
+        item.tenant_id = #{tenantId} AND item.deleted = 0
+        AND (
+            item.organization_id IS NULL
+            OR <include refid="itemScope"/>
+        )
         <if test="keyword != null and keyword != ''">
-            AND (item_code LIKE CONCAT('%', #{keyword}, '%')
-                 OR item_name LIKE CONCAT('%', #{keyword}, '%')
-                 OR inspection_content LIKE CONCAT('%', #{keyword}, '%'))
+            AND (item.item_code LIKE CONCAT('%', #{keyword}, '%')
+                 OR item.item_name LIKE CONCAT('%', #{keyword}, '%')
+                 OR item.inspection_content LIKE CONCAT('%', #{keyword}, '%'))
         </if>
-        <if test="itemCategory != null and itemCategory != ''">AND item_category = #{itemCategory}</if>
-        <if test="resultType != null and resultType != ''">AND result_type = #{resultType}</if>
-        <if test="status != null">AND status = #{status}</if>
+        <if test="organizationId != null">AND item.organization_id = #{organizationId}</if>
+        <if test="itemCategory != null and itemCategory != ''">AND item.item_category = #{itemCategory}</if>
+        <if test="resultType != null and resultType != ''">AND item.result_type = #{resultType}</if>
+        <if test="status != null">AND item.status = #{status}</if>
+        <include refid="itemSmartTableFilters"/>
+    </sql>
+
+    <sql id="itemScope">
+        <choose>
+            <when test="scope.allData">1 = 1</when>
+            <when test="scope.organizationIds != null and !scope.organizationIds.isEmpty()">
+                item.organization_id IN
+                <foreach collection="scope.organizationIds" item="scopedOrganizationId"
+                         open="(" separator="," close=")">
+                    #{scopedOrganizationId}
+                </foreach>
+            </when>
+            <otherwise>1 = 0</otherwise>
+        </choose>
     </sql>
 
     <sql id="itemColumns">
-        id, item_code, item_name, item_category, inspection_part,
-        inspection_content, inspection_method, inspection_tool, inspection_standard,
-        standard_value, minimum_value, maximum_value, unit, result_type,
-        CAST(result_options AS CHAR) AS result_options_json,
-        required_flag, photo_required_flag, photo_min_count, photo_max_count,
-        photo_max_size_mb, photo_allowed_types, photo_compression_quality,
-        numeric_required_flag, skip_allowed_flag,
-        abnormal_severity, abnormal_advice, abnormal_default_stop_flag,
-        standard_minutes, safety_notes,
-        status, description, version
+        item.id, item.item_code, item.item_name,
+        item.organization_id, organization.organization_name,
+        item.item_category, item.inspection_part,
+        item.inspection_content, item.inspection_method, item.inspection_tool,
+        item.inspection_standard, item.standard_value, item.minimum_value,
+        item.maximum_value, item.unit, item.result_type,
+        CAST(item.result_options AS CHAR) AS result_options_json,
+        item.required_flag, item.photo_required_flag, item.photo_min_count,
+        item.photo_max_count, item.photo_max_size_mb, item.photo_allowed_types,
+        item.photo_compression_quality, item.numeric_required_flag,
+        item.skip_allowed_flag, item.abnormal_severity, item.abnormal_advice,
+        item.abnormal_default_stop_flag, item.standard_minutes, item.safety_notes,
+        item.status, item.description, item.version
     </sql>
 
     <select id="findItems" resultType="com.leantpm.inspection.InspectionDtos$ItemRow">
         SELECT <include refid="itemColumns"/>
-        FROM inspection_item
+        FROM inspection_item item
+        LEFT JOIN organization
+          ON organization.tenant_id = item.tenant_id
+         AND organization.id = item.organization_id
+         AND organization.deleted = 0
         WHERE <include refid="itemFilters"/>
-        ORDER BY item_code, id
+        ORDER BY <include refid="itemSmartTableOrder"/>
         LIMIT #{offset}, #{pageSize}
     </select>
 
     <select id="countItems" resultType="long">
-        SELECT COUNT(*) FROM inspection_item WHERE <include refid="itemFilters"/>
+        SELECT COUNT(*)
+        FROM inspection_item item
+        LEFT JOIN organization
+          ON organization.tenant_id = item.tenant_id
+         AND organization.id = item.organization_id
+         AND organization.deleted = 0
+        WHERE <include refid="itemFilters"/>
     </select>
 
     <select id="findItem" resultType="com.leantpm.inspection.InspectionDtos$ItemRow">
         SELECT <include refid="itemColumns"/>
-        FROM inspection_item
-        WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0
+        FROM inspection_item item
+        LEFT JOIN organization
+          ON organization.tenant_id = item.tenant_id
+         AND organization.id = item.organization_id
+         AND organization.deleted = 0
+        WHERE item.tenant_id = #{tenantId} AND item.id = #{id} AND item.deleted = 0
         LIMIT 1
     </select>
 
@@ -105,7 +142,7 @@
 
     <insert id="insertItem">
         INSERT INTO inspection_item
-            (tenant_id, item_code, item_name, item_category, inspection_part,
+            (tenant_id, item_code, item_name, organization_id, item_category, inspection_part,
              inspection_content, inspection_method, inspection_tool, inspection_standard,
              standard_value, minimum_value, maximum_value, unit, result_type,
              result_options, required_flag, photo_required_flag, photo_min_count,
@@ -115,7 +152,8 @@
              abnormal_default_stop_flag, standard_minutes,
              safety_notes, status, description, created_by, updated_by)
         VALUES
-            (#{tenantId}, #{request.itemCode}, #{request.itemName}, #{request.itemCategory},
+            (#{tenantId}, #{request.itemCode}, #{request.itemName}, #{request.organizationId},
+             #{request.itemCategory},
              #{request.inspectionPart}, #{request.inspectionContent}, #{request.inspectionMethod},
              #{request.inspectionTool}, #{request.inspectionStandard}, #{request.standardValue},
              #{request.minimumValue}, #{request.maximumValue}, #{request.unit},
@@ -138,7 +176,8 @@
 
     <update id="updateItem">
         UPDATE inspection_item
-        SET item_name = #{request.itemName}, item_category = #{request.itemCategory},
+        SET item_name = #{request.itemName}, organization_id = #{request.organizationId},
+            item_category = #{request.itemCategory},
             inspection_part = #{request.inspectionPart},
             inspection_content = #{request.inspectionContent},
             inspection_method = #{request.inspectionMethod},
@@ -192,6 +231,7 @@
             AND scheme.inspection_type = #{inspectionType}
         </if>
         <if test="status != null">AND scheme.status = #{status}</if>
+        <include refid="schemeSmartTableFilters"/>
     </sql>
 
     <sql id="schemeColumns">
@@ -223,13 +263,16 @@
           ON current_version.tenant_id = scheme.tenant_id
          AND current_version.id = scheme.current_version_id
         WHERE <include refid="schemeFilters"/>
-        ORDER BY scheme.scheme_code, scheme.id
+        ORDER BY <include refid="schemeSmartTableOrder"/>
         LIMIT #{offset}, #{pageSize}
     </select>
 
     <select id="countSchemes" resultType="long">
         SELECT COUNT(*)
         FROM inspection_scheme scheme
+        LEFT JOIN inspection_scheme_version current_version
+          ON current_version.tenant_id = scheme.tenant_id
+         AND current_version.id = scheme.current_version_id
         WHERE <include refid="schemeFilters"/>
     </select>
 
@@ -273,6 +316,16 @@
           AND version = #{request.version}
     </update>
 
+    <update id="updateSchemeStatus">
+        UPDATE inspection_scheme
+        SET status = CASE WHEN #{enabled} THEN 1 ELSE 0 END,
+            updated_by = #{operatorId}, updated_time = CURRENT_TIMESTAMP(3),
+            version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{id}
+          AND deleted = 0
+          <if test="version != null">AND version = #{version}</if>
+    </update>
+
     <select id="nextSchemeVersionNumber" resultType="int">
         SELECT COALESCE(MAX(version_number), 0) + 1
         FROM inspection_scheme_version
@@ -285,7 +338,8 @@
              cycle_interval, week_days, month_days, scheduled_time,
              generation_lead_minutes, work_calendar_id, shift_code,
              default_assignee_user_id, default_team_code, review_required_flag,
-             backfill_allowed_flag, effective_date, expiry_date, change_summary,
+             backfill_allowed_flag, submission_photo_required_flag,
+             submission_photo_max_count, effective_date, expiry_date, change_summary,
              created_by, updated_by)
         VALUES
             (#{tenantId}, #{schemeId}, #{versionNumber}, 'DRAFT', #{request.cycleType},
@@ -293,6 +347,7 @@
              #{request.scheduledTime}, #{request.generationLeadMinutes},
              #{request.workCalendarId}, #{request.shiftCode}, #{request.defaultAssigneeUserId},
              #{request.defaultTeamCode}, #{request.reviewRequired}, #{request.backfillAllowed},
+             #{request.submissionPhotoRequired}, #{request.submissionPhotoMaxCount},
              #{request.effectiveDate}, #{request.expiryDate}, #{request.changeSummary},
              #{operatorId}, #{operatorId})
     </insert>
@@ -304,13 +359,34 @@
         LIMIT 1
     </select>
 
+    <insert id="insertSchemeDefaultAssignee">
+        INSERT INTO inspection_scheme_default_assignee
+            (tenant_id, scheme_version_id, user_id, primary_flag, sort_order, created_by)
+        VALUES
+            (#{tenantId}, #{schemeVersionId}, #{userId}, #{primary}, #{sortOrder}, #{operatorId})
+    </insert>
+
     <sql id="schemeVersionColumns">
         version.id, version.scheme_id, version.version_number, version.version_status,
         version.cycle_type, version.cycle_interval, version.week_days, version.month_days,
         version.scheduled_time, version.generation_lead_minutes,
         version.work_calendar_id, version.shift_code, version.default_assignee_user_id,
-        assignee.real_name AS default_assignee_name, version.default_team_code,
+        assignee.real_name AS default_assignee_name,
+        (SELECT GROUP_CONCAT(relation.user_id ORDER BY relation.sort_order, relation.id)
+           FROM inspection_scheme_default_assignee relation
+          WHERE relation.tenant_id = version.tenant_id
+            AND relation.scheme_version_id = version.id) AS default_assignee_user_ids_csv,
+        (SELECT GROUP_CONCAT(member.real_name ORDER BY relation.sort_order, relation.id SEPARATOR '、')
+           FROM inspection_scheme_default_assignee relation
+           JOIN system_user member
+             ON member.tenant_id = relation.tenant_id
+            AND member.id = relation.user_id
+            AND member.deleted = 0
+          WHERE relation.tenant_id = version.tenant_id
+            AND relation.scheme_version_id = version.id) AS default_assignee_names,
+        version.default_team_code,
         version.review_required_flag, version.backfill_allowed_flag,
+        version.submission_photo_required_flag, version.submission_photo_max_count,
         version.effective_date, version.expiry_date, version.published_by,
         publisher.real_name AS published_by_name, version.published_time,
         version.change_summary, version.version
@@ -484,6 +560,7 @@
             assignee_user_id = VALUES(assignee_user_id), team_code = VALUES(team_code),
             next_generation_date = VALUES(next_generation_date),
             plan_status = 'ACTIVE', paused_reason = NULL, updated_by = VALUES(updated_by),
+            deleted = 0,
             version = inspection_plan.version + 1
     </insert>
 
@@ -509,6 +586,7 @@
                  OR e.equipment_name LIKE CONCAT('%', #{keyword}, '%'))
         </if>
         <if test="planStatus != null and planStatus != ''">AND plan.plan_status = #{planStatus}</if>
+        <include refid="planSmartTableFilters"/>
     </sql>
 
     <sql id="planColumns">
@@ -518,7 +596,18 @@
         organization.organization_name, location.location_name,
         plan.cycle_type, plan.cycle_interval, plan.scheduled_time,
         plan.generation_lead_minutes, plan.work_calendar_id,
-        plan.assignee_user_id, assignee.real_name AS assignee_name,
+        plan.assignee_user_id,
+        COALESCE(
+          (SELECT GROUP_CONCAT(member.real_name ORDER BY relation.sort_order, relation.id SEPARATOR '、')
+             FROM inspection_scheme_default_assignee relation
+             JOIN system_user member
+               ON member.tenant_id = relation.tenant_id
+              AND member.id = relation.user_id
+              AND member.deleted = 0
+            WHERE relation.tenant_id = plan.tenant_id
+              AND relation.scheme_version_id = plan.scheme_version_id),
+          assignee.real_name
+        ) AS assignee_name,
         plan.next_generation_date, plan.last_generation_date,
         plan.plan_status, plan.paused_reason, plan.version
     </sql>
@@ -532,7 +621,7 @@
           ON e.tenant_id = plan.tenant_id AND e.id = plan.equipment_id AND e.deleted = 0
         JOIN organization
           ON organization.tenant_id = e.tenant_id AND organization.id = e.organization_id
-        JOIN location
+        LEFT JOIN location
           ON location.tenant_id = e.tenant_id AND location.id = e.location_id
         LEFT JOIN system_user assignee
           ON assignee.tenant_id = plan.tenant_id AND assignee.id = plan.assignee_user_id
@@ -543,7 +632,7 @@
         FROM inspection_plan plan
         <include refid="planJoins"/>
         WHERE <include refid="planFilters"/>
-        ORDER BY plan.next_generation_date, plan.id
+        ORDER BY <include refid="planSmartTableOrder"/>
         LIMIT #{offset}, #{pageSize}
     </select>
 
@@ -574,6 +663,21 @@
             updated_by = #{operatorId}, version = version + 1
         WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0
           AND version = #{request.version}
+    </update>
+
+    <select id="findTaskIdsByPlan" resultType="long">
+        SELECT id FROM inspection_task
+        WHERE tenant_id = #{tenantId} AND plan_id = #{planId} AND deleted = 0
+        ORDER BY id
+    </select>
+
+    <update id="softDeletePlan">
+        UPDATE inspection_plan
+        SET deleted = 1, plan_status = 'CANCELLED',
+            paused_reason = '计划已删除', updated_by = #{operatorId},
+            updated_time = CURRENT_TIMESTAMP(3), version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{id}
+          AND version = #{version} AND deleted = 0
     </update>
 
     <select id="findGenerationPlans" resultType="com.leantpm.inspection.InspectionMapper$GenerationPlan">
@@ -645,6 +749,56 @@
         LIMIT 1
     </select>
 
+    <update id="softDeleteTask">
+        UPDATE inspection_task
+        SET deleted = 1, task_status = 'VOIDED', void_reason = '任务已删除',
+            updated_by = #{operatorId}, updated_time = CURRENT_TIMESTAMP(3),
+            version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{id}
+          AND deleted = 0
+          <if test="version != null">AND version = #{version}</if>
+    </update>
+
+    <update id="softDeleteTaskItems">
+        UPDATE inspection_task_item SET deleted = 1
+        WHERE tenant_id = #{tenantId} AND task_id = #{taskId} AND deleted = 0
+    </update>
+
+    <update id="softDeleteTaskResults">
+        UPDATE inspection_task_result SET deleted = 1
+        WHERE tenant_id = #{tenantId} AND task_id = #{taskId} AND deleted = 0
+    </update>
+
+    <update id="softDeleteTaskAbnormalities">
+        UPDATE inspection_abnormal
+        SET deleted = 1, updated_by = #{operatorId}, updated_time = CURRENT_TIMESTAMP(3),
+            version = version + 1
+        WHERE tenant_id = #{tenantId} AND task_id = #{taskId} AND deleted = 0
+    </update>
+
+    <update id="softDeleteTaskAttachments">
+        UPDATE inspection_attachment SET deleted = 1
+        WHERE tenant_id = #{tenantId} AND task_id = #{taskId} AND deleted = 0
+    </update>
+
+    <update id="softDeleteTaskEvents">
+        UPDATE inspection_task_event SET deleted = 1
+        WHERE tenant_id = #{tenantId} AND task_id = #{taskId} AND deleted = 0
+    </update>
+
+    <update id="softDeleteTaskAssignees">
+        UPDATE inspection_task_assignee SET deleted = 1
+        WHERE tenant_id = #{tenantId} AND task_id = #{taskId} AND deleted = 0
+    </update>
+
+    <update id="softDeleteTaskPhotoEvidence">
+        UPDATE mobile_photo_evidence
+        SET deleted = 1, updated_by = #{operatorId}, updated_time = CURRENT_TIMESTAMP(3),
+            version = version + 1
+        WHERE tenant_id = #{tenantId} AND workflow_type = 'INSPECTION'
+          AND task_id = #{taskId} AND deleted = 0
+    </update>
+
     <select id="findTaskIdByOccurrence" resultType="long">
         SELECT id FROM inspection_task
         WHERE tenant_id = #{tenantId} AND plan_id = #{planId}
@@ -667,7 +821,7 @@
              #{scheme.inspectionType}, #{equipment.id}, #{equipment.organizationId},
              #{equipment.locationId}, #{request.plannedDate}, #{request.plannedStartTime},
              #{request.dueTime}, #{primaryAssigneeUserId}, #{request.teamCode},
-             CASE WHEN #{request.backfill} THEN 'BACKFILL' ELSE 'MANUAL' END,
+             CASE WHEN #{request.backfill} THEN 'BACKFILL' ELSE #{sourceType} END,
              #{request.backfill}, #{version.reviewRequiredFlag}, #{request.remark},
              #{idempotencyKey}, #{requestHash},
              #{operatorId}, #{operatorId})
@@ -732,6 +886,7 @@
                   WHERE scoped_assignee.tenant_id = task.tenant_id
                     AND scoped_assignee.task_id = task.id
                     AND scoped_assignee.user_id = #{scope.userId}
+                    AND scoped_assignee.deleted = 0
               )
           ))
         )
@@ -750,6 +905,7 @@
                       AND searched_user.deleted = 0
                      WHERE searched_assignee.tenant_id = task.tenant_id
                        AND searched_assignee.task_id = task.id
+                       AND searched_assignee.deleted = 0
                        AND (
                            searched_user.real_name LIKE CONCAT('%', #{query.keyword}, '%')
                            OR searched_user.username LIKE CONCAT('%', #{query.keyword}, '%')
@@ -758,6 +914,19 @@
         </if>
         <if test="query.taskStatus != null and query.taskStatus != ''">
             AND task.task_status = #{query.taskStatus}
+        </if>
+        <if test="query.statusGroup != null and query.statusGroup != ''">
+            <choose>
+                <when test="query.statusGroup == 'PENDING'">
+                    AND task.task_status IN ('PENDING', 'OVERDUE')
+                </when>
+                <when test="query.statusGroup == 'IN_PROGRESS'">
+                    AND task.task_status = 'IN_PROGRESS'
+                </when>
+                <when test="query.statusGroup == 'COMPLETED'">
+                    AND task.task_status IN ('COMPLETED', 'PENDING_REVIEW')
+                </when>
+            </choose>
         </if>
         <if test="query.dispatchStatus != null and query.dispatchStatus != ''">
             <choose>
@@ -768,6 +937,7 @@
                         SELECT 1 FROM inspection_task_assignee dispatch_assignee
                         WHERE dispatch_assignee.tenant_id = task.tenant_id
                           AND dispatch_assignee.task_id = task.id
+                          AND dispatch_assignee.deleted = 0
                     )
                 </when>
                 <when test="query.dispatchStatus == 'ASSIGNED'">
@@ -780,6 +950,7 @@
                             SELECT 1 FROM inspection_task_assignee dispatch_assignee
                             WHERE dispatch_assignee.tenant_id = task.tenant_id
                               AND dispatch_assignee.task_id = task.id
+                              AND dispatch_assignee.deleted = 0
                         )
                     )
                 </when>
@@ -791,6 +962,7 @@
                             SELECT 1 FROM inspection_task_assignee dispatch_assignee
                             WHERE dispatch_assignee.tenant_id = task.tenant_id
                               AND dispatch_assignee.task_id = task.id
+                              AND dispatch_assignee.deleted = 0
                         )
                     )
                     AND (
@@ -847,6 +1019,7 @@
                     WHERE filtered_assignee.tenant_id = task.tenant_id
                       AND filtered_assignee.task_id = task.id
                       AND filtered_assignee.user_id = #{query.assigneeUserId}
+                      AND filtered_assignee.deleted = 0
                 )
             )
         </if>
@@ -857,6 +1030,7 @@
                 SELECT 1 FROM inspection_task_result abnormal_result
                 WHERE abnormal_result.tenant_id = task.tenant_id
                   AND abnormal_result.task_id = task.id
+                  AND abnormal_result.deleted = 0
                   AND abnormal_result.abnormal_flag = 1
             )
         </if>
@@ -877,9 +1051,347 @@
                     WHERE mine_assignee.tenant_id = task.tenant_id
                       AND mine_assignee.task_id = task.id
                       AND mine_assignee.user_id = #{scope.userId}
+                      AND mine_assignee.deleted = 0
                 )
             )
         </if>
+      </sql>
+
+    <sql id="taskStringTableFilter">
+        <choose>
+            <when test="filter.operator.name() == 'EQ'">${column} = #{filter.value}</when>
+            <when test="filter.operator.name() == 'NE'">COALESCE(${column}, '') != #{filter.value}</when>
+            <when test="filter.operator.name() == 'NOT_CONTAINS'">COALESCE(${column}, '') NOT LIKE CONCAT('%', #{filter.value}, '%')</when>
+            <when test="filter.operator.name() == 'STARTS_WITH'">${column} LIKE CONCAT(#{filter.value}, '%')</when>
+            <when test="filter.operator.name() == 'ENDS_WITH'">${column} LIKE CONCAT('%', #{filter.value})</when>
+            <when test="filter.operator.name() == 'EMPTY'">(${column} IS NULL OR ${column} = '')</when>
+            <when test="filter.operator.name() == 'NOT_EMPTY'">(${column} IS NOT NULL AND ${column} != '')</when>
+            <otherwise>${column} LIKE CONCAT('%', #{filter.value}, '%')</otherwise>
+        </choose>
+    </sql>
+
+    <sql id="taskNumberTableFilter">
+        <choose>
+            <when test="filter.operator.name() == 'NE'">${column} != CAST(#{filter.value} AS DECIMAL(30,6))</when>
+            <when test="filter.operator.name() == 'GT'">${column} &gt; CAST(#{filter.value} AS DECIMAL(30,6))</when>
+            <when test="filter.operator.name() == 'GTE'">${column} &gt;= CAST(#{filter.value} AS DECIMAL(30,6))</when>
+            <when test="filter.operator.name() == 'LT'">${column} &lt; CAST(#{filter.value} AS DECIMAL(30,6))</when>
+            <when test="filter.operator.name() == 'LTE'">${column} &lt;= CAST(#{filter.value} AS DECIMAL(30,6))</when>
+            <when test="filter.operator.name() == 'BETWEEN'">${column} BETWEEN CAST(#{filter.values[0]} AS DECIMAL(30,6)) AND CAST(#{filter.values[1]} AS DECIMAL(30,6))</when>
+            <when test="filter.operator.name() == 'EMPTY'">${column} IS NULL</when>
+            <when test="filter.operator.name() == 'NOT_EMPTY'">${column} IS NOT NULL</when>
+            <otherwise>${column} = CAST(#{filter.value} AS DECIMAL(30,6))</otherwise>
+        </choose>
+    </sql>
+
+    <sql id="taskDateTableFilter">
+        <choose>
+            <when test="filter.operator.name() == 'NE'">DATE(${column}) != CAST(#{filter.value} AS DATE)</when>
+            <when test="filter.operator.name() == 'GT'">DATE(${column}) &gt; CAST(#{filter.value} AS DATE)</when>
+            <when test="filter.operator.name() == 'GTE'">DATE(${column}) &gt;= CAST(#{filter.value} AS DATE)</when>
+            <when test="filter.operator.name() == 'LT'">DATE(${column}) &lt; CAST(#{filter.value} AS DATE)</when>
+            <when test="filter.operator.name() == 'LTE'">DATE(${column}) &lt;= CAST(#{filter.value} AS DATE)</when>
+            <when test="filter.operator.name() == 'BETWEEN'">DATE(${column}) BETWEEN CAST(#{filter.values[0]} AS DATE) AND CAST(#{filter.values[1]} AS DATE)</when>
+            <when test="filter.operator.name() == 'EMPTY'">${column} IS NULL</when>
+            <when test="filter.operator.name() == 'NOT_EMPTY'">${column} IS NOT NULL</when>
+            <otherwise>DATE(${column}) = CAST(#{filter.value} AS DATE)</otherwise>
+        </choose>
+    </sql>
+
+    <sql id="itemSmartTableFilters">
+        <if test="tableQuery != null and tableQuery.filters != null and !tableQuery.filters.isEmpty()">
+            AND (
+            <foreach collection="tableQuery.filters" item="filter" index="index">
+                <if test="index &gt; 0"><choose><when test="tableQuery.logic.name() == 'OR'">OR</when><otherwise>AND</otherwise></choose></if>
+                <choose>
+                    <when test="filter.field == 'itemCode'"><include refid="taskStringTableFilter"><property name="column" value="item.item_code"/></include></when>
+                    <when test="filter.field == 'itemName'"><include refid="taskStringTableFilter"><property name="column" value="item.item_name"/></include></when>
+                    <when test="filter.field == 'organizationName'"><include refid="taskStringTableFilter"><property name="column" value="organization.organization_name"/></include></when>
+                    <when test="filter.field == 'inspectionPart'"><include refid="taskStringTableFilter"><property name="column" value="item.inspection_part"/></include></when>
+                    <when test="filter.field == 'inspectionStandard'"><include refid="taskStringTableFilter"><property name="column" value="item.inspection_standard"/></include></when>
+                    <when test="filter.field == 'resultType'"><include refid="taskStringTableFilter"><property name="column" value="item.result_type"/></include></when>
+                    <when test="filter.field == 'itemCategory'"><include refid="taskStringTableFilter"><property name="column" value="item.item_category"/></include></when>
+                    <when test="filter.field == 'ruleSummary'"><include refid="taskStringTableFilter"><property name="column" value="CONCAT(IF(item.required_flag = 1, '必填 ', ''), IF(item.photo_required_flag = 1, '拍照 ', ''), IF(item.status = 1, '启用', '停用'))"/></include></when>
+                    <when test="filter.field == 'minimumValue'"><include refid="taskNumberTableFilter"><property name="column" value="item.minimum_value"/></include></when>
+                    <when test="filter.field == 'maximumValue'"><include refid="taskNumberTableFilter"><property name="column" value="item.maximum_value"/></include></when>
+                    <when test="filter.field == 'status'"><include refid="taskNumberTableFilter"><property name="column" value="item.status"/></include></when>
+                    <otherwise>1 = 0</otherwise>
+                </choose>
+            </foreach>)
+        </if>
+    </sql>
+
+    <sql id="itemSmartTableOrder">
+        <choose>
+            <when test="tableQuery != null and tableQuery.sortBy == 'itemCode'">item.item_code</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'itemName'">item.item_name</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'organizationName'">organization.organization_name</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'inspectionPart'">item.inspection_part</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'inspectionStandard'">item.inspection_standard</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'resultType'">item.result_type</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'minimumValue'">item.minimum_value</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'maximumValue'">item.maximum_value</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'itemCategory'">item.item_category</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'ruleSummary'">item.required_flag</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'status'">item.status</when>
+            <otherwise>item.item_code</otherwise>
+        </choose>
+        <choose><when test="tableQuery != null and tableQuery.sortDirection != null and tableQuery.sortDirection.name() == 'DESC'">DESC</when><otherwise>ASC</otherwise></choose>, item.id
+    </sql>
+
+    <sql id="schemeSmartTableFilters">
+        <if test="tableQuery != null and tableQuery.filters != null and !tableQuery.filters.isEmpty()">
+            AND (
+            <foreach collection="tableQuery.filters" item="filter" index="index">
+                <if test="index &gt; 0"><choose><when test="tableQuery.logic.name() == 'OR'">OR</when><otherwise>AND</otherwise></choose></if>
+                <choose>
+                    <when test="filter.field == 'schemeCode'"><include refid="taskStringTableFilter"><property name="column" value="scheme.scheme_code"/></include></when>
+                    <when test="filter.field == 'schemeName'"><include refid="taskStringTableFilter"><property name="column" value="scheme.scheme_name"/></include></when>
+                    <when test="filter.field == 'inspectionType'"><include refid="taskStringTableFilter"><property name="column" value="scheme.inspection_type"/></include></when>
+                    <when test="filter.field == 'currentVersionStatus'"><include refid="taskStringTableFilter"><property name="column" value="current_version.version_status"/></include></when>
+                    <when test="filter.field == 'cycleType'"><include refid="taskStringTableFilter"><property name="column" value="current_version.cycle_type"/></include></when>
+                    <when test="filter.field == 'currentVersionNumber'"><include refid="taskNumberTableFilter"><property name="column" value="current_version.version_number"/></include></when>
+                    <when test="filter.field == 'itemCount'"><include refid="taskNumberTableFilter"><property name="column" value="(SELECT COUNT(*) FROM inspection_scheme_item filter_item WHERE filter_item.tenant_id = scheme.tenant_id AND filter_item.scheme_version_id = scheme.current_version_id)"/></include></when>
+                    <when test="filter.field == 'activePlanCount'"><include refid="taskNumberTableFilter"><property name="column" value="(SELECT COUNT(*) FROM inspection_plan filter_plan WHERE filter_plan.tenant_id = scheme.tenant_id AND filter_plan.scheme_id = scheme.id AND filter_plan.plan_status = 'ACTIVE' AND filter_plan.deleted = 0)"/></include></when>
+                    <when test="filter.field == 'status'"><include refid="taskNumberTableFilter"><property name="column" value="scheme.status"/></include></when>
+                    <otherwise>1 = 0</otherwise>
+                </choose>
+            </foreach>)
+        </if>
+    </sql>
+
+    <sql id="schemeSmartTableOrder">
+        <choose>
+            <when test="tableQuery != null and tableQuery.sortBy == 'schemeCode'">scheme.scheme_code</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'schemeName'">scheme.scheme_name</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'inspectionType'">scheme.inspection_type</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'currentVersionNumber'">current_version.version_number</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'currentVersionStatus'">current_version.version_status</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'cycleType'">current_version.cycle_type</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'itemCount'">item_count</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'activePlanCount'">active_plan_count</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'status'">scheme.status</when>
+            <otherwise>scheme.scheme_code</otherwise>
+        </choose>
+        <choose><when test="tableQuery != null and tableQuery.sortDirection != null and tableQuery.sortDirection.name() == 'DESC'">DESC</when><otherwise>ASC</otherwise></choose>, scheme.id
+    </sql>
+
+    <sql id="planSmartTableFilters">
+        <if test="tableQuery != null and tableQuery.filters != null and !tableQuery.filters.isEmpty()">
+            AND (
+            <foreach collection="tableQuery.filters" item="filter" index="index">
+                <if test="index &gt; 0"><choose><when test="tableQuery.logic.name() == 'OR'">OR</when><otherwise>AND</otherwise></choose></if>
+                <choose>
+                    <when test="filter.field == 'schemeCode'"><include refid="taskStringTableFilter"><property name="column" value="scheme.scheme_code"/></include></when>
+                    <when test="filter.field == 'schemeName'"><include refid="taskStringTableFilter"><property name="column" value="scheme.scheme_name"/></include></when>
+                    <when test="filter.field == 'equipmentCode'"><include refid="taskStringTableFilter"><property name="column" value="e.equipment_code"/></include></when>
+                    <when test="filter.field == 'equipmentName'"><include refid="taskStringTableFilter"><property name="column" value="e.equipment_name"/></include></when>
+                    <when test="filter.field == 'organizationName'"><include refid="taskStringTableFilter"><property name="column" value="organization.organization_name"/></include></when>
+                    <when test="filter.field == 'locationName'"><include refid="taskStringTableFilter"><property name="column" value="COALESCE(location.location_name, '未设置')"/></include></when>
+                    <when test="filter.field == 'cycleType'"><include refid="taskStringTableFilter"><property name="column" value="plan.cycle_type"/></include></when>
+                    <when test="filter.field == 'assigneeName'"><include refid="taskStringTableFilter"><property name="column" value="COALESCE((SELECT GROUP_CONCAT(filter_member.real_name ORDER BY filter_relation.sort_order, filter_relation.id SEPARATOR '、') FROM inspection_scheme_default_assignee filter_relation JOIN system_user filter_member ON filter_member.tenant_id = filter_relation.tenant_id AND filter_member.id = filter_relation.user_id AND filter_member.deleted = 0 WHERE filter_relation.tenant_id = plan.tenant_id AND filter_relation.scheme_version_id = plan.scheme_version_id), assignee.real_name, '')"/></include></when>
+                    <when test="filter.field == 'cycleInterval'"><include refid="taskNumberTableFilter"><property name="column" value="plan.cycle_interval"/></include></when>
+                    <when test="filter.field == 'nextGenerationDate'"><include refid="taskDateTableFilter"><property name="column" value="plan.next_generation_date"/></include></when>
+                    <when test="filter.field == 'planStatus'"><include refid="taskStringTableFilter"><property name="column" value="plan.plan_status"/></include></when>
+                    <otherwise>1 = 0</otherwise>
+                </choose>
+            </foreach>)
+        </if>
+    </sql>
+
+    <sql id="planSmartTableOrder">
+        <choose>
+            <when test="tableQuery != null and tableQuery.sortBy == 'schemeCode'">scheme.scheme_code</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'schemeName'">scheme.scheme_name</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'equipmentCode'">e.equipment_code</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'equipmentName'">e.equipment_name</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'organizationName'">organization.organization_name</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'locationName'">location.location_name</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'cycleType'">plan.cycle_type</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'cycleInterval'">plan.cycle_interval</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'assigneeName'">assignee_name</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'nextGenerationDate'">plan.next_generation_date</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'planStatus'">plan.plan_status</when>
+            <otherwise>plan.next_generation_date</otherwise>
+        </choose>
+        <choose><when test="tableQuery != null and tableQuery.sortDirection != null and tableQuery.sortDirection.name() == 'DESC'">DESC</when><otherwise>ASC</otherwise></choose>, plan.id
+    </sql>
+
+    <sql id="abnormalSmartTableFilters">
+        <if test="tableQuery != null and tableQuery.filters != null and !tableQuery.filters.isEmpty()">
+            AND (
+            <foreach collection="tableQuery.filters" item="filter" index="index">
+                <if test="index &gt; 0"><choose><when test="tableQuery.logic.name() == 'OR'">OR</when><otherwise>AND</otherwise></choose></if>
+                <choose>
+                    <when test="filter.field == 'abnormalCode'"><include refid="taskStringTableFilter"><property name="column" value="abnormal.abnormal_code"/></include></when>
+                    <when test="filter.field == 'taskCode'"><include refid="taskStringTableFilter"><property name="column" value="task.task_code"/></include></when>
+                    <when test="filter.field == 'abnormalTitle'"><include refid="taskStringTableFilter"><property name="column" value="abnormal.abnormal_title"/></include></when>
+                    <when test="filter.field == 'equipmentCode'"><include refid="taskStringTableFilter"><property name="column" value="e.equipment_code"/></include></when>
+                    <when test="filter.field == 'equipmentName'"><include refid="taskStringTableFilter"><property name="column" value="e.equipment_name"/></include></when>
+                    <when test="filter.field == 'itemName'"><include refid="taskStringTableFilter"><property name="column" value="item.item_name"/></include></when>
+                    <when test="filter.field == 'organizationName'"><include refid="taskStringTableFilter"><property name="column" value="organization.organization_name"/></include></when>
+                    <when test="filter.field == 'abnormalDescription'"><include refid="taskStringTableFilter"><property name="column" value="abnormal.abnormal_description"/></include></when>
+                    <when test="filter.field == 'severity'"><include refid="taskStringTableFilter"><property name="column" value="abnormal.severity"/></include></when>
+                    <when test="filter.field == 'responsibleUserName'"><include refid="taskStringTableFilter"><property name="column" value="responsible.real_name"/></include></when>
+                    <when test="filter.field == 'dueTime'"><include refid="taskDateTableFilter"><property name="column" value="abnormal.due_time"/></include></when>
+                    <when test="filter.field == 'abnormalStatus'"><include refid="taskStringTableFilter"><property name="column" value="abnormal.abnormal_status"/></include></when>
+                    <when test="filter.field == 'equipmentStopRequired'">
+                        <choose>
+                            <when test="filter.operator.name() == 'NE' and filter.value == 'true'">abnormal.equipment_stop_required != 1</when>
+                            <when test="filter.operator.name() == 'NE'">abnormal.equipment_stop_required != 0</when>
+                            <when test="filter.value == 'true'">abnormal.equipment_stop_required = 1</when>
+                            <otherwise>abnormal.equipment_stop_required = 0</otherwise>
+                        </choose>
+                    </when>
+                    <when test="filter.field == 'createdTime'"><include refid="taskDateTableFilter"><property name="column" value="abnormal.created_time"/></include></when>
+                    <otherwise>1 = 0</otherwise>
+                </choose>
+            </foreach>)
+        </if>
+    </sql>
+
+    <sql id="abnormalSmartTableOrder">
+        <choose>
+            <when test="tableQuery != null and tableQuery.sortBy == 'abnormalCode'">abnormal.abnormal_code</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'taskCode'">task.task_code</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'abnormalTitle'">abnormal.abnormal_title</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'equipmentCode'">e.equipment_code</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'equipmentName'">e.equipment_name</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'itemName'">item.item_name</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'organizationName'">organization.organization_name</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'abnormalDescription'">abnormal.abnormal_description</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'severity'">abnormal.severity</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'responsibleUserName'">responsible.real_name</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'dueTime'">abnormal.due_time</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'abnormalStatus'">abnormal.abnormal_status</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'equipmentStopRequired'">abnormal.equipment_stop_required</when>
+            <when test="tableQuery != null and tableQuery.sortBy == 'createdTime'">abnormal.created_time</when>
+            <otherwise>abnormal.created_time</otherwise>
+        </choose>
+        <choose><when test="tableQuery != null and tableQuery.sortDirection != null and tableQuery.sortDirection.name() == 'ASC'">ASC</when><otherwise>DESC</otherwise></choose>, abnormal.id DESC
+    </sql>
+
+    <sql id="taskSmartTableFilters">
+        <if test="tableQuery != null and tableQuery.filters != null and !tableQuery.filters.isEmpty()">
+            AND (
+            <foreach collection="tableQuery.filters" item="filter" index="index">
+                <if test="index &gt; 0">
+                    <choose>
+                        <when test="tableQuery.logic.name() == 'OR'">OR</when>
+                        <otherwise>AND</otherwise>
+                    </choose>
+                </if>
+                <choose>
+                    <when test="filter.field == 'taskCode'">
+                        <include refid="taskStringTableFilter"><property name="column" value="task.task_code"/></include>
+                    </when>
+                    <when test="filter.field == 'schemeNameSnapshot'">
+                        <include refid="taskStringTableFilter"><property name="column" value="task.scheme_name_snapshot"/></include>
+                    </when>
+                    <when test="filter.field == 'equipmentCode'">
+                        <include refid="taskStringTableFilter"><property name="column" value="e.equipment_code"/></include>
+                    </when>
+                    <when test="filter.field == 'equipmentName'">
+                        <include refid="taskStringTableFilter"><property name="column" value="e.equipment_name"/></include>
+                    </when>
+                    <when test="filter.field == 'organizationName'">
+                        <include refid="taskStringTableFilter"><property name="column" value="organization.organization_name"/></include>
+                    </when>
+                    <when test="filter.field == 'plannedDate'">
+                        <include refid="taskDateTableFilter"><property name="column" value="task.planned_date"/></include>
+                    </when>
+                    <when test="filter.field == 'dueTime'">
+                        <include refid="taskDateTableFilter"><property name="column" value="task.due_time"/></include>
+                    </when>
+                    <when test="filter.field == 'assigneeName'">
+                        <choose>
+                            <when test="filter.operator.name() == 'EMPTY'">
+                                task.assignee_user_id IS NULL AND NOT EXISTS (
+                                    SELECT 1 FROM inspection_task_assignee header_relation
+                                    WHERE header_relation.tenant_id = task.tenant_id
+                                      AND header_relation.task_id = task.id
+                                      AND header_relation.deleted = 0
+                                )
+                            </when>
+                            <otherwise>
+                                EXISTS (
+                                    SELECT 1
+                                    FROM inspection_task_assignee header_relation
+                                    JOIN system_user header_user
+                                      ON header_user.tenant_id = header_relation.tenant_id
+                                     AND header_user.id = header_relation.user_id
+                                     AND header_user.deleted = 0
+                                    WHERE header_relation.tenant_id = task.tenant_id
+                                      AND header_relation.task_id = task.id
+                                      AND header_relation.deleted = 0
+                                      AND header_user.real_name LIKE CONCAT('%', #{filter.value}, '%')
+                                )
+                            </otherwise>
+                        </choose>
+                    </when>
+                    <when test="filter.field == 'completedItemCount'">
+                        <include refid="taskNumberTableFilter"><property name="column" value="(SELECT COUNT(*) FROM inspection_task_result header_result WHERE header_result.tenant_id = task.tenant_id AND header_result.task_id = task.id AND header_result.deleted = 0 AND header_result.result_status = 'SUBMITTED')"/></include>
+                    </when>
+                    <when test="filter.field == 'dispatchStatus'">
+                        <choose>
+                            <when test="filter.value == 'UNASSIGNED'">
+                                task.task_status IN ('PENDING', 'IN_PROGRESS', 'OVERDUE')
+                                AND task.assignee_user_id IS NULL
+                                AND NOT EXISTS (
+                                    SELECT 1 FROM inspection_task_assignee header_dispatch
+                                    WHERE header_dispatch.tenant_id = task.tenant_id
+                                      AND header_dispatch.task_id = task.id
+                                      AND header_dispatch.deleted = 0
+                                )
+                            </when>
+                            <when test="filter.value == 'ASSIGNED'">
+                                task.task_status = 'PENDING'
+                                AND COALESCE(task.planned_start_time, TIMESTAMP(task.planned_date)) &gt; CURRENT_TIMESTAMP(3)
+                            </when>
+                            <when test="filter.value == 'PENDING_EXECUTION'">
+                                task.task_status IN ('PENDING', 'IN_PROGRESS', 'OVERDUE')
+                                AND (task.assignee_user_id IS NOT NULL OR EXISTS (
+                                    SELECT 1 FROM inspection_task_assignee header_dispatch
+                                    WHERE header_dispatch.tenant_id = task.tenant_id
+                                      AND header_dispatch.task_id = task.id
+                                      AND header_dispatch.deleted = 0
+                                ))
+                            </when>
+                            <when test="filter.value == 'COMPLETED'">task.task_status IN ('COMPLETED', 'PENDING_REVIEW')</when>
+                            <otherwise>1 = 0</otherwise>
+                        </choose>
+                    </when>
+                    <when test="filter.field == 'taskStatus'">
+                        <include refid="taskStringTableFilter"><property name="column" value="task.task_status"/></include>
+                    </when>
+                    <otherwise>1 = 0</otherwise>
+                </choose>
+            </foreach>
+            )
+        </if>
+    </sql>
+
+    <sql id="taskSmartTableOrder">
+        <choose>
+            <when test="tableQuery.sortBy == 'taskCode'">task.task_code</when>
+            <when test="tableQuery.sortBy == 'schemeNameSnapshot'">task.scheme_name_snapshot</when>
+            <when test="tableQuery.sortBy == 'equipmentCode'">e.equipment_code</when>
+            <when test="tableQuery.sortBy == 'equipmentName'">e.equipment_name</when>
+            <when test="tableQuery.sortBy == 'organizationName'">organization.organization_name</when>
+            <when test="tableQuery.sortBy == 'plannedDate'">task.planned_date</when>
+            <when test="tableQuery.sortBy == 'dueTime'">task.due_time</when>
+            <when test="tableQuery.sortBy == 'assigneeName'">assignee_name</when>
+            <when test="tableQuery.sortBy == 'completedItemCount'">completed_item_count</when>
+            <when test="tableQuery.sortBy == 'completedTime'">COALESCE(task.completed_time, task.submitted_time)</when>
+            <when test="tableQuery.sortBy == 'dispatchStatus'">dispatch_status</when>
+            <when test="tableQuery.sortBy == 'taskStatus'">task.task_status</when>
+            <otherwise>task.planned_date</otherwise>
+        </choose>
+        <choose>
+            <when test="tableQuery.sortDirection != null and tableQuery.sortDirection.name() == 'ASC'">ASC</when>
+            <otherwise>DESC</otherwise>
+        </choose>
+        , task.due_time, task.id DESC
     </sql>
 
     <sql id="taskColumns">
@@ -900,6 +1412,7 @@
                  AND user.deleted = 0
                 WHERE relation.tenant_id = task.tenant_id
                   AND relation.task_id = task.id
+                  AND relation.deleted = 0
             ),
             assignee.real_name
         ) AS assignee_name,
@@ -909,6 +1422,7 @@
                 FROM inspection_task_assignee relation
                 WHERE relation.tenant_id = task.tenant_id
                   AND relation.task_id = task.id
+                  AND relation.deleted = 0
             ),
             CAST(task.assignee_user_id AS CHAR)
         ) AS assignee_user_ids_csv,
@@ -921,6 +1435,7 @@
                      SELECT 1 FROM inspection_task_assignee dispatch_assignee
                      WHERE dispatch_assignee.tenant_id = task.tenant_id
                        AND dispatch_assignee.task_id = task.id
+                       AND dispatch_assignee.deleted = 0
                  ) THEN 'UNASSIGNED'
             WHEN task.task_status = 'PENDING'
                  AND COALESCE(task.planned_start_time, TIMESTAMP(task.planned_date))
@@ -929,15 +1444,23 @@
             ELSE NULL
         END AS dispatch_status,
         task.source_type, task.backfill_flag, task.review_required_flag,
+        COALESCE(task_version.submission_photo_required_flag, 0)
+            AS submission_photo_required_flag,
+        COALESCE(task_version.submission_photo_max_count, 9)
+            AS submission_photo_max_count,
         task.started_time, task.submitted_time, task.completed_time,
+        submitter.real_name AS completed_by_name,
         reviewer.real_name AS reviewer_name, task.review_comment, task.execution_remark,
         (SELECT COUNT(*) FROM inspection_task_item ti
-         WHERE ti.tenant_id = task.tenant_id AND ti.task_id = task.id) AS item_count,
+         WHERE ti.tenant_id = task.tenant_id AND ti.task_id = task.id
+           AND ti.deleted = 0) AS item_count,
         (SELECT COUNT(*) FROM inspection_task_result tr
          WHERE tr.tenant_id = task.tenant_id AND tr.task_id = task.id
+           AND tr.deleted = 0
            AND tr.result_status = 'SUBMITTED') AS completed_item_count,
         (SELECT COUNT(*) FROM inspection_task_result tr
          WHERE tr.tenant_id = task.tenant_id AND tr.task_id = task.id
+           AND tr.deleted = 0
            AND tr.abnormal_flag = 1) AS abnormal_item_count,
         task.version
     </sql>
@@ -947,12 +1470,19 @@
           ON e.tenant_id = task.tenant_id AND e.id = task.equipment_id AND e.deleted = 0
         JOIN organization
           ON organization.tenant_id = task.tenant_id AND organization.id = task.organization_id
-        JOIN location
+        LEFT JOIN location
           ON location.tenant_id = task.tenant_id AND location.id = task.location_id
         LEFT JOIN system_user assignee
           ON assignee.tenant_id = task.tenant_id AND assignee.id = task.assignee_user_id
         LEFT JOIN system_user reviewer
           ON reviewer.tenant_id = task.tenant_id AND reviewer.id = task.reviewer_user_id
+        LEFT JOIN system_user submitter
+          ON submitter.tenant_id = task.tenant_id
+         AND submitter.id = task.submitted_by
+         AND submitter.deleted = 0
+        LEFT JOIN inspection_scheme_version task_version
+          ON task_version.tenant_id = task.tenant_id
+         AND task_version.id = task.scheme_version_id
     </sql>
 
     <select id="findTasks" resultType="com.leantpm.inspection.InspectionDtos$TaskRow">
@@ -968,6 +1498,23 @@
         SELECT COUNT(*) FROM inspection_task task
         <include refid="taskJoins"/>
         WHERE <include refid="taskFilters"/>
+      </select>
+
+    <select id="findTasksTable" resultType="com.leantpm.inspection.InspectionDtos$TaskRow">
+        SELECT <include refid="taskColumns"/>
+        FROM inspection_task task
+        <include refid="taskJoins"/>
+        WHERE <include refid="taskFilters"/>
+        <include refid="taskSmartTableFilters"/>
+        ORDER BY <include refid="taskSmartTableOrder"/>
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
+    <select id="countTasksTable" resultType="long">
+        SELECT COUNT(*) FROM inspection_task task
+        <include refid="taskJoins"/>
+        WHERE <include refid="taskFilters"/>
+        <include refid="taskSmartTableFilters"/>
     </select>
 
     <select id="findTaskResultExportRows"
@@ -987,6 +1534,7 @@
                         AND export_user.deleted = 0
                        WHERE export_relation.tenant_id = task.tenant_id
                          AND export_relation.task_id = task.id
+                         AND export_relation.deleted = 0
                    ),
                    assignee.real_name
                ) AS assignee_name,
@@ -1001,8 +1549,10 @@
         <include refid="taskJoins"/>
         JOIN inspection_task_item item
           ON item.tenant_id = task.tenant_id AND item.task_id = task.id
+         AND item.deleted = 0
         LEFT JOIN inspection_task_result result
           ON result.tenant_id = item.tenant_id AND result.task_item_id = item.id
+         AND result.deleted = 0
         LEFT JOIN system_user executor
           ON executor.tenant_id = result.tenant_id AND executor.id = result.executed_by
         WHERE <include refid="taskFilters"/>
@@ -1029,6 +1579,7 @@
          AND abnormal.deleted = 0
         LEFT JOIN inspection_task_item item
           ON item.tenant_id = abnormal.tenant_id AND item.id = abnormal.task_item_id
+         AND item.deleted = 0
         LEFT JOIN system_user responsible
           ON responsible.tenant_id = abnormal.tenant_id
          AND responsible.id = abnormal.responsible_user_id
@@ -1055,6 +1606,7 @@
         <include refid="taskJoins"/>
         JOIN inspection_attachment relation
           ON relation.tenant_id = task.tenant_id AND relation.task_id = task.id
+         AND relation.deleted = 0
         JOIN system_attachment attachment
           ON attachment.tenant_id = relation.tenant_id
          AND attachment.id = relation.attachment_id
@@ -1062,8 +1614,10 @@
         LEFT JOIN inspection_task_result result
           ON result.tenant_id = relation.tenant_id
          AND result.id = relation.task_result_id
+         AND result.deleted = 0
         LEFT JOIN inspection_task_item item
           ON item.tenant_id = result.tenant_id AND item.id = result.task_item_id
+         AND item.deleted = 0
         LEFT JOIN inspection_abnormal abnormal
           ON abnormal.tenant_id = relation.tenant_id
          AND abnormal.id = relation.abnormal_id
@@ -1181,6 +1735,7 @@
                     WHERE scoped_assignee.tenant_id = task.tenant_id
                       AND scoped_assignee.task_id = task.id
                       AND scoped_assignee.user_id = #{scope.userId}
+                      AND scoped_assignee.deleted = 0
                 )
             ))
           )
@@ -1199,6 +1754,7 @@
                abnormal_default_stop_flag, standard_minutes, safety_notes, sort_order
         FROM inspection_task_item
         WHERE tenant_id = #{tenantId} AND task_id = #{taskId} AND id = #{taskItemId}
+          AND deleted = 0
         LIMIT 1
     </select>
 
@@ -1213,7 +1769,7 @@
                skip_allowed_flag, abnormal_severity, abnormal_advice,
                abnormal_default_stop_flag, standard_minutes, safety_notes, sort_order
         FROM inspection_task_item
-        WHERE tenant_id = #{tenantId} AND task_id = #{taskId}
+        WHERE tenant_id = #{tenantId} AND task_id = #{taskId} AND deleted = 0
         ORDER BY sort_order, id
     </select>
 
@@ -1231,6 +1787,7 @@
         LEFT JOIN system_user user
           ON user.tenant_id = result.tenant_id AND user.id = result.executed_by
         WHERE result.tenant_id = #{tenantId} AND result.task_item_id = #{taskItemId}
+          AND result.deleted = 0
         LIMIT 1
     </select>
 
@@ -1263,25 +1820,52 @@
             updated_by = #{operatorId}, version = version + 1
         WHERE tenant_id = #{tenantId} AND task_id = #{taskId}
           AND task_item_id = #{request.taskItemId} AND result_status = 'DRAFT'
+          AND deleted = 0
           <if test="request.version != null">AND version = #{request.version}</if>
     </update>
 
-    <delete id="deleteResultAttachments">
-        DELETE FROM inspection_attachment
+    <update id="deleteResultAttachments">
+        UPDATE inspection_attachment SET deleted = 1
         WHERE tenant_id = #{tenantId} AND task_result_id = #{taskResultId}
-    </delete>
+          AND deleted = 0
+    </update>
+
+    <update id="deleteTaskSubmissionAttachments">
+        UPDATE inspection_attachment SET deleted = 1
+        WHERE tenant_id = #{tenantId}
+          AND task_id = #{taskId}
+          AND task_result_id IS NULL
+          AND attachment_type = 'TASK_PHOTO'
+          AND deleted = 0
+    </update>
+
+    <insert id="insertTaskSubmissionAttachment">
+        INSERT INTO inspection_attachment
+            (tenant_id, task_id, task_result_id, attachment_id,
+             attachment_type, created_by, deleted)
+        VALUES
+            (#{tenantId}, #{taskId}, NULL, #{attachmentId},
+             'TASK_PHOTO', #{operatorId}, 0)
+        ON DUPLICATE KEY UPDATE task_id = VALUES(task_id),
+            task_result_id = NULL, attachment_type = 'TASK_PHOTO',
+            created_by = VALUES(created_by), deleted = 0
+    </insert>
 
     <insert id="replaceResultAttachments">
         INSERT INTO inspection_attachment
-            (tenant_id, task_id, task_result_id, attachment_id, attachment_type, created_by)
+            (tenant_id, task_id, task_result_id, attachment_id, attachment_type, created_by, deleted)
         VALUES
             (#{tenantId}, #{taskId}, #{taskResultId}, #{attachmentId},
-             #{attachmentType}, #{operatorId})
+             #{attachmentType}, #{operatorId}, 0)
+        ON DUPLICATE KEY UPDATE task_id = VALUES(task_id),
+            task_result_id = VALUES(task_result_id), created_by = VALUES(created_by),
+            deleted = 0
     </insert>
 
     <select id="findResultAttachmentIds" resultType="long">
         SELECT attachment_id FROM inspection_attachment
         WHERE tenant_id = #{tenantId} AND task_result_id = #{taskResultId}
+          AND deleted = 0
         ORDER BY id
     </select>
 
@@ -1303,11 +1887,14 @@
         LEFT JOIN inspection_task_result result
           ON result.tenant_id = relation.tenant_id
          AND result.id = relation.task_result_id
+         AND result.deleted = 0
         LEFT JOIN inspection_task_item item
           ON item.tenant_id = result.tenant_id
          AND item.id = result.task_item_id
+         AND item.deleted = 0
         WHERE relation.tenant_id = #{tenantId}
           AND relation.task_id = #{taskId}
+          AND relation.deleted = 0
         ORDER BY item.sort_order, relation.id
     </select>
 
@@ -1317,6 +1904,7 @@
         FROM inspection_abnormal abnormal
         JOIN inspection_attachment relation
           ON relation.tenant_id = abnormal.tenant_id
+         AND relation.deleted = 0
          AND (
               relation.abnormal_id = abnormal.id
               OR (
@@ -1331,9 +1919,11 @@
         LEFT JOIN inspection_task_result result
           ON result.tenant_id = relation.tenant_id
          AND result.id = relation.task_result_id
+         AND result.deleted = 0
         LEFT JOIN inspection_task_item item
           ON item.tenant_id = result.tenant_id
          AND item.id = result.task_item_id
+         AND item.deleted = 0
         WHERE abnormal.tenant_id = #{tenantId}
           AND abnormal.id = #{abnormalId}
           AND abnormal.deleted = 0
@@ -1350,6 +1940,7 @@
         WHERE relation.tenant_id = #{tenantId}
           AND relation.task_id = #{taskId}
           AND relation.attachment_id = #{attachmentId}
+          AND relation.deleted = 0
     </select>
 
     <select id="countAbnormalAttachment" resultType="int">
@@ -1357,6 +1948,7 @@
         FROM inspection_abnormal abnormal
         JOIN inspection_attachment relation
           ON relation.tenant_id = abnormal.tenant_id
+         AND relation.deleted = 0
          AND (
               relation.abnormal_id = abnormal.id
               OR (
@@ -1411,7 +2003,7 @@
         SET result_status = 'SUBMITTED', submitted_time = CURRENT_TIMESTAMP(3),
             version = version + 1
         WHERE tenant_id = #{tenantId} AND task_id = #{taskId}
-          AND result_status = 'DRAFT'
+          AND result_status = 'DRAFT' AND deleted = 0
     </update>
 
     <update id="updateTaskStatus">
@@ -1439,26 +2031,40 @@
           AND task_status IN ('PENDING','IN_PROGRESS','OVERDUE')
     </update>
 
-    <delete id="deleteTaskAssignees">
-        DELETE FROM inspection_task_assignee
-        WHERE tenant_id = #{tenantId} AND task_id = #{taskId}
-    </delete>
+    <update id="deleteTaskAssignees">
+        UPDATE inspection_task_assignee SET deleted = 1
+        WHERE tenant_id = #{tenantId} AND task_id = #{taskId} AND deleted = 0
+    </update>
 
     <insert id="insertTaskAssignee">
         INSERT INTO inspection_task_assignee
-            (tenant_id, task_id, user_id, primary_flag, sort_order, created_by)
+            (tenant_id, task_id, user_id, primary_flag, sort_order, created_by, deleted)
         VALUES
-            (#{tenantId}, #{taskId}, #{userId}, #{primary}, #{sortOrder}, #{operatorId})
+            (#{tenantId}, #{taskId}, #{userId}, #{primary}, #{sortOrder}, #{operatorId}, 0)
+        ON DUPLICATE KEY UPDATE primary_flag = VALUES(primary_flag),
+            sort_order = VALUES(sort_order), deleted = 0
+    </insert>
+
+    <insert id="copySchemeDefaultAssigneesToTask">
+        INSERT INTO inspection_task_assignee
+            (tenant_id, task_id, user_id, primary_flag, sort_order, created_by)
+        SELECT relation.tenant_id, #{taskId}, relation.user_id,
+               relation.primary_flag, relation.sort_order, #{operatorId}
+        FROM inspection_scheme_default_assignee relation
+        WHERE relation.tenant_id = #{tenantId}
+          AND relation.scheme_version_id = #{schemeVersionId}
+        ORDER BY relation.sort_order, relation.id
     </insert>
 
     <select id="countTaskAssignees" resultType="int">
         SELECT COUNT(*) FROM inspection_task_assignee
-        WHERE tenant_id = #{tenantId} AND task_id = #{taskId}
+        WHERE tenant_id = #{tenantId} AND task_id = #{taskId} AND deleted = 0
     </select>
 
     <select id="countTaskAssignee" resultType="int">
         SELECT COUNT(*) FROM inspection_task_assignee
-        WHERE tenant_id = #{tenantId} AND task_id = #{taskId} AND user_id = #{userId}
+        WHERE tenant_id = #{tenantId} AND task_id = #{taskId}
+          AND user_id = #{userId} AND deleted = 0
     </select>
 
     <update id="reviewTask">
@@ -1508,6 +2114,7 @@
         LEFT JOIN system_user user
           ON user.tenant_id = event.tenant_id AND user.id = event.operator_id
         WHERE event.tenant_id = #{tenantId} AND event.task_id = #{taskId}
+          AND event.deleted = 0
         ORDER BY event.event_time, event.id
     </select>
 
@@ -1516,7 +2123,9 @@
         FROM inspection_task_item item
         LEFT JOIN inspection_task_result result
           ON result.tenant_id = item.tenant_id AND result.task_item_id = item.id
+         AND result.deleted = 0
         WHERE item.tenant_id = #{tenantId} AND item.task_id = #{taskId}
+          AND item.deleted = 0
           AND item.required_flag = 1
           AND (
             result.id IS NULL
@@ -1531,11 +2140,13 @@
                         SELECT 1 FROM inspection_attachment attachment
                         WHERE attachment.tenant_id = result.tenant_id
                           AND attachment.task_result_id = result.id
+                          AND attachment.deleted = 0
                           AND attachment.attachment_type = 'RESULT_PHOTO')
                     WHEN 'ATTACHMENT' THEN NOT EXISTS (
                         SELECT 1 FROM inspection_attachment attachment
                         WHERE attachment.tenant_id = result.tenant_id
-                          AND attachment.task_result_id = result.id)
+                          AND attachment.task_result_id = result.id
+                          AND attachment.deleted = 0)
                     ELSE result.result_code IS NULL OR result.result_code = ''
                 END)
           )
@@ -1546,11 +2157,14 @@
         FROM inspection_task_item item
         JOIN inspection_task_result result
           ON result.tenant_id = item.tenant_id AND result.task_item_id = item.id
+         AND result.deleted = 0
         WHERE item.tenant_id = #{tenantId} AND item.task_id = #{taskId}
+          AND item.deleted = 0
           AND (
               (SELECT COUNT(*) FROM inspection_attachment attachment
                WHERE attachment.tenant_id = result.tenant_id
                  AND attachment.task_result_id = result.id
+                 AND attachment.deleted = 0
                  AND attachment.attachment_type = 'RESULT_PHOTO')
                   NOT BETWEEN item.photo_min_count AND item.photo_max_count
               OR EXISTS (
@@ -1562,6 +2176,7 @@
                    AND attachment.deleted = 0
                   WHERE relation.tenant_id = result.tenant_id
                     AND relation.task_result_id = result.id
+                    AND relation.deleted = 0
                     AND relation.attachment_type = 'RESULT_PHOTO'
                     AND (
                         attachment.file_size > item.photo_max_size_mb * 1024 * 1024
@@ -1571,21 +2186,120 @@
           )
     </select>
 
+    <select id="countTaskSubmissionPhotos" resultType="int">
+        SELECT COUNT(*)
+        FROM inspection_attachment relation
+        WHERE relation.tenant_id = #{tenantId}
+          AND relation.task_id = #{taskId}
+          AND relation.task_result_id IS NULL
+          AND relation.attachment_type = 'TASK_PHOTO'
+          AND relation.deleted = 0
+    </select>
+
+    <select id="countNonWatermarkedTaskSubmissionPhotos" resultType="int">
+        SELECT COUNT(*)
+        FROM inspection_attachment relation
+        LEFT JOIN mobile_photo_evidence evidence
+          ON evidence.tenant_id = relation.tenant_id
+         AND evidence.watermarked_attachment_id = relation.attachment_id
+         AND evidence.workflow_type = 'INSPECTION'
+         AND evidence.task_id = relation.task_id
+         AND evidence.deleted = 0
+        WHERE relation.tenant_id = #{tenantId}
+          AND relation.task_id = #{taskId}
+          AND relation.task_result_id IS NULL
+          AND relation.attachment_type = 'TASK_PHOTO'
+          AND relation.deleted = 0
+          AND evidence.id IS NULL
+    </select>
+
     <insert id="insertAbnormal">
         INSERT IGNORE INTO inspection_abnormal
             (tenant_id, abnormal_code, task_id, task_result_id, equipment_id,
              task_item_id, abnormal_title, abnormal_description, severity,
-             equipment_stop_required, created_by, updated_by)
+             equipment_stop_required, responsible_user_id, created_by, updated_by)
         VALUES
             (#{tenantId}, #{abnormalCode}, #{task.id}, #{resultId}, #{task.equipmentId},
              #{item.id}, CONCAT(#{item.itemName}, '异常'), #{description},
-             #{item.abnormalSeverity}, #{equipmentStopRequired}, #{operatorId}, #{operatorId})
+             #{item.abnormalSeverity}, #{equipmentStopRequired},
+             COALESCE(
+                 (
+                     SELECT manager_relation.user_id
+                     FROM organization task_organization
+                     JOIN organization_manager_relation manager_relation
+                       ON manager_relation.tenant_id = task_organization.tenant_id
+                      AND manager_relation.organization_id IN (
+                          task_organization.id, task_organization.parent_id
+                      )
+                      AND manager_relation.deleted = 0
+                     JOIN system_user manager
+                       ON manager.tenant_id = manager_relation.tenant_id
+                      AND manager.id = manager_relation.user_id
+                      AND manager.status = 1 AND manager.deleted = 0
+                     WHERE task_organization.tenant_id = #{tenantId}
+                       AND task_organization.id = #{task.organizationId}
+                       AND task_organization.status = 1
+                       AND task_organization.deleted = 0
+                     ORDER BY
+                         CASE WHEN manager_relation.organization_id = task_organization.id
+                              THEN 0 ELSE 1 END,
+                         manager_relation.sort_order,
+                         manager_relation.id
+                     LIMIT 1
+                 ),
+                 (
+                     SELECT team.manager_user_id
+                     FROM organization team
+                     JOIN system_user manager
+                       ON manager.tenant_id = team.tenant_id
+                      AND manager.id = team.manager_user_id
+                      AND manager.status = 1 AND manager.deleted = 0
+                     WHERE team.tenant_id = #{tenantId}
+                       AND team.organization_code = #{task.teamCode}
+                       AND team.organization_type = 'TEAM'
+                       AND team.status = 1 AND team.deleted = 0
+                     LIMIT 1
+                 ),
+                 (
+                     SELECT team.manager_user_id
+                     FROM system_user_team_membership membership
+                     JOIN organization team
+                       ON team.tenant_id = membership.tenant_id
+                      AND team.id = membership.team_organization_id
+                      AND team.organization_type = 'TEAM'
+                      AND team.status = 1 AND team.deleted = 0
+                     JOIN system_user manager
+                       ON manager.tenant_id = team.tenant_id
+                      AND manager.id = team.manager_user_id
+                      AND manager.status = 1 AND manager.deleted = 0
+                     WHERE membership.tenant_id = #{tenantId}
+                       AND membership.user_id = #{operatorId}
+                       AND membership.deleted = 0
+                     ORDER BY membership.primary_flag DESC, membership.id
+                     LIMIT 1
+                 ),
+                 (
+                     SELECT workshop.manager_user_id
+                     FROM organization workshop
+                     JOIN system_user manager
+                       ON manager.tenant_id = workshop.tenant_id
+                      AND manager.id = workshop.manager_user_id
+                      AND manager.status = 1 AND manager.deleted = 0
+                     WHERE workshop.tenant_id = #{tenantId}
+                       AND workshop.id = #{task.organizationId}
+                       AND workshop.organization_type = 'WORKSHOP'
+                       AND workshop.status = 1 AND workshop.deleted = 0
+                     LIMIT 1
+                 )
+             ),
+             #{operatorId}, #{operatorId})
     </insert>
 
     <select id="countStopRequiredResults" resultType="int">
         SELECT COUNT(*)
         FROM inspection_task_result
         WHERE tenant_id = #{tenantId} AND task_id = #{taskId}
+          AND deleted = 0
           AND abnormal_flag = 1 AND skipped_flag = 0 AND equipment_stop_required = 1
     </select>
 
@@ -1596,6 +2310,7 @@
                )
         FROM inspection_task_result
         WHERE tenant_id = #{tenantId} AND task_id = #{taskId}
+          AND deleted = 0
           AND abnormal_flag = 1 AND skipped_flag = 0 AND equipment_stop_required = 1
     </select>
 
@@ -1618,7 +2333,8 @@
     <sql id="abnormalColumns">
         abnormal.id, abnormal.abnormal_code, abnormal.task_id, task.task_code,
         abnormal.task_result_id, abnormal.equipment_id, e.equipment_code,
-        e.equipment_name, abnormal.task_item_id, item.item_name,
+        e.equipment_name, e.organization_id, organization.organization_name,
+        abnormal.task_item_id, item.item_name,
         abnormal.abnormal_title, abnormal.abnormal_description, abnormal.severity,
         abnormal.abnormal_status, abnormal.responsible_user_id,
         responsible.real_name AS responsible_user_name, abnormal.due_time,
@@ -1634,10 +2350,16 @@
     <sql id="abnormalJoins">
         JOIN inspection_task task
           ON task.tenant_id = abnormal.tenant_id AND task.id = abnormal.task_id
+         AND task.deleted = 0
         JOIN equipment e
           ON e.tenant_id = abnormal.tenant_id AND e.id = abnormal.equipment_id AND e.deleted = 0
+        JOIN organization organization
+          ON organization.tenant_id = e.tenant_id
+         AND organization.id = e.organization_id
+         AND organization.deleted = 0
         LEFT JOIN inspection_task_item item
           ON item.tenant_id = abnormal.tenant_id AND item.id = abnormal.task_item_id
+         AND item.deleted = 0
         LEFT JOIN system_user responsible
           ON responsible.tenant_id = abnormal.tenant_id
          AND responsible.id = abnormal.responsible_user_id
@@ -1651,7 +2373,18 @@
         abnormal.tenant_id = #{tenantId} AND abnormal.deleted = 0
         AND (
           <include refid="equipmentScope"/>
-          OR (#{scope.selfData} = 1 AND abnormal.responsible_user_id = #{scope.userId})
+          OR (#{scope.selfData} = 1 AND (
+              abnormal.responsible_user_id = #{scope.userId}
+              OR abnormal.created_by = #{scope.userId}
+              OR task.assignee_user_id = #{scope.userId}
+              OR EXISTS (
+                  SELECT 1 FROM inspection_task_assignee abnormal_assignee
+                  WHERE abnormal_assignee.tenant_id = task.tenant_id
+                    AND abnormal_assignee.task_id = task.id
+                    AND abnormal_assignee.user_id = #{scope.userId}
+                    AND abnormal_assignee.deleted = 0
+              )
+          ))
         )
         <if test="keyword != null and keyword != ''">
             AND (abnormal.abnormal_code LIKE CONCAT('%', #{keyword}, '%')
@@ -1663,6 +2396,7 @@
         <if test="abnormalStatus != null and abnormalStatus != ''">
             AND abnormal.abnormal_status = #{abnormalStatus}
         </if>
+        <include refid="abnormalSmartTableFilters"/>
     </sql>
 
     <select id="findAbnormalities" resultType="com.leantpm.inspection.InspectionDtos$AbnormalRow">
@@ -1670,7 +2404,7 @@
         FROM inspection_abnormal abnormal
         <include refid="abnormalJoins"/>
         WHERE <include refid="abnormalFilters"/>
-        ORDER BY abnormal.created_time DESC, abnormal.id DESC
+        ORDER BY <include refid="abnormalSmartTableOrder"/>
         LIMIT #{offset}, #{pageSize}
     </select>
 
@@ -1697,7 +2431,18 @@
           AND abnormal.deleted = 0
           AND (
             <include refid="equipmentScope"/>
-            OR (#{scope.selfData} = 1 AND abnormal.responsible_user_id = #{scope.userId})
+            OR (#{scope.selfData} = 1 AND (
+                abnormal.responsible_user_id = #{scope.userId}
+                OR abnormal.created_by = #{scope.userId}
+                OR task.assignee_user_id = #{scope.userId}
+                OR EXISTS (
+                    SELECT 1 FROM inspection_task_assignee abnormal_assignee
+                    WHERE abnormal_assignee.tenant_id = task.tenant_id
+                      AND abnormal_assignee.task_id = task.id
+                      AND abnormal_assignee.user_id = #{scope.userId}
+                      AND abnormal_assignee.deleted = 0
+                )
+            ))
           )
         LIMIT 1
     </select>
@@ -1731,29 +2476,30 @@
 
     <select id="statistics" resultType="com.leantpm.inspection.InspectionDtos$Statistics">
         SELECT
-          COALESCE(SUM(task.planned_date = #{today}), 0) AS due_today,
-          COALESCE(SUM(task.planned_date = #{today} AND task.task_status = 'COMPLETED'), 0) AS completed_today,
-          COALESCE(SUM(task.planned_date = #{today}
-              AND task.task_status IN ('PENDING','IN_PROGRESS')), 0) AS pending_today,
+          COALESCE(COUNT(*), 0) AS due_today,
+          COALESCE(SUM(task.task_status IN ('COMPLETED','PENDING_REVIEW')), 0) AS completed_today,
+          COALESCE(SUM(task.task_status IN ('PENDING','IN_PROGRESS')), 0) AS pending_today,
           COALESCE(SUM(task.task_status = 'OVERDUE'), 0) AS overdue,
-          COALESCE(SUM(EXISTS (
+          COALESCE(SUM(CASE WHEN EXISTS (
               SELECT 1 FROM inspection_abnormal abnormal
               WHERE abnormal.tenant_id = task.tenant_id AND abnormal.task_id = task.id
-                AND abnormal.deleted = 0 AND abnormal.abnormal_status != 'CLOSED'
-          )), 0) AS abnormal,
+                AND abnormal.deleted = 0
+          ) THEN 1 ELSE 0 END), 0) AS abnormal,
           COALESCE(ROUND(
-              100 * SUM(task.planned_date = #{today} AND task.task_status = 'COMPLETED')
-              / NULLIF(SUM(task.planned_date = #{today}), 0), 2
+              100 * SUM(task.task_status IN ('COMPLETED','PENDING_REVIEW'))
+              / NULLIF(COUNT(*), 0), 2
           ), 0) AS completion_rate,
           COALESCE(ROUND(
-              100 * SUM(task.planned_date = #{today} AND task.task_status = 'COMPLETED'
+              100 * SUM(task.task_status IN ('COMPLETED','PENDING_REVIEW')
                         AND task.completed_time &lt;= task.due_time)
-              / NULLIF(SUM(task.planned_date = #{today} AND task.task_status = 'COMPLETED'), 0), 2
+              / NULLIF(SUM(task.task_status IN ('COMPLETED','PENDING_REVIEW')), 0), 2
           ), 0) AS on_time_rate
         FROM inspection_task task
         JOIN equipment e
           ON e.tenant_id = task.tenant_id AND e.id = task.equipment_id AND e.deleted = 0
         WHERE task.tenant_id = #{tenantId} AND task.deleted = 0
+          AND task.planned_date BETWEEN #{startDate} AND #{endDate}
+          <if test="organizationId != null">AND task.organization_id = #{organizationId}</if>
           AND <include refid="equipmentScope"/>
     </select>
 </mapper>

@@ -15,6 +15,11 @@ public interface DataPermissionMapper {
             @Param("userId") long userId
     );
 
+    List<Long> findManagedOrganizationIds(
+            @Param("tenantId") long tenantId,
+            @Param("userId") long userId
+    );
+
     List<Long> findOrganizationAndDescendantIds(
             @Param("tenantId") long tenantId,
             @Param("rootIds") List<Long> rootIds

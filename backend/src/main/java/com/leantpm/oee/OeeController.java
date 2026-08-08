@@ -402,7 +402,7 @@ public class OeeController {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentDisposition(ContentDisposition.attachment()
                 .filename(
-                        "LeanTPM-OEE-import-template.xlsx",
+                        "OEE数据导入模板.xlsx",
                         StandardCharsets.UTF_8
                 )
                 .build());

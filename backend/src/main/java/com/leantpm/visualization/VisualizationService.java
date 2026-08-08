@@ -107,6 +107,14 @@ public class VisualizationService {
                         current.tenantId(), scope, organizationIds,
                         normalizedStart, normalizedEnd
                 ),
+                mapper.inspectionRegistrationMetrics(
+                        current.tenantId(), scope, organizationIds,
+                        normalizedStart, normalizedEnd
+                ),
+                mapper.recentInspectionRegistrations(
+                        current.tenantId(), scope, organizationIds,
+                        normalizedStart, normalizedEnd, 8
+                ),
                 oeeService.analysis(
                         normalizedStart, normalizedEnd, organizationId, null,
                         normalizedPeriodType, "EQUIPMENT", 20

@@ -4,6 +4,8 @@ import com.leantpm.common.exception.BusinessException;
 import com.leantpm.equipment.EquipmentDtos;
 import com.leantpm.equipment.EquipmentService;
 import com.leantpm.security.CurrentUser;
+import com.leantpm.security.datascope.DataPermissionService;
+import org.apache.ibatis.session.SqlSession;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -41,12 +44,19 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class EquipmentMySqlIntegrationTest {
     private static final long USER_ID = 9001L;
     private static final long RESTRICTED_USER_ID = 9002L;
+    private static final long SAME_ORGANIZATION_USER_ID = 9003L;
 
     @Autowired
     private EquipmentService service;
 
     @Autowired
     private JdbcTemplate jdbc;
+
+    @Autowired
+    private DataPermissionService dataPermissionService;
+
+    @Autowired
+    private SqlSession sqlSession;
 
     @BeforeEach
     void prepareUserAndAuthentication() {
@@ -66,10 +76,25 @@ class EquipmentMySqlIntegrationTest {
                      organization_id, status, must_change_password)
                 VALUES (?, 1, 'equipment_reader_it', 'not-used', '普通设备查看人', 4, 1, 0)
                 """, RESTRICTED_USER_ID);
-        jdbc.update(
-                "INSERT INTO system_user_role (tenant_id, user_id, role_id) VALUES (1, ?, 3)",
-                RESTRICTED_USER_ID
-        );
+        jdbc.update("""
+                INSERT INTO system_user_role (tenant_id, user_id, role_id)
+                SELECT 1, ?, id
+                FROM system_role
+                WHERE tenant_id = 1 AND role_code = 'OPERATOR' AND deleted = 0
+                """, RESTRICTED_USER_ID);
+        jdbc.update("""
+                INSERT INTO system_user
+                    (id, tenant_id, username, password_hash, real_name,
+                     organization_id, status, must_change_password)
+                VALUES (?, 1, 'equipment_team_leader_it', 'not-used',
+                        '同组织设备查看人', 5, 1, 0)
+                """, SAME_ORGANIZATION_USER_ID);
+        jdbc.update("""
+                INSERT INTO system_user_role (tenant_id, user_id, role_id)
+                SELECT 1, ?, id
+                FROM system_role
+                WHERE tenant_id = 1 AND role_code = 'TEAM_LEADER' AND deleted = 0
+                """, SAME_ORGANIZATION_USER_ID);
         authenticateAdministrator();
     }
 
@@ -153,6 +178,11 @@ class EquipmentMySqlIntegrationTest {
         EquipmentDtos.EquipmentDetail running = service.detail(equipmentId);
         assertThat(running.equipment().currentStatusCode()).isEqualTo("RUNNING");
         assertThat(running.statusHistory()).hasSize(2);
+        assertThat(service.statusSummary("EQ-IT-001", null, com.leantpm.common.query.TableQuery.empty()))
+                .containsEntry("RUNNING", 1L)
+                .containsEntry("IDLE", 0L)
+                .containsEntry("STOPPED", 0L)
+                .containsEntry("SCRAPPED", 0L);
 
         service.transfer(
                 equipmentId,
@@ -195,20 +225,98 @@ class EquipmentMySqlIntegrationTest {
         ));
         assertThat(service.page(
                 "EQ-IT-001", null, null, null, null, null, null, 1, 20
+        ).records()).isEmpty();
+        assertThatThrownBy(() -> service.detail(equipmentId))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code").isEqualTo("EQUIPMENT_NOT_FOUND");
+        assertThatThrownBy(() -> service.changeStatus(
+                equipmentId,
+                new EquipmentDtos.ChangeStatusRequest(
+                        "IDLE", "out-of-scope status change", "MANUAL",
+                        transferred.equipment().currentStatusVersion()
+                )
+        )).isInstanceOf(BusinessException.class)
+                .extracting("code").isEqualTo("EQUIPMENT_NOT_FOUND");
+
+        jdbc.update("""
+                INSERT INTO system_user_team_membership
+                    (tenant_id, user_id, team_organization_id, primary_flag,
+                     created_by, updated_by)
+                VALUES (1, ?, 5, 0, ?, ?)
+                """, RESTRICTED_USER_ID, USER_ID, USER_ID);
+        sqlSession.clearCache();
+        assertThat(service.detail(equipmentId).equipment().id()).isEqualTo(equipmentId);
+        assertThat(service.page(
+                "EQ-IT-001", null, null, null, null, null, null, 1, 20
+        ).records()).singleElement()
+                .extracting(EquipmentDtos.EquipmentRow::id).isEqualTo(equipmentId);
+
+        jdbc.update("""
+                UPDATE system_user_team_membership
+                SET deleted = 1, updated_by = ?
+                WHERE tenant_id = 1 AND user_id = ? AND team_organization_id = 5
+                """, USER_ID, RESTRICTED_USER_ID);
+        sqlSession.clearCache();
+        assertThatThrownBy(() -> service.detail(equipmentId))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code").isEqualTo("EQUIPMENT_NOT_FOUND");
+
+        jdbc.update(
+                "UPDATE system_user SET organization_id = 5 WHERE tenant_id = 1 AND id = ?",
+                RESTRICTED_USER_ID
+        );
+        sqlSession.clearCache();
+        assertThat(service.detail(equipmentId).equipment().id()).isEqualTo(equipmentId);
+        jdbc.update(
+                "UPDATE system_user SET organization_id = 4 WHERE tenant_id = 1 AND id = ?",
+                RESTRICTED_USER_ID
+        );
+        sqlSession.clearCache();
+
+        jdbc.update("""
+                INSERT INTO inspection_task
+                    (id, tenant_id, task_code, inspection_type, equipment_id,
+                     organization_id, location_id, planned_date, due_time,
+                     assignee_user_id, task_status, source_type, created_by)
+                VALUES (9901, 1, 'EQ-SCOPE-ASSIGNED', 'ROUTINE', ?, 5, 5,
+                        CURRENT_DATE(), CURRENT_TIMESTAMP(3), ?, 'PENDING', 'MANUAL', ?)
+                """, equipmentId, RESTRICTED_USER_ID, USER_ID);
+        // The setup insert bypasses MyBatis, so discard the transaction-local null
+        // cached by the preceding out-of-scope detail lookup.
+        sqlSession.clearCache();
+        assertThat(dataPermissionService.current().selfData()).isTrue();
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*)
+                FROM equipment equipment_row
+                JOIN inspection_task task
+                  ON task.tenant_id = equipment_row.tenant_id
+                 AND task.equipment_id = equipment_row.id
+                 AND task.deleted = 0
+                WHERE equipment_row.tenant_id = 1
+                  AND equipment_row.id = ?
+                  AND task.assignee_user_id = ?
+                """, Long.class, equipmentId, RESTRICTED_USER_ID)).isEqualTo(1L);
+        assertThat(service.detail(equipmentId).equipment().id()).isEqualTo(equipmentId);
+        assertThat(service.page(
+                "EQ-IT-001", null, null, null, "RUNNING", null, null, 1, 20
+        ).records()).singleElement()
+                .extracting(EquipmentDtos.EquipmentRow::id).isEqualTo(equipmentId);
+
+        authenticate(new CurrentUser(
+                SAME_ORGANIZATION_USER_ID, 1L, "equipment_team_leader_it",
+                "同组织设备查看人", false,
+                Set.of("TEAM_LEADER"),
+                Set.of("equipment:ledger:view", "equipment:status:view", "equipment:barcode:view"),
+                "equipment-team-leader-session"
+        ));
+        assertThat(service.page(
+                "EQ-IT-001", null, null, null, null, null, null, 1, 20
         ).records()).singleElement()
                 .extracting(EquipmentDtos.EquipmentRow::id).isEqualTo(equipmentId);
         assertThat(service.detail(equipmentId).equipment().id()).isEqualTo(equipmentId);
         assertThat(service.statusHistory(equipmentId)).isNotEmpty();
         assertThat(service.barcodes(equipmentId, true)).singleElement()
                 .extracting(EquipmentDtos.BarcodeRow::id).isEqualTo(replacement.id());
-        assertThatThrownBy(() -> service.changeStatus(
-                equipmentId,
-                new EquipmentDtos.ChangeStatusRequest(
-                        "IDLE", "越权状态变更", "MANUAL",
-                        transferred.equipment().currentStatusVersion()
-                )
-        )).isInstanceOf(BusinessException.class)
-                .extracting("code").isEqualTo("EQUIPMENT_NOT_FOUND");
 
         authenticateAdministrator();
 

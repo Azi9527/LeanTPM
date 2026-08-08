@@ -209,7 +209,12 @@ public class AttachmentService {
     @Transactional(readOnly = true)
     public DownloadedAttachment load(long id) {
         var current = SecurityUtils.currentUser();
-        var record = mapper.findAttachment(current.tenantId(), id);
+        return loadForTenant(current.tenantId(), id);
+    }
+
+    @Transactional(readOnly = true)
+    public DownloadedAttachment loadForTenant(long tenantId, long id) {
+        var record = mapper.findAttachment(tenantId, id);
         if (record == null) {
             throw new BusinessException("ATTACHMENT_NOT_FOUND", "附件不存在", HttpStatus.NOT_FOUND);
         }

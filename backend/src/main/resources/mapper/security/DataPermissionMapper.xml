@@ -33,6 +33,29 @@
         LIMIT 1
     </select>
 
+    <select id="findManagedOrganizationIds" resultType="long">
+        SELECT DISTINCT managed.organization_id
+        FROM (
+            SELECT relation.organization_id
+            FROM organization_manager_relation relation
+            JOIN organization organization_row
+              ON organization_row.tenant_id = relation.tenant_id
+             AND organization_row.id = relation.organization_id
+             AND organization_row.status = 1
+             AND organization_row.deleted = 0
+            WHERE relation.tenant_id = #{tenantId}
+              AND relation.user_id = #{userId}
+              AND relation.deleted = 0
+            UNION
+            SELECT organization_row.id AS organization_id
+            FROM organization organization_row
+            WHERE organization_row.tenant_id = #{tenantId}
+              AND organization_row.manager_user_id = #{userId}
+              AND organization_row.status = 1
+              AND organization_row.deleted = 0
+        ) managed
+    </select>
+
     <select id="findOrganizationAndDescendantIds" resultType="long">
         WITH RECURSIVE organization_tree AS (
             SELECT id

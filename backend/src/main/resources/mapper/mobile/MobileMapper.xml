@@ -12,6 +12,23 @@
                         OR e.primary_responsible_user_id = #{scope.userId}
                         OR EXISTS (
                             SELECT 1
+                            FROM system_user scoped_user
+                            WHERE scoped_user.tenant_id = e.tenant_id
+                              AND scoped_user.id = #{scope.userId}
+                              AND scoped_user.organization_id = e.organization_id
+                              AND scoped_user.status = 1
+                              AND scoped_user.deleted = 0
+                        )
+                        OR EXISTS (
+                            SELECT 1
+                            FROM system_user_team_membership scoped_membership
+                            WHERE scoped_membership.tenant_id = e.tenant_id
+                              AND scoped_membership.user_id = #{scope.userId}
+                              AND scoped_membership.team_organization_id = e.organization_id
+                              AND scoped_membership.deleted = 0
+                        )
+                        OR EXISTS (
+                            SELECT 1
                             FROM equipment_responsible_person scoped_person
                             WHERE scoped_person.tenant_id = e.tenant_id
                               AND scoped_person.equipment_id = e.id
@@ -35,6 +52,7 @@
                                         AND scoped_assignee.task_id =
                                             scoped_inspection.id
                                         AND scoped_assignee.user_id = #{scope.userId}
+                                        AND scoped_assignee.deleted = 0
                                   )
                               )
                         )
@@ -43,8 +61,17 @@
                             FROM maintenance_task scoped_maintenance
                             WHERE scoped_maintenance.tenant_id = e.tenant_id
                               AND scoped_maintenance.equipment_id = e.id
-                              AND scoped_maintenance.assignee_user_id = #{scope.userId}
                               AND scoped_maintenance.deleted = 0
+                              AND (
+                                  scoped_maintenance.assignee_user_id = #{scope.userId}
+                                  OR EXISTS (
+                                      SELECT 1
+                                      FROM maintenance_task_collaborator scoped_collaborator
+                                      WHERE scoped_collaborator.tenant_id = scoped_maintenance.tenant_id
+                                        AND scoped_collaborator.task_id = scoped_maintenance.id
+                                        AND scoped_collaborator.user_id = #{scope.userId}
+                                  )
+                              )
                         )
                     </if>
                     <if test="scope.selfData and scope.organizationIds != null and !scope.organizationIds.isEmpty()">
@@ -130,13 +157,18 @@
         SELECT COUNT(*) AS total,
                COALESCE(SUM(current_status.status_code = 'RUNNING'), 0) AS running,
                COALESCE(SUM(current_status.status_code = 'STOPPED'), 0) AS stopped,
-               COALESCE(SUM(current_status.status_code IN ('FAULT', 'REPAIR')), 0) AS fault,
-               COALESCE(SUM(current_status.status_code = 'OFFLINE'), 0) AS offline
+               0 AS fault,
+               0 AS offline,
+               COALESCE(SUM(current_status.status_code = 'IDLE'), 0) AS idle,
+               COALESCE(SUM(current_status.status_code = 'SCRAPPED'), 0) AS scrapped
         FROM equipment e
         LEFT JOIN equipment_current_status current_status
           ON current_status.tenant_id = e.tenant_id
          AND current_status.equipment_id = e.id
-        WHERE e.tenant_id = #{tenantId} AND e.status = 1 AND e.deleted = 0
+        WHERE e.tenant_id = #{tenantId}
+          AND e.status = 1
+          AND e.deleted = 0
+          AND <include refid="equipmentScope"/>
     </select>
 
     <select id="inspectionAbnormalCount"
@@ -185,7 +217,27 @@
                    SELECT 1 FROM inspection_abnormal abnormal
                    WHERE abnormal.tenant_id = task.tenant_id
                      AND abnormal.task_id = task.id AND abnormal.deleted = 0
-               )), 0) AS abnormal
+               )), 0) AS abnormal,
+               COALESCE(SUM(task.source_type = 'PLAN'), 0) AS plan_due,
+               COALESCE(SUM(task.source_type = 'PLAN'
+                   AND task.task_status IN ('COMPLETED', 'PENDING_REVIEW')), 0) AS plan_completed,
+               COALESCE(SUM(task.source_type = 'PLAN' AND (
+                   task.task_status = 'OVERDUE'
+                   OR (task.task_status NOT IN ('COMPLETED', 'PENDING_REVIEW', 'CANCELLED', 'VOIDED')
+                       AND task.due_time &lt; CURRENT_TIMESTAMP(3))
+               )), 0) AS plan_overdue,
+               COALESCE(SUM(task.task_status IN ('COMPLETED', 'PENDING_REVIEW')
+                   AND task.completed_time &gt;= #{startTime}
+                   AND task.completed_time &lt; #{endExclusive}), 0) AS registered,
+               COALESCE(SUM(task.source_type = 'QUICK_ENTRY'
+                   AND task.task_status IN ('COMPLETED', 'PENDING_REVIEW')
+                   AND task.completed_time &gt;= #{startTime}
+                   AND task.completed_time &lt; #{endExclusive}), 0) AS quick_registered,
+               COUNT(DISTINCT CASE
+                   WHEN task.task_status IN ('COMPLETED', 'PENDING_REVIEW')
+                    AND task.completed_time &gt;= #{startTime}
+                    AND task.completed_time &lt; #{endExclusive}
+                   THEN task.equipment_id END) AS equipment_covered
         FROM inspection_task task
         WHERE task.tenant_id = #{tenantId} AND task.deleted = 0
           AND task.task_status NOT IN ('CANCELLED', 'VOIDED')
@@ -205,6 +257,35 @@
                     AND assignee.user_id = #{userId}
               )
           )
+    </select>
+
+    <select id="todayInspections"
+            resultType="com.leantpm.mobile.MobileDtos$TodayInspectionRecord">
+        SELECT task.id AS task_id,
+               task.task_code,
+               task.scheme_version_id,
+               task.scheme_name_snapshot AS scheme_name,
+               task.task_status,
+               task.source_type,
+               submitter.real_name AS executor_name,
+               task.submitted_time,
+               task.completed_time
+        FROM inspection_task task
+        LEFT JOIN system_user submitter
+          ON submitter.tenant_id = task.tenant_id
+         AND submitter.id = task.submitted_by
+         AND submitter.deleted = 0
+        WHERE task.tenant_id = #{tenantId}
+          AND task.equipment_id = #{equipmentId}
+          AND task.deleted = 0
+          AND task.task_status NOT IN ('CANCELLED', 'VOIDED')
+          AND (
+              task.planned_date = CURRENT_DATE()
+              OR (task.completed_time &gt;= CURRENT_DATE()
+                  AND task.completed_time &lt; DATE_ADD(CURRENT_DATE(), INTERVAL 1 DAY))
+          )
+        ORDER BY COALESCE(task.completed_time, task.submitted_time, task.created_time) DESC
+        LIMIT 20
     </select>
 
     <select id="maintenanceCount"
@@ -327,6 +408,8 @@
               AND abnormal.abnormal_status != 'CLOSED'
               AND abnormal.deleted = 0
               AND (
+                  abnormal.responsible_user_id = #{userId}
+                  OR
                   task.assignee_user_id = #{userId}
                   OR EXISTS (
                       SELECT 1
@@ -382,8 +465,8 @@
                e.special_flag,
                e.oee_enabled,
                e.description,
-               COALESCE(current_status.status_code, 'OFFLINE') AS status_code,
-               COALESCE(palette.status_name, '离线') AS status_name,
+               COALESCE(current_status.status_code, 'IDLE') AS status_code,
+               COALESCE(palette.status_name, '空闲') AS status_name,
                COALESCE(palette.display_color, '#64748b') AS status_color,
                current_status.status_since,
                responsible.real_name AS responsible_name,
@@ -402,7 +485,7 @@
           ON organization.tenant_id = e.tenant_id
          AND organization.id = e.organization_id
          AND organization.deleted = 0
-        JOIN location
+        LEFT JOIN location
           ON location.tenant_id = e.tenant_id
          AND location.id = e.location_id
          AND location.deleted = 0
@@ -411,7 +494,7 @@
          AND current_status.equipment_id = e.id
         LEFT JOIN visualization_status_color palette
           ON palette.tenant_id = e.tenant_id
-         AND palette.status_code = COALESCE(current_status.status_code, 'OFFLINE')
+         AND palette.status_code = COALESCE(current_status.status_code, 'IDLE')
          AND palette.status = 1
          AND palette.deleted = 0
         LEFT JOIN system_user responsible
@@ -422,6 +505,31 @@
           AND barcode.access_token = #{token}
           AND barcode.active_slot = 1
           AND <include refid="equipmentScope"/>
+        LIMIT 1
+    </select>
+
+    <select id="equipmentAccessProbe"
+            resultType="com.leantpm.mobile.MobileDtos$EquipmentAccessProbe">
+        SELECT e.id AS equipment_id,
+               e.equipment_code,
+               e.equipment_name,
+               e.organization_id,
+               organization.organization_name,
+               e.status AS equipment_status,
+               organization.status AS organization_status,
+               CASE WHEN e.deleted = 1 THEN TRUE ELSE FALSE END AS equipment_deleted,
+               CASE WHEN organization.deleted = 1 THEN TRUE ELSE FALSE END AS organization_deleted,
+               CASE WHEN barcode.active_slot = 1 THEN TRUE ELSE FALSE END AS barcode_active
+        FROM equipment_barcode barcode
+        LEFT JOIN equipment e
+          ON e.tenant_id = barcode.tenant_id
+         AND e.id = barcode.equipment_id
+        LEFT JOIN organization
+          ON organization.tenant_id = e.tenant_id
+         AND organization.id = e.organization_id
+        WHERE barcode.tenant_id = #{tenantId}
+          AND barcode.access_token = #{token}
+        ORDER BY barcode.active_slot DESC, barcode.id DESC
         LIMIT 1
     </select>
 
@@ -529,6 +637,35 @@
                   SELECT 1 FROM applicable_categories category_scope
                   WHERE category_scope.scheme_version_id = version.id
                     AND category_scope.id = e.category_id
+              )
+              OR NOT EXISTS (
+                  SELECT 1
+                  FROM inspection_scheme matched_scheme
+                  JOIN inspection_scheme_version matched_version
+                    ON matched_version.tenant_id = matched_scheme.tenant_id
+                   AND matched_version.id = matched_scheme.current_version_id
+                   AND matched_version.version_status = 'PUBLISHED'
+                   AND matched_version.effective_date &lt;= CURRENT_DATE()
+                   AND (matched_version.expiry_date IS NULL
+                        OR matched_version.expiry_date &gt;= CURRENT_DATE())
+                  WHERE matched_scheme.tenant_id = e.tenant_id
+                    AND matched_scheme.status = 1
+                    AND matched_scheme.deleted = 0
+                    AND (
+                        EXISTS (
+                            SELECT 1
+                            FROM inspection_scheme_equipment matched_equipment
+                            WHERE matched_equipment.tenant_id = matched_version.tenant_id
+                              AND matched_equipment.scheme_version_id = matched_version.id
+                              AND matched_equipment.equipment_id = e.id
+                        )
+                        OR EXISTS (
+                            SELECT 1
+                            FROM applicable_categories matched_category
+                            WHERE matched_category.scheme_version_id = matched_version.id
+                              AND matched_category.id = e.category_id
+                        )
+                    )
               )
           )
         ORDER BY scheme.scheme_name, scheme.id

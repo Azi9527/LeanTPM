@@ -51,6 +51,19 @@ public final class MasterDataDtos {
     ) {
     }
 
+    public record OrganizationDeleteImpact(
+            int childOrganizations,
+            int users,
+            int locations,
+            int equipment,
+            int teamMemberships,
+            int dataScopes,
+            int businessRecords,
+            int visualizationRecords,
+            int totalReferences
+    ) {
+    }
+
     public record LocationRow(
             long id,
             long parentId,
@@ -79,7 +92,7 @@ public final class MasterDataDtos {
             @NotBlank @Size(max = 100) String locationName,
             @NotBlank
             @Pattern(
-                    regexp = "^(ENTERPRISE|FACTORY|PLANT_AREA|WORKSHOP|LINE|WORKSTATION)$",
+                    regexp = "^(AREA|BUILDING|FLOOR|ZONE|SPOT)$",
                     message = "位置类型不正确"
             )
             String locationType,

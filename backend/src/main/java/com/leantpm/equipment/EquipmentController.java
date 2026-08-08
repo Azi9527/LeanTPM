@@ -3,6 +3,8 @@ package com.leantpm.equipment;
 import com.leantpm.common.api.ApiResponse;
 import com.leantpm.common.api.PageResult;
 import com.leantpm.common.idempotency.Idempotent;
+import com.leantpm.common.query.TableQuery;
+import com.leantpm.common.query.TableQueryParser;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -29,19 +31,27 @@ import org.springframework.web.multipart.MultipartFile;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Validated
 @RestController
 @RequestMapping("/api/v1")
 public class EquipmentController {
+    private static final Set<String> TABLE_FIELDS = Set.of(
+            "equipmentCode", "equipmentName", "categoryName", "organizationName",
+            "locationName", "primaryResponsibleName", "currentStatusCode",
+            "statusDurationSeconds", "criticalFlag", "status"
+    );
     private static final MediaType XLSX = MediaType.parseMediaType(
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     );
 
     private final EquipmentService service;
+    private final TableQueryParser tableQueryParser;
 
-    public EquipmentController(EquipmentService service) {
+    public EquipmentController(EquipmentService service, TableQueryParser tableQueryParser) {
         this.service = service;
+        this.tableQueryParser = tableQueryParser;
     }
 
     @GetMapping("/equipment")
@@ -54,13 +64,32 @@ public class EquipmentController {
             @RequestParam(required = false) String currentStatusCode,
             @RequestParam(required = false) String lifecycleStage,
             @RequestParam(required = false) Integer status,
+            @RequestParam(required = false) String tableFilters,
+            @RequestParam(required = false) String sortBy,
+            @RequestParam(required = false) String sortDirection,
             @RequestParam(defaultValue = "1") @Min(1) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(200) int pageSize
     ) {
+        TableQuery tableQuery = tableQueryParser.parse(
+                tableFilters, sortBy, sortDirection, TABLE_FIELDS
+        );
         return ApiResponse.success(service.page(
                 keyword, categoryId, organizationId, locationId, currentStatusCode,
-                lifecycleStage, status, page, pageSize
+                lifecycleStage, status, tableQuery, page, pageSize
         ));
+    }
+
+    @GetMapping("/equipment/status-summary")
+    @PreAuthorize("hasAnyAuthority('equipment:ledger:view','equipment:status:view')")
+    public ApiResponse<Map<String, Long>> statusSummary(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Long organizationId,
+            @RequestParam(required = false) String tableFilters
+    ) {
+        TableQuery tableQuery = tableQueryParser.parse(
+                tableFilters, null, null, TABLE_FIELDS
+        );
+        return ApiResponse.success(service.statusSummary(keyword, organizationId, tableQuery));
     }
 
     @GetMapping("/equipment/{id}")
@@ -144,9 +173,10 @@ public class EquipmentController {
     @PreAuthorize("hasAuthority('equipment:barcode:view')")
     public ApiResponse<List<EquipmentDtos.BarcodeRow>> barcodes(
             @RequestParam(required = false) Long equipmentId,
+            @RequestParam(required = false) Long organizationId,
             @RequestParam(defaultValue = "true") boolean activeOnly
     ) {
-        return ApiResponse.success(service.barcodes(equipmentId, activeOnly));
+        return ApiResponse.success(service.barcodes(equipmentId, organizationId, activeOnly));
     }
 
     @PostMapping("/equipment/{id}/barcode")
@@ -242,7 +272,7 @@ public class EquipmentController {
     @GetMapping("/equipment/import-template")
     @PreAuthorize("hasAuthority('equipment:ledger:import')")
     public ResponseEntity<byte[]> importTemplate() {
-        return workbookResponse(service.importTemplate(), "LeanTPM-equipment-import-template.xlsx");
+        return workbookResponse(service.importTemplate(), "设备台账导入模板.xlsx");
     }
 
     @GetMapping("/equipment/export")
@@ -261,7 +291,7 @@ public class EquipmentController {
                         keyword, categoryId, organizationId, locationId,
                         currentStatusCode, lifecycleStage, status
                 ),
-                "LeanTPM-equipment-ledger.xlsx"
+                "设备台账.xlsx"
         );
     }
 

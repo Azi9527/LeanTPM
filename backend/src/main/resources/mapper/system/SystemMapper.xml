@@ -273,6 +273,199 @@
         ORDER BY parent_id, sort_order, id
     </select>
 
+    <select id="findPersonnelOrganizations"
+            resultType="com.leantpm.system.dto.SystemDtos$PersonnelOrganizationRow">
+        SELECT organization.id, organization.parent_id, organization.organization_code,
+               organization.organization_name, organization.organization_type,
+               organization.manager_user_id, manager.real_name AS manager_name,
+               organization.status, organization.version, NULL AS member_user_ids,
+               NULL AS manager_user_ids, NULL AS manager_names
+        FROM organization
+        LEFT JOIN system_user manager
+          ON manager.tenant_id = organization.tenant_id
+         AND manager.id = organization.manager_user_id
+         AND manager.deleted = 0
+        WHERE organization.tenant_id = #{tenantId} AND organization.deleted = 0
+        ORDER BY organization.parent_id, organization.sort_order, organization.id
+    </select>
+
+    <select id="findPersonnelOrganization"
+            resultType="com.leantpm.system.dto.SystemDtos$PersonnelOrganizationRow">
+        SELECT organization.id, organization.parent_id, organization.organization_code,
+               organization.organization_name, organization.organization_type,
+               organization.manager_user_id, manager.real_name AS manager_name,
+               organization.status, organization.version, NULL AS member_user_ids,
+               NULL AS manager_user_ids, NULL AS manager_names
+        FROM organization
+        LEFT JOIN system_user manager
+          ON manager.tenant_id = organization.tenant_id
+         AND manager.id = organization.manager_user_id
+         AND manager.deleted = 0
+        WHERE organization.tenant_id = #{tenantId}
+          AND organization.id = #{organizationId}
+          AND organization.deleted = 0
+        LIMIT 1
+    </select>
+
+    <select id="findUserRoleCodes" resultType="string">
+        SELECT role.role_code
+        FROM system_user_role relation
+        JOIN system_role role
+          ON role.tenant_id = relation.tenant_id
+         AND role.id = relation.role_id
+         AND role.status = 1 AND role.deleted = 0
+        WHERE relation.tenant_id = #{tenantId}
+          AND relation.user_id = #{userId} AND relation.deleted = 0
+        ORDER BY role.sort_order, role.id
+    </select>
+
+    <select id="findUserTeamIds" resultType="long">
+        SELECT membership.team_organization_id
+        FROM system_user_team_membership membership
+        JOIN organization team
+          ON team.tenant_id = membership.tenant_id
+         AND team.id = membership.team_organization_id
+         AND team.organization_type = 'TEAM'
+         AND team.status = 1 AND team.deleted = 0
+        WHERE membership.tenant_id = #{tenantId}
+          AND membership.user_id = #{userId} AND membership.deleted = 0
+        ORDER BY membership.primary_flag DESC, team.sort_order, team.id
+    </select>
+
+    <select id="findUserPrimaryTeamId" resultType="long">
+        SELECT team_organization_id
+        FROM system_user_team_membership
+        WHERE tenant_id = #{tenantId} AND user_id = #{userId}
+          AND primary_flag = 1 AND deleted = 0
+        ORDER BY id LIMIT 1
+    </select>
+
+    <select id="findTeamMemberUserIds" resultType="long">
+        SELECT membership.user_id
+        FROM system_user_team_membership membership
+        JOIN system_user user
+          ON user.tenant_id = membership.tenant_id
+         AND user.id = membership.user_id
+         AND user.deleted = 0
+        WHERE membership.tenant_id = #{tenantId}
+          AND membership.team_organization_id = #{teamOrganizationId}
+          AND membership.deleted = 0
+        ORDER BY user.real_name, user.id
+    </select>
+
+    <select id="findOrganizationManagerUserIds" resultType="long">
+        SELECT relation.user_id
+        FROM organization_manager_relation relation
+        JOIN system_user user
+          ON user.tenant_id = relation.tenant_id AND user.id = relation.user_id
+         AND user.deleted = 0
+        WHERE relation.tenant_id = #{tenantId}
+          AND relation.organization_id = #{organizationId}
+          AND relation.deleted = 0
+        ORDER BY relation.sort_order, relation.id
+    </select>
+
+    <select id="findOrganizationManagerNames" resultType="string">
+        SELECT user.real_name
+        FROM organization_manager_relation relation
+        JOIN system_user user
+          ON user.tenant_id = relation.tenant_id AND user.id = relation.user_id
+         AND user.deleted = 0
+        WHERE relation.tenant_id = #{tenantId}
+          AND relation.organization_id = #{organizationId}
+          AND relation.deleted = 0
+        ORDER BY relation.sort_order, relation.id
+    </select>
+
+    <select id="countActiveUserWithRole" resultType="int">
+        SELECT COUNT(DISTINCT user.id)
+        FROM system_user user
+        JOIN system_user_role relation
+          ON relation.tenant_id = user.tenant_id
+         AND relation.user_id = user.id AND relation.deleted = 0
+        JOIN system_role role
+          ON role.tenant_id = relation.tenant_id
+         AND role.id = relation.role_id AND role.deleted = 0
+        WHERE user.tenant_id = #{tenantId} AND user.id = #{userId}
+          AND user.status = 1 AND user.deleted = 0
+          AND role.role_code = #{roleCode} AND role.status = 1
+    </select>
+
+    <select id="countActiveUsersWithRole" resultType="int">
+        SELECT COUNT(DISTINCT user.id)
+        FROM system_user user
+        JOIN system_user_role relation
+          ON relation.tenant_id = user.tenant_id
+         AND relation.user_id = user.id AND relation.deleted = 0
+        JOIN system_role role
+          ON role.tenant_id = relation.tenant_id
+         AND role.id = relation.role_id AND role.deleted = 0
+        WHERE user.tenant_id = #{tenantId}
+          AND user.id IN
+          <foreach collection="userIds" item="userId" open="(" separator="," close=")">
+              #{userId}
+          </foreach>
+          AND user.status = 1 AND user.deleted = 0
+          AND role.role_code = #{roleCode} AND role.status = 1
+    </select>
+
+    <update id="updateOrganizationManager">
+        UPDATE organization
+        SET manager_user_id = #{managerUserId}, updated_by = #{operatorId},
+            updated_time = CURRENT_TIMESTAMP(3), version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{organizationId}
+          AND version = #{version} AND deleted = 0
+    </update>
+
+    <update id="deleteOrganizationManagers">
+        UPDATE organization_manager_relation
+        SET deleted = 1, updated_by = #{operatorId},
+            updated_time = CURRENT_TIMESTAMP(3), version = version + 1
+        WHERE tenant_id = #{tenantId} AND organization_id = #{organizationId}
+          AND deleted = 0
+    </update>
+
+    <insert id="insertOrganizationManager">
+        INSERT INTO organization_manager_relation
+            (tenant_id, organization_id, user_id, manager_type, sort_order,
+             created_by, updated_by, deleted)
+        VALUES
+            (#{tenantId}, #{organizationId}, #{userId}, #{managerType}, #{sortOrder},
+             #{operatorId}, #{operatorId}, 0)
+        ON DUPLICATE KEY UPDATE manager_type = VALUES(manager_type),
+            sort_order = VALUES(sort_order), deleted = 0,
+            updated_by = VALUES(updated_by), updated_time = CURRENT_TIMESTAMP(3),
+            version = version + 1
+    </insert>
+
+    <update id="deleteTeamMembers">
+        UPDATE system_user_team_membership
+        SET deleted = 1, primary_flag = 0, updated_by = #{operatorId},
+            updated_time = CURRENT_TIMESTAMP(3)
+        WHERE tenant_id = #{tenantId}
+          AND team_organization_id = #{teamOrganizationId} AND deleted = 0
+    </update>
+
+    <update id="deleteUserTeamMemberships">
+        UPDATE system_user_team_membership
+        SET deleted = 1, primary_flag = 0, updated_by = #{operatorId},
+            updated_time = CURRENT_TIMESTAMP(3)
+        WHERE tenant_id = #{tenantId}
+          AND user_id = #{userId} AND deleted = 0
+    </update>
+
+    <insert id="insertTeamMember">
+        INSERT INTO system_user_team_membership
+            (tenant_id, user_id, team_organization_id, primary_flag,
+             created_by, updated_by, deleted)
+        VALUES
+            (#{tenantId}, #{userId}, #{teamOrganizationId},
+             CASE WHEN #{primary} THEN 1 ELSE 0 END, #{operatorId}, #{operatorId}, 0)
+        ON DUPLICATE KEY UPDATE
+            primary_flag = VALUES(primary_flag), deleted = 0,
+            updated_by = VALUES(updated_by), updated_time = CURRENT_TIMESTAMP(3)
+    </insert>
+
     <select id="findDataScopeDefinitions"
             resultType="com.leantpm.system.dto.SystemDtos$DataScopeDefinition">
         SELECT id, scope_code, scope_name, scope_type, description, sort_order
@@ -288,6 +481,20 @@
         WHERE tenant_id = #{tenantId} AND deleted = 0
         ORDER BY parent_id, sort_order, id
     </select>
+
+    <update id="updateMenuStatuses">
+        UPDATE system_menu
+        SET status = CASE WHEN #{enabled} THEN 1 ELSE 0 END,
+            updated_by = #{operatorId},
+            updated_time = CURRENT_TIMESTAMP(3),
+            version = version + 1
+        WHERE tenant_id = #{tenantId}
+          AND deleted = 0
+          AND id IN
+          <foreach collection="menuIds" item="menuId" open="(" separator="," close=")">
+              #{menuId}
+          </foreach>
+    </update>
 
     <select id="findDictionaryTypes" resultType="com.leantpm.system.dto.SystemDtos$DictionaryTypeRow">
         SELECT id, dict_code, dict_name, status, remark, version, NULL AS items

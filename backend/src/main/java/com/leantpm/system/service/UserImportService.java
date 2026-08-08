@@ -30,6 +30,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -44,7 +45,8 @@ public class UserImportService {
     private static final String SHEET_NAME = "用户导入";
     private static final List<String> HEADERS = List.of(
             "账号", "姓名", "工号", "手机号", "邮箱", "组织编码", "角色编码列表",
-            "允许移动端", "初始密码", "处理策略"
+            "允许移动端", "初始密码", "处理策略", "任职班组编码列表",
+            "主班组编码", "负责组织编码列表"
     );
     private static final Set<String> STRATEGIES = Set.of("ADD_ONLY", "ADD_UPDATE");
 
@@ -82,6 +84,9 @@ public class UserImportService {
                     org.apache.poi.ss.usermodel.IndexedColors.DARK_TEAL.getIndex()
             );
             style.setFillPattern(org.apache.poi.ss.usermodel.FillPatternType.SOLID_FOREGROUND);
+            style.setWrapText(true);
+            style.setAlignment(org.apache.poi.ss.usermodel.HorizontalAlignment.CENTER);
+            style.setVerticalAlignment(org.apache.poi.ss.usermodel.VerticalAlignment.CENTER);
             var font = workbook.createFont();
             font.setBold(true);
             font.setColor(org.apache.poi.ss.usermodel.IndexedColors.WHITE.getIndex());
@@ -91,20 +96,27 @@ public class UserImportService {
                 cell.setCellValue(HEADERS.get(index));
                 cell.setCellStyle(style);
             }
+            header.setHeightInPoints(32);
             Row example = sheet.createRow(1);
             List<String> values = List.of(
                     "operator06", "操作工06", "OP-006", "13800000006",
                     "operator06@example.com", "TEAM-A-1", "OPERATOR",
-                    "是", "888888", "仅新增"
+                    "是", "888888", "仅新增", "TEAM-A-1", "TEAM-A-1", ""
             );
             for (int index = 0; index < values.size(); index++) {
-                example.createCell(index).setCellValue(values.get(index));
+                if (!values.get(index).isEmpty()) {
+                    example.createCell(index).setCellValue(values.get(index));
+                }
             }
             sheet.createFreezePane(0, 1);
+            int[] columnWidths = {
+                    16, 14, 14, 18, 30, 20, 28,
+                    22, 18, 18, 34, 24, 34
+            };
             for (int index = 0; index < HEADERS.size(); index++) {
-                sheet.autoSizeColumn(index);
-                sheet.setColumnWidth(index, Math.min(sheet.getColumnWidth(index) + 512, 8_000));
+                sheet.setColumnWidth(index, columnWidths[index] * 256);
             }
+            createOrganizationGuide(workbook);
             workbook.write(output);
             return output.toByteArray();
         } catch (IOException exception) {
@@ -113,6 +125,70 @@ public class UserImportService {
                     HttpStatus.INTERNAL_SERVER_ERROR
             );
         }
+    }
+
+    private void createOrganizationGuide(Workbook workbook) {
+        Sheet guide = workbook.createSheet("组织关系说明");
+        var headerStyle = workbook.createCellStyle();
+        headerStyle.setFillForegroundColor(
+                org.apache.poi.ss.usermodel.IndexedColors.DARK_TEAL.getIndex()
+        );
+        headerStyle.setFillPattern(
+                org.apache.poi.ss.usermodel.FillPatternType.SOLID_FOREGROUND
+        );
+        var headerFont = workbook.createFont();
+        headerFont.setBold(true);
+        headerFont.setColor(org.apache.poi.ss.usermodel.IndexedColors.WHITE.getIndex());
+        headerStyle.setFont(headerFont);
+        var wrapStyle = workbook.createCellStyle();
+        wrapStyle.setWrapText(true);
+        String[][] instructions = {
+                {"字段", "填写规则", "示例"},
+                {"组织编码", "用户的主要归属组织，只能填写一个有效组织编码", "WORKSHOP-A"},
+                {"任职班组编码列表", "员工可任职多个班组，用逗号分隔；仅员工角色填写", "TEAM-A-1,TEAM-A-2"},
+                {"主班组编码", "必须包含在任职班组编码列表中；不填时取第一个班组", "TEAM-A-1"},
+                {"负责组织编码列表", "车间主任填写车间编码，班组长填写班组编码；多个用逗号分隔", "TEAM-A-1"}
+        };
+        for (int rowIndex = 0; rowIndex < instructions.length; rowIndex++) {
+            Row row = guide.createRow(rowIndex);
+            for (int column = 0; column < instructions[rowIndex].length; column++) {
+                var cell = row.createCell(column);
+                cell.setCellValue(instructions[rowIndex][column]);
+                cell.setCellStyle(rowIndex == 0 ? headerStyle : wrapStyle);
+            }
+        }
+        List<SystemDtos.OrganizationNode> organizations = systemService.organizations();
+        Map<Long, String> codesById = organizations.stream().collect(Collectors.toMap(
+                SystemDtos.OrganizationNode::id,
+                SystemDtos.OrganizationNode::organizationCode
+        ));
+        int headerRowIndex = instructions.length + 1;
+        Row header = guide.createRow(headerRowIndex);
+        List<String> headers = List.of(
+                "可用组织编码", "组织名称", "组织类型", "上级组织编码", "状态"
+        );
+        for (int index = 0; index < headers.size(); index++) {
+            var cell = header.createCell(index);
+            cell.setCellValue(headers.get(index));
+            cell.setCellStyle(headerStyle);
+        }
+        int rowIndex = headerRowIndex + 1;
+        for (SystemDtos.OrganizationNode organization : organizations) {
+            Row row = guide.createRow(rowIndex++);
+            row.createCell(0).setCellValue(organization.organizationCode());
+            row.createCell(1).setCellValue(organization.organizationName());
+            row.createCell(2).setCellValue(organization.organizationType());
+            String parentCode = codesById.get(organization.parentId());
+            if (parentCode != null) {
+                row.createCell(3).setCellValue(parentCode);
+            }
+            row.createCell(4).setCellValue(organization.status() == 1 ? "启用" : "停用");
+        }
+        for (int index = 0; index < headers.size(); index++) {
+            guide.autoSizeColumn(index);
+            guide.setColumnWidth(index, Math.min(guide.getColumnWidth(index) + 768, 12_000));
+        }
+        guide.createFreezePane(0, headerRowIndex + 1);
     }
 
     @Transactional
@@ -225,6 +301,7 @@ public class UserImportService {
             long tenantId,
             List<UserImportDtos.UserInput> rows
     ) {
+        var current = SecurityUtils.currentUser();
         Map<String, SystemDtos.OrganizationNode> organizations = organizationsByCode();
         Map<String, SystemDtos.RoleRow> roles = rolesByCode();
         int created = 0;
@@ -242,22 +319,71 @@ public class UserImportService {
             List<Long> roleIds = row.roleCodes().stream()
                     .map(code -> roles.get(code).id())
                     .toList();
+            long userId;
             if (existing == null) {
-                systemService.createUser(new SystemDtos.CreateUserRequest(
+                userId = systemService.createUser(new SystemDtos.CreateUserRequest(
                         row.username(), row.realName(), row.employeeNo(), row.mobile(),
                         row.email(), organizationId, row.mobileEnabled(), roleIds,
                         row.initialPassword()
                 ));
                 created++;
             } else {
+                userId = existing.id();
                 systemService.updateUser(existing.id(), new SystemDtos.UpdateUserRequest(
                         row.realName(), row.employeeNo(), row.mobile(), row.email(),
                         organizationId, row.mobileEnabled(), roleIds, existing.version()
                 ));
                 updated++;
             }
+            synchronizeOrganizationRelationships(
+                    tenantId, userId, row, organizations, current.userId()
+            );
         }
         return new UserImportDtos.ImportCounts(created, updated, skipped);
+    }
+
+    private void synchronizeOrganizationRelationships(
+            long tenantId,
+            long userId,
+            UserImportDtos.UserInput row,
+            Map<String, SystemDtos.OrganizationNode> organizations,
+            long operatorId
+    ) {
+        LinkedHashSet<String> teamCodes = new LinkedHashSet<>();
+        SystemDtos.OrganizationNode primaryOrganization = organizations.get(
+                row.organizationCode()
+        );
+        if (row.roleCodes().contains("OPERATOR")
+                && "TEAM".equals(primaryOrganization.organizationType())) {
+            teamCodes.add(primaryOrganization.organizationCode());
+        }
+        teamCodes.addAll(safeCodes(row.teamOrganizationCodes()));
+        String primaryTeamCode = row.primaryTeamOrganizationCode() == null
+                ? teamCodes.stream().findFirst().orElse(null)
+                : row.primaryTeamOrganizationCode();
+        mapper.deleteUserTeamMemberships(tenantId, userId, operatorId);
+        for (String teamCode : teamCodes) {
+            mapper.insertTeamMember(
+                    tenantId, organizations.get(teamCode).id(), userId,
+                    teamCode.equals(primaryTeamCode), operatorId
+            );
+        }
+        for (String organizationCode : safeCodes(row.managedOrganizationCodes())) {
+            SystemDtos.OrganizationNode managed = organizations.get(organizationCode);
+            SystemDtos.PersonnelOrganizationRow current = mapper.findPersonnelOrganization(
+                    tenantId, managed.id()
+            );
+            LinkedHashSet<Long> managerUserIds = new LinkedHashSet<>(
+                    mapper.findOrganizationManagerUserIds(tenantId, managed.id())
+            );
+            managerUserIds.add(userId);
+            systemService.updateOrganizationManager(
+                    managed.id(),
+                    new SystemDtos.UpdateOrganizationManagerRequest(
+                            new ArrayList<>(managerUserIds), current.version()
+                    )
+            );
+        }
     }
 
     private Parsed parse(MultipartFile file) {
@@ -296,7 +422,14 @@ public class UserImportService {
                             splitRoles(required(row, columns, formatter, "角色编码列表")),
                             bool(row, columns, formatter, "允许移动端", true),
                             optional(row, columns, formatter, "初始密码"),
-                            strategy(required(row, columns, formatter, "处理策略"))
+                            strategy(required(row, columns, formatter, "处理策略")),
+                            splitCodes(optional(
+                                    row, columns, formatter, "任职班组编码列表"
+                            )),
+                            upper(optional(row, columns, formatter, "主班组编码")),
+                            splitCodes(optional(
+                                    row, columns, formatter, "负责组织编码列表"
+                            ))
                     ));
                 } catch (RowError exception) {
                     errors.add(new UserImportDtos.ImportError(
@@ -343,6 +476,69 @@ public class UserImportService {
                 rowErrors.add(error(row, "组织编码", "组织不存在或已停用"));
             } else if (!scope.canCreateIn(organization.id())) {
                 rowErrors.add(error(row, "组织编码", "无权在该组织创建或更新用户"));
+            }
+            LinkedHashSet<String> teamCodes = new LinkedHashSet<>(
+                    safeCodes(row.teamOrganizationCodes())
+            );
+            if (organization != null && row.roleCodes().contains("OPERATOR")
+                    && "TEAM".equals(organization.organizationType())) {
+                teamCodes.add(organization.organizationCode());
+            }
+            if (!teamCodes.isEmpty() && !row.roleCodes().contains("OPERATOR")) {
+                rowErrors.add(error(
+                        row, "任职班组编码列表", "只有员工角色可以维护多班组任职关系"
+                ));
+            }
+            for (String teamCode : teamCodes) {
+                SystemDtos.OrganizationNode team = organizations.get(teamCode);
+                if (team == null || team.status() != 1
+                        || !"TEAM".equals(team.organizationType())) {
+                    rowErrors.add(error(
+                            row, "任职班组编码列表", "班组不存在、已停用或不是班组：" + teamCode
+                    ));
+                } else if (!scope.canCreateIn(team.id())) {
+                    rowErrors.add(error(
+                            row, "任职班组编码列表", "无权维护该班组成员：" + teamCode
+                    ));
+                }
+            }
+            if (row.primaryTeamOrganizationCode() != null
+                    && !teamCodes.contains(row.primaryTeamOrganizationCode())) {
+                rowErrors.add(error(
+                        row, "主班组编码", "主班组必须包含在任职班组编码列表中"
+                ));
+            }
+            for (String managedCode : safeCodes(row.managedOrganizationCodes())) {
+                SystemDtos.OrganizationNode managed = organizations.get(managedCode);
+                if (managed == null || managed.status() != 1
+                        || !Set.of("WORKSHOP", "TEAM").contains(
+                        managed.organizationType()
+                )) {
+                    rowErrors.add(error(
+                            row, "负责组织编码列表",
+                            "负责组织不存在、已停用或不是车间/班组：" + managedCode
+                    ));
+                    continue;
+                }
+                String requiredRole = "WORKSHOP".equals(managed.organizationType())
+                        ? "WORKSHOP_MANAGER" : "TEAM_LEADER";
+                boolean relationshipValid = true;
+                if (!row.roleCodes().contains(requiredRole)) {
+                    relationshipValid = false;
+                    rowErrors.add(error(
+                            row, "负责组织编码列表",
+                            "负责" + managedCode + "需要角色：" + requiredRole
+                    ));
+                }
+                if (!scope.canCreateIn(managed.id())) {
+                    relationshipValid = false;
+                    rowErrors.add(error(
+                            row, "负责组织编码列表", "无权维护该组织负责人：" + managedCode
+                    ));
+                }
+                if (!relationshipValid) {
+                    continue;
+                }
             }
             if (row.roleCodes().isEmpty()) {
                 rowErrors.add(error(row, "角色编码列表", "至少填写一个角色编码"));
@@ -560,6 +756,22 @@ public class UserImportService {
                 .map(this::upper)
                 .distinct()
                 .toList();
+    }
+
+    private List<String> splitCodes(String value) {
+        if (value == null) {
+            return List.of();
+        }
+        return java.util.Arrays.stream(value.split("[,，;；\\n]"))
+                .map(String::trim)
+                .filter(token -> !token.isEmpty())
+                .map(this::upper)
+                .distinct()
+                .toList();
+    }
+
+    private List<String> safeCodes(List<String> values) {
+        return values == null ? List.of() : values;
     }
 
     private String upper(String value) {

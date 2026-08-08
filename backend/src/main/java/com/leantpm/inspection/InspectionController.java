@@ -3,6 +3,8 @@ package com.leantpm.inspection;
 import com.leantpm.common.api.ApiResponse;
 import com.leantpm.common.api.PageResult;
 import com.leantpm.common.idempotency.Idempotent;
+import com.leantpm.common.query.TableQuery;
+import com.leantpm.common.query.TableQueryParser;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -31,26 +33,55 @@ import java.time.LocalDate;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Validated
 @RestController
 @RequestMapping("/api/v1/inspection")
 public class InspectionController {
+    private static final Set<String> ITEM_TABLE_FIELDS = Set.of(
+            "itemCode", "itemName", "organizationName", "inspectionPart",
+            "inspectionStandard", "resultType", "minimumValue", "maximumValue",
+            "itemCategory", "ruleSummary", "status"
+    );
+    private static final Set<String> SCHEME_TABLE_FIELDS = Set.of(
+            "schemeCode", "schemeName", "inspectionType", "currentVersionNumber",
+            "currentVersionStatus", "cycleType", "itemCount", "activePlanCount", "status"
+    );
+    private static final Set<String> PLAN_TABLE_FIELDS = Set.of(
+            "schemeCode", "schemeName", "equipmentCode", "equipmentName",
+            "organizationName", "locationName", "cycleType", "cycleInterval",
+            "assigneeName", "nextGenerationDate", "planStatus"
+    );
+    private static final Set<String> ABNORMAL_TABLE_FIELDS = Set.of(
+            "abnormalCode", "taskCode", "abnormalTitle", "equipmentCode",
+            "equipmentName", "itemName", "organizationName", "abnormalDescription",
+            "severity", "responsibleUserName", "dueTime", "abnormalStatus",
+            "equipmentStopRequired", "createdTime"
+    );
+    private static final Set<String> TASK_TABLE_FIELDS = Set.of(
+            "taskCode", "schemeNameSnapshot", "equipmentCode", "equipmentName",
+            "organizationName", "plannedDate", "dueTime", "assigneeName",
+            "completedItemCount", "completedTime", "dispatchStatus", "taskStatus"
+    );
     private final InspectionCatalogService catalogService;
     private final InspectionTaskService taskService;
     private final InspectionImportService importService;
     private final InspectionExportService exportService;
+    private final TableQueryParser tableQueryParser;
 
     public InspectionController(
             InspectionCatalogService catalogService,
             InspectionTaskService taskService,
             InspectionImportService importService,
-            InspectionExportService exportService
+            InspectionExportService exportService,
+            TableQueryParser tableQueryParser
     ) {
         this.catalogService = catalogService;
         this.taskService = taskService;
         this.importService = importService;
         this.exportService = exportService;
+        this.tableQueryParser = tableQueryParser;
     }
 
     @GetMapping("/import-template")
@@ -64,7 +95,7 @@ public class InspectionController {
                         HttpHeaders.CONTENT_DISPOSITION,
                         ContentDisposition.attachment()
                                 .filename(
-                                        "LeanTPM-inspection-import-template.xlsx",
+                                        "点检数据导入模板.xlsx",
                                         StandardCharsets.UTF_8
                                 )
                                 .build().toString()
@@ -104,14 +135,22 @@ public class InspectionController {
     @PreAuthorize("hasAuthority('inspection:item:view')")
     public ApiResponse<PageResult<InspectionDtos.ItemRow>> items(
             @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Long organizationId,
             @RequestParam(required = false) String itemCategory,
             @RequestParam(required = false) String resultType,
             @RequestParam(required = false) Integer status,
+            @RequestParam(required = false) String tableFilters,
+            @RequestParam(required = false) String sortBy,
+            @RequestParam(required = false) String sortDirection,
             @RequestParam(defaultValue = "1") @Min(1) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(200) int pageSize
     ) {
+        TableQuery tableQuery = tableQueryParser.parse(
+                tableFilters, sortBy, sortDirection, ITEM_TABLE_FIELDS
+        );
         return ApiResponse.success(catalogService.items(
-                keyword, itemCategory, resultType, status, page, pageSize
+                keyword, organizationId, itemCategory, resultType, status,
+                tableQuery, page, pageSize
         ));
     }
 
@@ -158,11 +197,17 @@ public class InspectionController {
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String inspectionType,
             @RequestParam(required = false) Integer status,
+            @RequestParam(required = false) String tableFilters,
+            @RequestParam(required = false) String sortBy,
+            @RequestParam(required = false) String sortDirection,
             @RequestParam(defaultValue = "1") @Min(1) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(200) int pageSize
     ) {
+        TableQuery tableQuery = tableQueryParser.parse(
+                tableFilters, sortBy, sortDirection, SCHEME_TABLE_FIELDS
+        );
         return ApiResponse.success(catalogService.schemes(
-                keyword, inspectionType, status, page, pageSize
+                keyword, inspectionType, status, tableQuery, page, pageSize
         ));
     }
 
@@ -173,6 +218,12 @@ public class InspectionController {
             @RequestParam(required = false) Long versionId
     ) {
         return ApiResponse.success(catalogService.scheme(id, versionId));
+    }
+
+    @GetMapping("/schemes/{id}/applicable-equipment-ids")
+    @PreAuthorize("hasAuthority('inspection:scheme:view')")
+    public ApiResponse<List<Long>> applicableEquipmentIds(@PathVariable long id) {
+        return ApiResponse.success(catalogService.applicableEquipmentIds(id));
     }
 
     @PostMapping("/schemes")
@@ -196,6 +247,40 @@ public class InspectionController {
         ));
     }
 
+    @PostMapping("/schemes/publish")
+    @Idempotent
+    @PreAuthorize("hasAuthority('inspection:scheme:manage') and hasAuthority('inspection:scheme:publish')")
+    public ApiResponse<Map<String, Long>> createAndPublishScheme(
+            @Valid @RequestBody InspectionDtos.SaveSchemeRequest request
+    ) {
+        return ApiResponse.success(Map.of(
+                "id", catalogService.createAndPublishScheme(request)
+        ));
+    }
+
+    @PostMapping("/schemes/{id}/versions/publish")
+    @Idempotent
+    @PreAuthorize("hasAuthority('inspection:scheme:manage') and hasAuthority('inspection:scheme:publish')")
+    public ApiResponse<Map<String, Long>> createAndPublishSchemeVersion(
+            @PathVariable long id,
+            @Valid @RequestBody InspectionDtos.SaveSchemeRequest request
+    ) {
+        return ApiResponse.success(Map.of(
+                "versionId", catalogService.createAndPublishSchemeVersion(id, request)
+        ));
+    }
+
+    @PutMapping("/schemes/{id}/status")
+    @Idempotent
+    @PreAuthorize("hasAuthority('inspection:scheme:manage')")
+    public ApiResponse<Void> updateSchemeStatus(
+            @PathVariable long id,
+            @Valid @RequestBody InspectionDtos.UpdateSchemeStatusRequest request
+    ) {
+        catalogService.updateSchemeStatus(id, request);
+        return ApiResponse.success();
+    }
+
     @PostMapping("/schemes/{id}/versions/{versionId}/publish")
     @Idempotent
     @PreAuthorize("hasAuthority('inspection:scheme:publish')")
@@ -212,11 +297,17 @@ public class InspectionController {
     public ApiResponse<PageResult<InspectionDtos.PlanRow>> plans(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String planStatus,
+            @RequestParam(required = false) String tableFilters,
+            @RequestParam(required = false) String sortBy,
+            @RequestParam(required = false) String sortDirection,
             @RequestParam(defaultValue = "1") @Min(1) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(200) int pageSize
     ) {
+        TableQuery tableQuery = tableQueryParser.parse(
+                tableFilters, sortBy, sortDirection, PLAN_TABLE_FIELDS
+        );
         return ApiResponse.success(catalogService.plans(
-                keyword, planStatus, page, pageSize
+                keyword, planStatus, tableQuery, page, pageSize
         ));
     }
 
@@ -240,6 +331,17 @@ public class InspectionController {
         return ApiResponse.success();
     }
 
+    @DeleteMapping("/plans/{id}")
+    @Idempotent
+    @PreAuthorize("hasAuthority('inspection:plan:manage')")
+    public ApiResponse<Void> deletePlan(
+            @PathVariable long id,
+            @RequestParam @Min(0) int version
+    ) {
+        catalogService.deletePlan(id, version);
+        return ApiResponse.success();
+    }
+
     @PostMapping("/plans/generate")
     @Idempotent
     @PreAuthorize("hasAuthority('inspection:plan:generate')")
@@ -252,6 +354,7 @@ public class InspectionController {
     public ApiResponse<PageResult<InspectionDtos.TaskRow>> tasks(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String taskStatus,
+            @RequestParam(required = false) String statusGroup,
             @RequestParam(required = false) String dispatchStatus,
             @RequestParam(required = false) LocalDate plannedDate,
             @RequestParam(defaultValue = "PLANNED_DATE") String timeField,
@@ -265,14 +368,20 @@ public class InspectionController {
             @RequestParam(defaultValue = "false") boolean abnormalOnly,
             @RequestParam(required = false) String abnormalSeverity,
             @RequestParam(defaultValue = "false") boolean mineOnly,
+            @RequestParam(required = false) String tableFilters,
+            @RequestParam(required = false) String sortBy,
+            @RequestParam(required = false) String sortDirection,
             @RequestParam(defaultValue = "1") @Min(1) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(200) int pageSize
     ) {
+        TableQuery tableQuery = tableQueryParser.parse(
+                tableFilters, sortBy, sortDirection, TASK_TABLE_FIELDS
+        );
         return ApiResponse.success(taskService.tasks(new InspectionDtos.TaskQuery(
-                keyword, taskStatus, dispatchStatus, plannedDate, timeField, startDate, endDate,
+                keyword, taskStatus, statusGroup, dispatchStatus, plannedDate, timeField, startDate, endDate,
                 organizationId, teamCode, assigneeUserId, equipmentId, schemeId,
                 abnormalOnly, abnormalSeverity, mineOnly
-        ), page, pageSize));
+        ), tableQuery, page, pageSize));
     }
 
     @GetMapping("/results/export")
@@ -280,6 +389,7 @@ public class InspectionController {
     public ResponseEntity<byte[]> exportResults(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String taskStatus,
+            @RequestParam(required = false) String statusGroup,
             @RequestParam(required = false) String dispatchStatus,
             @RequestParam(defaultValue = "PLANNED_DATE") String timeField,
             @RequestParam(required = false) LocalDate startDate,
@@ -294,7 +404,7 @@ public class InspectionController {
             @RequestParam(defaultValue = "false") boolean mineOnly
     ) {
         byte[] workbook = taskService.exportResults(new InspectionDtos.TaskQuery(
-                keyword, taskStatus, dispatchStatus, null, timeField, startDate, endDate,
+                keyword, taskStatus, statusGroup, dispatchStatus, null, timeField, startDate, endDate,
                 organizationId, teamCode, assigneeUserId, equipmentId, schemeId,
                 abnormalOnly, abnormalSeverity, mineOnly
         ));
@@ -307,7 +417,7 @@ public class InspectionController {
                         HttpHeaders.CONTENT_DISPOSITION,
                         ContentDisposition.attachment()
                                 .filename(
-                                        "LeanTPM-inspection-results.xlsx",
+                                        "点检结果.xlsx",
                                         StandardCharsets.UTF_8
                                 )
                                 .build().toString()
@@ -443,16 +553,33 @@ public class InspectionController {
         return ApiResponse.success();
     }
 
+    @DeleteMapping("/tasks/{id}")
+    @Idempotent
+    @PreAuthorize("hasAuthority('inspection:task:cancel')")
+    public ApiResponse<Void> deleteTask(
+            @PathVariable long id,
+            @RequestParam @Min(0) int version
+    ) {
+        taskService.deleteTask(id, version);
+        return ApiResponse.success();
+    }
+
     @GetMapping("/abnormalities")
     @PreAuthorize("hasAuthority('inspection:abnormal:view')")
     public ApiResponse<PageResult<InspectionDtos.AbnormalRow>> abnormalities(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String abnormalStatus,
+            @RequestParam(required = false) String tableFilters,
+            @RequestParam(required = false) String sortBy,
+            @RequestParam(required = false) String sortDirection,
             @RequestParam(defaultValue = "1") @Min(1) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(200) int pageSize
     ) {
+        TableQuery tableQuery = tableQueryParser.parse(
+                tableFilters, sortBy, sortDirection, ABNORMAL_TABLE_FIELDS
+        );
         return ApiResponse.success(taskService.abnormalities(
-                keyword, abnormalStatus, page, pageSize
+                keyword, abnormalStatus, tableQuery, page, pageSize
         ));
     }
 
@@ -499,8 +626,12 @@ public class InspectionController {
 
     @GetMapping("/statistics")
     @PreAuthorize("hasAuthority('inspection:statistics:view')")
-    public ApiResponse<InspectionDtos.Statistics> statistics() {
-        return ApiResponse.success(taskService.statistics());
+    public ApiResponse<InspectionDtos.Statistics> statistics(
+            @RequestParam(required = false) LocalDate startDate,
+            @RequestParam(required = false) LocalDate endDate,
+            @RequestParam(required = false) Long organizationId
+    ) {
+        return ApiResponse.success(taskService.statistics(startDate, endDate, organizationId));
     }
 
     private ResponseEntity<Resource> attachmentResponse(

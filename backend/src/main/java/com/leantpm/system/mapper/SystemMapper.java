@@ -148,9 +148,101 @@ public interface SystemMapper {
 
     List<SystemDtos.OrganizationNode> findOrganizations(@Param("tenantId") long tenantId);
 
+    List<SystemDtos.PersonnelOrganizationRow> findPersonnelOrganizations(
+            @Param("tenantId") long tenantId
+    );
+
+    SystemDtos.PersonnelOrganizationRow findPersonnelOrganization(
+            @Param("tenantId") long tenantId,
+            @Param("organizationId") long organizationId
+    );
+
+    List<String> findUserRoleCodes(@Param("tenantId") long tenantId, @Param("userId") long userId);
+
+    List<Long> findUserTeamIds(@Param("tenantId") long tenantId, @Param("userId") long userId);
+
+    Long findUserPrimaryTeamId(@Param("tenantId") long tenantId, @Param("userId") long userId);
+
+    List<Long> findTeamMemberUserIds(
+            @Param("tenantId") long tenantId,
+            @Param("teamOrganizationId") long teamOrganizationId
+    );
+
+    List<Long> findOrganizationManagerUserIds(
+            @Param("tenantId") long tenantId,
+            @Param("organizationId") long organizationId
+    );
+
+    List<String> findOrganizationManagerNames(
+            @Param("tenantId") long tenantId,
+            @Param("organizationId") long organizationId
+    );
+
+    int countActiveUserWithRole(
+            @Param("tenantId") long tenantId,
+            @Param("userId") long userId,
+            @Param("roleCode") String roleCode
+    );
+
+    int countActiveUsersWithRole(
+            @Param("tenantId") long tenantId,
+            @Param("userIds") List<Long> userIds,
+            @Param("roleCode") String roleCode
+    );
+
+    int updateOrganizationManager(
+            @Param("tenantId") long tenantId,
+            @Param("organizationId") long organizationId,
+            @Param("managerUserId") Long managerUserId,
+            @Param("version") int version,
+            @Param("operatorId") long operatorId
+    );
+
+    int deleteOrganizationManagers(
+            @Param("tenantId") long tenantId,
+            @Param("organizationId") long organizationId,
+            @Param("operatorId") long operatorId
+    );
+
+    int insertOrganizationManager(
+            @Param("tenantId") long tenantId,
+            @Param("organizationId") long organizationId,
+            @Param("userId") long userId,
+            @Param("managerType") String managerType,
+            @Param("sortOrder") int sortOrder,
+            @Param("operatorId") long operatorId
+    );
+
+    int deleteTeamMembers(
+            @Param("tenantId") long tenantId,
+            @Param("teamOrganizationId") long teamOrganizationId,
+            @Param("operatorId") long operatorId
+    );
+
+    int deleteUserTeamMemberships(
+            @Param("tenantId") long tenantId,
+            @Param("userId") long userId,
+            @Param("operatorId") long operatorId
+    );
+
+    int insertTeamMember(
+            @Param("tenantId") long tenantId,
+            @Param("teamOrganizationId") long teamOrganizationId,
+            @Param("userId") long userId,
+            @Param("primary") boolean primary,
+            @Param("operatorId") long operatorId
+    );
+
     List<SystemDtos.DataScopeDefinition> findDataScopeDefinitions(@Param("tenantId") long tenantId);
 
     List<SystemDtos.MenuRow> findMenus(@Param("tenantId") long tenantId);
+
+    int updateMenuStatuses(
+            @Param("tenantId") long tenantId,
+            @Param("menuIds") List<Long> menuIds,
+            @Param("enabled") boolean enabled,
+            @Param("operatorId") long operatorId
+    );
 
     List<SystemDtos.DictionaryTypeRow> findDictionaryTypes(@Param("tenantId") long tenantId);
 

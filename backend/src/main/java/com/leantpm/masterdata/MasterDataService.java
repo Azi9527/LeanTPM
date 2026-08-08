@@ -8,6 +8,7 @@ import com.leantpm.security.datascope.DataPermission;
 import com.leantpm.security.datascope.DataPermissionService;
 import com.leantpm.system.audit.ChangeLogService;
 import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,29 +34,31 @@ public class MasterDataService {
             "TEAM", Set.of("DEPARTMENT", "WORKSHOP", "LINE")
     );
     private static final Map<String, Set<String>> LOCATION_PARENTS = Map.of(
-            "ENTERPRISE", Set.of(),
-            "FACTORY", Set.of("ENTERPRISE"),
-            "PLANT_AREA", Set.of("FACTORY"),
-            "WORKSHOP", Set.of("FACTORY", "PLANT_AREA"),
-            "LINE", Set.of("WORKSHOP"),
-            "WORKSTATION", Set.of("LINE")
+            "AREA", Set.of("AREA"),
+            "BUILDING", Set.of("AREA"),
+            "FLOOR", Set.of("AREA", "BUILDING"),
+            "ZONE", Set.of("AREA", "BUILDING", "FLOOR", "ZONE"),
+            "SPOT", Set.of("AREA", "BUILDING", "FLOOR", "ZONE")
     );
 
     private final MasterDataMapper mapper;
     private final DataPermissionService dataPermissionService;
     private final ChangeLogService changeLogService;
     private final ObjectMapper objectMapper;
+    private final JdbcTemplate jdbc;
 
     public MasterDataService(
             MasterDataMapper mapper,
             DataPermissionService dataPermissionService,
             ChangeLogService changeLogService,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            JdbcTemplate jdbc
     ) {
         this.mapper = mapper;
         this.dataPermissionService = dataPermissionService;
         this.changeLogService = changeLogService;
         this.objectMapper = objectMapper;
+        this.jdbc = jdbc;
     }
 
     @Transactional(readOnly = true)
@@ -130,20 +133,46 @@ public class MasterDataService {
         );
     }
 
-    @Transactional
-    public void deleteOrganization(long id, int version) {
+    @Transactional(readOnly = true)
+    public MasterDataDtos.OrganizationDeleteImpact organizationDeleteImpact(long id) {
         var current = SecurityUtils.currentUser();
         var existing = requireOrganization(current.tenantId(), id);
         assertOrganizationAccess(existing.id());
         if (existing.parentId() == 0) {
             throw new BusinessException("ORGANIZATION_ROOT_PROTECTED", "根组织不可删除");
         }
-        if (mapper.countOrganizationChildren(current.tenantId(), id, false) > 0
-                || mapper.countOrganizationReferences(current.tenantId(), id, false) > 0) {
+        return organizationDeleteImpact(current.tenantId(), id);
+    }
+
+    @Transactional
+    public void deleteOrganization(long id, int version, boolean cascadeRelations) {
+        var current = SecurityUtils.currentUser();
+        var existing = requireOrganization(current.tenantId(), id);
+        assertOrganizationAccess(existing.id());
+        if (existing.parentId() == 0) {
+            throw new BusinessException("ORGANIZATION_ROOT_PROTECTED", "根组织不可删除");
+        }
+        MasterDataDtos.OrganizationDeleteImpact impact = organizationDeleteImpact(
+                current.tenantId(), id
+        );
+        if (impact.childOrganizations() > 0) {
+            throw new BusinessException(
+                    "ORGANIZATION_HAS_CHILDREN",
+                    "该组织存在 " + impact.childOrganizations()
+                            + " 个下级组织，请先删除或调整下级组织",
+                    HttpStatus.CONFLICT
+            );
+        }
+        if (impact.totalReferences() > 0 && !cascadeRelations) {
             throw new BusinessException(
                     "ORGANIZATION_IN_USE",
-                    "组织存在下级或业务引用，不能删除",
+                    deleteImpactMessage(impact),
                     HttpStatus.CONFLICT
+            );
+        }
+        if (impact.totalReferences() > 0) {
+            reassignOrganizationRelations(
+                    current.tenantId(), id, existing.parentId(), current.userId()
             );
         }
         if (mapper.softDeleteOrganization(
@@ -154,7 +183,330 @@ public class MasterDataService {
         ) == 0) {
             throw optimisticConflict();
         }
-        changeLogService.record("ORGANIZATION", id, "DELETE", existing, null);
+        changeLogService.record(
+                "ORGANIZATION",
+                id,
+                "DELETE",
+                Map.of("organization", existing, "removedRelations", impact),
+                null
+        );
+    }
+
+    private MasterDataDtos.OrganizationDeleteImpact organizationDeleteImpact(
+            long tenantId,
+            long organizationId
+    ) {
+        int children = countActive("organization", "parent_id", tenantId, organizationId);
+        int users = countActive("system_user", "organization_id", tenantId, organizationId);
+        int locations = countActive("location", "organization_id", tenantId, organizationId);
+        int equipment = countActive("equipment", "organization_id", tenantId, organizationId);
+        int teamMemberships = countActive(
+                "system_user_team_membership", "team_organization_id", tenantId, organizationId
+        );
+        int dataScopes = countActive(
+                "system_role_data_scope", "organization_id", tenantId, organizationId
+        );
+        int businessRecords = List.of(
+                "equipment_calendar",
+                "equipment_downtime_record",
+                "equipment_fault_report",
+                "equipment_oee_record",
+                "equipment_oee_target",
+                "equipment_output_record",
+                "equipment_repair_order",
+                "inspection_task",
+                "maintenance_task"
+        ).stream().mapToInt(table -> countActive(
+                table, "organization_id", tenantId, organizationId
+        )).sum();
+        businessRecords += countAll(
+                "equipment_transfer_record", "from_organization_id", tenantId, organizationId
+        );
+        businessRecords += countAll(
+                "equipment_transfer_record", "to_organization_id", tenantId, organizationId
+        );
+        int visualizationRecords = countActive(
+                "visualization_scene", "organization_id", tenantId, organizationId
+        ) + countVisualizationNodes(tenantId, organizationId);
+        int total = children + users + locations + equipment + teamMemberships
+                + dataScopes + businessRecords + visualizationRecords;
+        return new MasterDataDtos.OrganizationDeleteImpact(
+                children,
+                users,
+                locations,
+                equipment,
+                teamMemberships,
+                dataScopes,
+                businessRecords,
+                visualizationRecords,
+                total
+        );
+    }
+
+    private int countActive(String table, String column, long tenantId, long organizationId) {
+        Integer count = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM " + table
+                        + " WHERE tenant_id = ? AND " + column + " = ? AND deleted = 0",
+                Integer.class,
+                tenantId,
+                organizationId
+        );
+        return count == null ? 0 : count;
+    }
+
+    private int countAll(String table, String column, long tenantId, long organizationId) {
+        Integer count = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM " + table
+                        + " WHERE tenant_id = ? AND " + column + " = ?",
+                Integer.class,
+                tenantId,
+                organizationId
+        );
+        return count == null ? 0 : count;
+    }
+
+    private int countVisualizationNodes(long tenantId, long organizationId) {
+        Integer count = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM visualization_scene_node node"
+                        + " WHERE node.tenant_id = ? AND node.deleted = 0"
+                        + " AND (node.organization_id = ?"
+                        + " OR EXISTS (SELECT 1 FROM visualization_scene scene"
+                        + " WHERE scene.tenant_id = node.tenant_id"
+                        + " AND scene.id = node.scene_id AND scene.organization_id = ?"
+                        + " AND scene.deleted = 0)"
+                        + " OR EXISTS (SELECT 1 FROM visualization_scene target_scene"
+                        + " WHERE target_scene.tenant_id = node.tenant_id"
+                        + " AND target_scene.id = node.target_scene_id"
+                        + " AND target_scene.organization_id = ?"
+                        + " AND target_scene.deleted = 0))",
+                Integer.class,
+                tenantId,
+                organizationId,
+                organizationId,
+                organizationId
+        );
+        return count == null ? 0 : count;
+    }
+
+    private String deleteImpactMessage(MasterDataDtos.OrganizationDeleteImpact impact) {
+        List<String> parts = new ArrayList<>();
+        if (impact.users() > 0) parts.add("用户 " + impact.users() + " 个");
+        if (impact.locations() > 0) parts.add("位置 " + impact.locations() + " 个");
+        if (impact.equipment() > 0) parts.add("设备 " + impact.equipment() + " 台");
+        if (impact.teamMemberships() > 0) {
+            parts.add("班组任职关系 " + impact.teamMemberships() + " 条");
+        }
+        if (impact.dataScopes() > 0) parts.add("数据权限关系 " + impact.dataScopes() + " 条");
+        if (impact.businessRecords() > 0) parts.add("业务记录 " + impact.businessRecords() + " 条");
+        if (impact.visualizationRecords() > 0) {
+            parts.add("可视化配置 " + impact.visualizationRecords() + " 条");
+        }
+        return "该组织存在关联关系：" + String.join("、", parts)
+                + "。确认后系统会将业务数据转移到上级组织，并删除班组任职及数据权限关系。";
+    }
+
+    private void reassignOrganizationRelations(
+            long tenantId,
+            long organizationId,
+            long parentOrganizationId,
+            long operatorId
+    ) {
+        mergeEquipmentCalendars(
+                tenantId, organizationId, parentOrganizationId, operatorId
+        );
+        mergeVisualizationRelations(
+                tenantId, organizationId, parentOrganizationId, operatorId
+        );
+        List<String> versionedTables = List.of(
+                "system_user",
+                "location",
+                "equipment",
+                "equipment_downtime_record",
+                "equipment_fault_report",
+                "equipment_oee_record",
+                "equipment_oee_target",
+                "equipment_output_record",
+                "equipment_repair_order",
+                "inspection_task",
+                "maintenance_task"
+        );
+        for (String table : versionedTables) {
+            jdbc.update(
+                    "UPDATE " + table
+                            + " SET organization_id = ?, updated_by = ?, version = version + 1"
+                            + " WHERE tenant_id = ? AND organization_id = ? AND deleted = 0",
+                    parentOrganizationId,
+                    operatorId,
+                    tenantId,
+                    organizationId
+            );
+        }
+        jdbc.update(
+                "UPDATE equipment_transfer_record SET from_organization_id = ?"
+                        + " WHERE tenant_id = ? AND from_organization_id = ?",
+                parentOrganizationId,
+                tenantId,
+                organizationId
+        );
+        jdbc.update(
+                "UPDATE equipment_transfer_record SET to_organization_id = ?"
+                        + " WHERE tenant_id = ? AND to_organization_id = ?",
+                parentOrganizationId,
+                tenantId,
+                organizationId
+        );
+        jdbc.update(
+                "DELETE FROM system_user_team_membership"
+                        + " WHERE tenant_id = ? AND team_organization_id = ?",
+                tenantId,
+                organizationId
+        );
+        jdbc.update(
+                "UPDATE system_role_data_scope"
+                        + " SET deleted = 1, updated_by = ?, version = version + 1"
+                        + " WHERE tenant_id = ? AND organization_id = ? AND deleted = 0",
+                operatorId,
+                tenantId,
+                organizationId
+        );
+    }
+
+    private void mergeEquipmentCalendars(
+            long tenantId,
+            long organizationId,
+            long parentOrganizationId,
+            long operatorId
+    ) {
+        jdbc.update(
+                "UPDATE equipment_calendar source"
+                        + " JOIN equipment_calendar target"
+                        + " ON target.tenant_id = source.tenant_id"
+                        + " AND target.organization_id = ?"
+                        + " AND target.work_date = source.work_date"
+                        + " AND target.shift_id = source.shift_id"
+                        + " AND target.deleted = 0"
+                        + " SET source.deleted = 1, source.calendar_status = 'DISABLED',"
+                        + " source.updated_by = ?, source.version = source.version + 1"
+                        + " WHERE source.tenant_id = ? AND source.organization_id = ?"
+                        + " AND source.deleted = 0",
+                parentOrganizationId,
+                operatorId,
+                tenantId,
+                organizationId
+        );
+        jdbc.update(
+                "UPDATE equipment_calendar"
+                        + " SET organization_id = ?, updated_by = ?, version = version + 1"
+                        + " WHERE tenant_id = ? AND organization_id = ? AND deleted = 0",
+                parentOrganizationId,
+                operatorId,
+                tenantId,
+                organizationId
+        );
+    }
+
+    private void mergeVisualizationRelations(
+            long tenantId,
+            long organizationId,
+            long parentOrganizationId,
+            long operatorId
+    ) {
+        Long sourceSceneId = activeSceneId(tenantId, organizationId);
+        Long parentSceneId = activeSceneId(tenantId, parentOrganizationId);
+        if (sourceSceneId != null && parentSceneId != null) {
+            jdbc.update(
+                    "UPDATE visualization_scene_node source"
+                            + " JOIN visualization_scene_node target"
+                            + " ON target.tenant_id = source.tenant_id"
+                            + " AND target.scene_id = ?"
+                            + " AND target.node_code = source.node_code"
+                            + " AND target.deleted = 0"
+                            + " SET source.deleted = 1, source.updated_by = ?,"
+                            + " source.version = source.version + 1"
+                            + " WHERE source.tenant_id = ? AND source.scene_id = ?"
+                            + " AND source.deleted = 0",
+                    parentSceneId,
+                    operatorId,
+                    tenantId,
+                    sourceSceneId
+            );
+            jdbc.update(
+                    "UPDATE visualization_scene_node"
+                            + " SET scene_id = ?,"
+                            + " organization_id = CASE WHEN organization_id = ? THEN ?"
+                            + " ELSE organization_id END,"
+                            + " target_scene_id = CASE WHEN target_scene_id = ? THEN ?"
+                            + " ELSE target_scene_id END,"
+                            + " updated_by = ?, version = version + 1"
+                            + " WHERE tenant_id = ? AND scene_id = ? AND deleted = 0",
+                    parentSceneId,
+                    organizationId,
+                    parentOrganizationId,
+                    sourceSceneId,
+                    parentSceneId,
+                    operatorId,
+                    tenantId,
+                    sourceSceneId
+            );
+            jdbc.update(
+                    "UPDATE visualization_scene_node"
+                            + " SET target_scene_id = ?, updated_by = ?, version = version + 1"
+                            + " WHERE tenant_id = ? AND target_scene_id = ? AND deleted = 0",
+                    parentSceneId,
+                    operatorId,
+                    tenantId,
+                    sourceSceneId
+            );
+            jdbc.update(
+                    "UPDATE visualization_scene"
+                            + " SET parent_scene_id = ?, updated_by = ?, version = version + 1"
+                            + " WHERE tenant_id = ? AND parent_scene_id = ? AND deleted = 0",
+                    parentSceneId,
+                    operatorId,
+                    tenantId,
+                    sourceSceneId
+            );
+            jdbc.update(
+                    "UPDATE visualization_scene"
+                            + " SET deleted = 1, status = 0, updated_by = ?,"
+                            + " version = version + 1"
+                            + " WHERE tenant_id = ? AND id = ? AND deleted = 0",
+                    operatorId,
+                    tenantId,
+                    sourceSceneId
+            );
+        } else if (sourceSceneId != null) {
+            jdbc.update(
+                    "UPDATE visualization_scene"
+                            + " SET organization_id = ?, updated_by = ?, version = version + 1"
+                            + " WHERE tenant_id = ? AND id = ? AND deleted = 0",
+                    parentOrganizationId,
+                    operatorId,
+                    tenantId,
+                    sourceSceneId
+            );
+        }
+        jdbc.update(
+                "UPDATE visualization_scene_node"
+                        + " SET organization_id = ?, updated_by = ?, version = version + 1"
+                        + " WHERE tenant_id = ? AND organization_id = ? AND deleted = 0",
+                parentOrganizationId,
+                operatorId,
+                tenantId,
+                organizationId
+        );
+    }
+
+    private Long activeSceneId(long tenantId, long organizationId) {
+        List<Long> ids = jdbc.query(
+                "SELECT id FROM visualization_scene"
+                        + " WHERE tenant_id = ? AND organization_id = ? AND deleted = 0"
+                        + " ORDER BY id LIMIT 1",
+                (resultSet, rowNumber) -> resultSet.getLong("id"),
+                tenantId,
+                organizationId
+        );
+        return ids == null || ids.isEmpty() ? null : ids.getFirst();
     }
 
     @Transactional(readOnly = true)
@@ -210,6 +562,9 @@ public class MasterDataService {
         assertManager(current.tenantId(), normalized.managerUserId());
         assertOrganizationAccess(normalized.organizationId());
         assertLocationParent(current.tenantId(), id, normalized);
+        List<Long> descendantIds = existing.organizationId() == normalized.organizationId()
+                ? List.of()
+                : descendants(id, locationParents(mapper.findLocations(current.tenantId())));
         if (!normalized.enabled()
                 && (mapper.countLocationChildren(current.tenantId(), id, true) > 0
                 || mapper.countLocationEquipmentReferences(current.tenantId(), id, true) > 0)) {
@@ -227,6 +582,14 @@ public class MasterDataService {
         ) == 0) {
             throw optimisticConflict();
         }
+        if (!descendantIds.isEmpty()) {
+            mapper.updateLocationOrganizations(
+                    current.tenantId(),
+                    descendantIds,
+                    normalized.organizationId(),
+                    current.userId()
+            );
+        }
         changeLogService.record(
                 "LOCATION",
                 id,
@@ -241,9 +604,6 @@ public class MasterDataService {
         var current = SecurityUtils.currentUser();
         var existing = requireLocation(current.tenantId(), id);
         assertOrganizationAccess(existing.organizationId());
-        if (existing.parentId() == 0) {
-            throw new BusinessException("LOCATION_ROOT_PROTECTED", "根位置不可删除");
-        }
         if (mapper.countLocationChildren(current.tenantId(), id, false) > 0
                 || mapper.countLocationEquipmentReferences(current.tenantId(), id, false) > 0) {
             throw new BusinessException(
@@ -530,20 +890,16 @@ public class MasterDataService {
             throw new BusinessException("ORGANIZATION_DISABLED", "所属组织已停用");
         }
         String type = request.locationType();
-        if ("ENTERPRISE".equals(type)) {
-            if (request.parentId() != 0
-                    || !"ENTERPRISE".equals(organization.organizationType())) {
-                throw hierarchyError("企业位置必须为根节点并绑定企业组织");
-            }
-            return;
-        }
         if (request.parentId() == 0) {
-            throw hierarchyError("非企业位置必须选择上级");
+            return;
         }
         var parent = requireLocation(tenantId, request.parentId());
         assertOrganizationAccess(parent.organizationId());
+        if (parent.organizationId() != request.organizationId()) {
+            throw hierarchyError("上级物理位置必须属于同一组织");
+        }
         if (!LOCATION_PARENTS.getOrDefault(type, Set.of()).contains(parent.locationType())) {
-            throw hierarchyError(type + " 不能位于 " + parent.locationType() + " 下");
+            throw hierarchyError("当前物理位置类型不能位于所选上级类型下");
         }
         if (currentId != null) {
             assertNoCycle(

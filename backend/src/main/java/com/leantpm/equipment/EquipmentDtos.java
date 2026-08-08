@@ -32,7 +32,7 @@ public final class EquipmentDtos {
             long organizationId,
             String organizationCode,
             String organizationName,
-            long locationId,
+            Long locationId,
             String locationCode,
             String locationName,
             Long primaryResponsibleUserId,
@@ -116,7 +116,7 @@ public final class EquipmentDtos {
             LocalDate productionDate,
             LocalDate commissioningDate,
             @NotNull @Min(1) Long organizationId,
-            @NotNull @Min(1) Long locationId,
+            @Min(1) Long locationId,
             Long primaryResponsibleUserId,
             @Size(max = 100) String assetNumber,
             @NotBlank
@@ -150,7 +150,7 @@ public final class EquipmentDtos {
 
     public record TransferRequest(
             @NotNull @Min(1) Long organizationId,
-            @NotNull @Min(1) Long locationId,
+            @Min(1) Long locationId,
             Long primaryResponsibleUserId,
             @NotBlank @Size(max = 500) String reason,
             @NotNull Integer version
@@ -165,7 +165,7 @@ public final class EquipmentDtos {
             String toOrganizationName,
             Long fromLocationId,
             String fromLocationName,
-            long toLocationId,
+            Long toLocationId,
             String toLocationName,
             Long fromResponsibleUserId,
             String fromResponsibleName,
@@ -202,11 +202,19 @@ public final class EquipmentDtos {
     ) {
     }
 
+    public record StatusSummaryRow(
+            String statusCode,
+            long equipmentCount
+    ) {
+    }
+
     public record BarcodeRow(
             long id,
             long equipmentId,
             String equipmentCode,
             String equipmentName,
+            long organizationId,
+            String organizationName,
             String accessToken,
             String barcodeType,
             Boolean active,

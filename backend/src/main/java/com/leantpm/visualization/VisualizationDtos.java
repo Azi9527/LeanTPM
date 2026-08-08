@@ -27,7 +27,9 @@ public final class VisualizationDtos {
             long maintenance,
             long offline,
             long inspection,
-            long other
+            long other,
+            long idle,
+            long scrapped
     ) {
     }
 
@@ -49,7 +51,9 @@ public final class VisualizationDtos {
             long runningCount,
             long faultCount,
             long stoppedCount,
-            long offlineCount
+            long offlineCount,
+            long idleCount,
+            long scrappedCount
     ) {
     }
 
@@ -101,6 +105,28 @@ public final class VisualizationDtos {
     ) {
     }
 
+    public record InspectionRegistrationMetrics(
+            long registered,
+            long quickRegistered,
+            long equipmentCovered,
+            long abnormalRegistered
+    ) {
+    }
+
+    public record RecentInspectionRegistration(
+            long taskId,
+            String taskCode,
+            String equipmentCode,
+            String equipmentName,
+            String schemeName,
+            String organizationName,
+            String sourceType,
+            String executorName,
+            LocalDateTime completedTime,
+            long abnormalCount
+    ) {
+    }
+
     public record DashboardResult(
             LocalDateTime generatedAt,
             LocalDate startDate,
@@ -116,6 +142,8 @@ public final class VisualizationDtos {
             WorkflowMetrics maintenance,
             List<WorkflowTrend> workflowTrend,
             ReliabilityMetrics reliability,
+            InspectionRegistrationMetrics inspectionRegistration,
+            List<RecentInspectionRegistration> recentInspectionRegistrations,
             OeeDtos.AnalysisResult oee
     ) {
     }

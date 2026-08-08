@@ -47,6 +47,13 @@ class SystemUserImportMySqlIntegrationTest {
 
     @BeforeEach
     void authenticateAdmin() {
+        jdbc.update("""
+                INSERT INTO system_user_role
+                    (tenant_id, user_id, role_id, created_by, updated_by, deleted)
+                SELECT 1, 1, id, 1, 1, 0 FROM system_role
+                WHERE tenant_id = 1 AND role_code = 'ADMIN' AND deleted = 0
+                ON DUPLICATE KEY UPDATE deleted = 0, updated_by = 1
+                """);
         CurrentUser admin = new CurrentUser(
                 1L, 1L, "admin", "系统管理员", false,
                 Set.of("ADMIN"), Set.of("system:user:import"),
@@ -68,7 +75,9 @@ class SystemUserImportMySqlIntegrationTest {
                 "users-valid.xlsx", workbook("import_operator_01", "888888", false)
         ));
 
-        assertThat(validated.status()).isEqualTo("VALIDATED");
+        assertThat(validated.status())
+                .withFailMessage("validation errors: %s", validated.errors())
+                .isEqualTo("VALIDATED");
         assertThat(validated.validRows()).isEqualTo(1);
         assertThat(validated.newUsers()).isEqualTo(1);
 
@@ -96,6 +105,80 @@ class SystemUserImportMySqlIntegrationTest {
                   AND user.deleted = 0
                   AND role.role_code = 'OPERATOR'
                 """, Long.class)).isEqualTo(1L);
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*)
+                FROM system_user user
+                JOIN system_user_team_membership membership
+                  ON membership.tenant_id = user.tenant_id
+                 AND membership.user_id = user.id
+                 AND membership.primary_flag = 1
+                 AND membership.deleted = 0
+                JOIN organization team
+                  ON team.tenant_id = membership.tenant_id
+                 AND team.id = membership.team_organization_id
+                 AND team.deleted = 0
+                WHERE user.tenant_id = 1
+                  AND user.username = 'import_operator_01'
+                  AND team.organization_code = 'TEAM-A-1'
+                """, Long.class)).isEqualTo(1L);
+    }
+
+    @Test
+    void importsTeamLeaderAndManagedOrganizationRelationship() {
+        byte[] content;
+        try (var input = new ByteArrayInputStream(importService.template());
+             var workbook = new XSSFWorkbook(input);
+             var output = new ByteArrayOutputStream()) {
+            var sheet = workbook.getSheet("用户导入");
+            var row = sheet.getRow(1);
+            row.getCell(0).setCellValue("import_team_leader_01");
+            row.getCell(1).setCellValue("导入班组长");
+            row.getCell(2).setCellValue("TL-IT-001");
+            row.getCell(5).setCellValue("WORKSHOP-A");
+            row.getCell(6).setCellValue("TEAM_LEADER");
+            row.getCell(8).setCellValue("888888");
+            row.getCell(10).setCellValue("");
+            row.getCell(11).setCellValue("");
+            row.createCell(12).setCellValue("TEAM-A-2");
+            var second = sheet.createRow(2);
+            for (int index = 0; index < 13; index++) {
+                if (row.getCell(index) != null) {
+                    second.createCell(index).setCellValue(row.getCell(index).toString());
+                }
+            }
+            second.getCell(0).setCellValue("import_team_leader_02");
+            second.getCell(1).setCellValue("导入班组长02");
+            second.getCell(2).setCellValue("TL-IT-002");
+            workbook.write(output);
+            content = output.toByteArray();
+        } catch (Exception exception) {
+            throw new IllegalStateException(exception);
+        }
+
+        UserImportDtos.ImportResult validated = importService.validate(file(
+                "team-leader.xlsx", content
+        ));
+        assertThat(validated.status())
+                .withFailMessage("validation errors: %s", validated.errors())
+                .isEqualTo("VALIDATED");
+        assertThat(validated.validRows()).isEqualTo(2);
+        importService.commit(validated.batchId());
+
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*)
+                FROM organization_manager_relation relation
+                JOIN organization organization
+                  ON organization.tenant_id = relation.tenant_id
+                 AND organization.id = relation.organization_id
+                 AND organization.deleted = 0
+                JOIN system_user manager
+                  ON manager.tenant_id = relation.tenant_id
+                 AND manager.id = relation.user_id AND manager.deleted = 0
+                WHERE organization.tenant_id = 1
+                  AND organization.organization_code = 'TEAM-A-2'
+                  AND manager.username IN ('import_team_leader_01', 'import_team_leader_02')
+                  AND relation.deleted = 0
+                """, Long.class)).isEqualTo(2L);
     }
 
     @Test

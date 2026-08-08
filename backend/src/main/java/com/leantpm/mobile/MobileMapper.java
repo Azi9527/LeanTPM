@@ -27,7 +27,8 @@ public interface MobileMapper {
     );
 
     MobileDtos.EquipmentStatusCount equipmentStatusCount(
-            @Param("tenantId") long tenantId
+            @Param("tenantId") long tenantId,
+            @Param("scope") DataPermission scope
     );
 
     MobileDtos.AbnormalCount inspectionAbnormalCount(
@@ -61,6 +62,11 @@ public interface MobileMapper {
             @Param("scope") DataPermission scope
     );
 
+    MobileDtos.EquipmentAccessProbe equipmentAccessProbe(
+            @Param("tenantId") long tenantId,
+            @Param("token") String token
+    );
+
     List<MobileDtos.TaskLink> activeTasks(
             @Param("tenantId") long tenantId,
             @Param("equipmentId") long equipmentId,
@@ -68,6 +74,11 @@ public interface MobileMapper {
     );
 
     List<MobileDtos.ApplicableInspectionScheme> applicableInspectionSchemes(
+            @Param("tenantId") long tenantId,
+            @Param("equipmentId") long equipmentId
+    );
+
+    List<MobileDtos.TodayInspectionRecord> todayInspections(
             @Param("tenantId") long tenantId,
             @Param("equipmentId") long equipmentId
     );

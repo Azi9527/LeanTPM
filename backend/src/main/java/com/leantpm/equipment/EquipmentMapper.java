@@ -1,5 +1,6 @@
 package com.leantpm.equipment;
 
+import com.leantpm.common.query.TableQuery;
 import com.leantpm.security.datascope.DataPermission;
 import org.apache.ibatis.annotations.Param;
 
@@ -18,6 +19,7 @@ public interface EquipmentMapper {
             @Param("currentStatusCode") String currentStatusCode,
             @Param("lifecycleStage") String lifecycleStage,
             @Param("status") Integer status,
+            @Param("tableQuery") TableQuery tableQuery,
             @Param("offset") int offset,
             @Param("pageSize") int pageSize
     );
@@ -31,7 +33,21 @@ public interface EquipmentMapper {
             @Param("locationId") Long locationId,
             @Param("currentStatusCode") String currentStatusCode,
             @Param("lifecycleStage") String lifecycleStage,
-            @Param("status") Integer status
+            @Param("status") Integer status,
+            @Param("tableQuery") TableQuery tableQuery
+    );
+
+    List<EquipmentDtos.StatusSummaryRow> summarizeEquipmentStatus(
+            @Param("tenantId") long tenantId,
+            @Param("scope") DataPermission scope,
+            @Param("keyword") String keyword,
+            @Param("categoryId") Long categoryId,
+            @Param("organizationId") Long organizationId,
+            @Param("locationId") Long locationId,
+            @Param("currentStatusCode") String currentStatusCode,
+            @Param("lifecycleStage") String lifecycleStage,
+            @Param("status") Integer status,
+            @Param("tableQuery") TableQuery tableQuery
     );
 
     EquipmentDtos.EquipmentRow findEquipment(
@@ -184,6 +200,7 @@ public interface EquipmentMapper {
             @Param("tenantId") long tenantId,
             @Param("scope") DataPermission scope,
             @Param("equipmentId") Long equipmentId,
+            @Param("organizationId") Long organizationId,
             @Param("activeOnly") boolean activeOnly
     );
 

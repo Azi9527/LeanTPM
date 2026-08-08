@@ -44,6 +44,7 @@ class NotificationMySqlIntegrationTest {
     private static final long MANUAL_TASK_ID = 9392L;
     private static final long OVERDUE_TASK_ID = 9393L;
     private static final long NO_MANAGER_TASK_ID = 9394L;
+    private static final long CROSS_TEAM_OVERDUE_TASK_ID = 9395L;
 
     @Autowired
     private NotificationService service;
@@ -88,10 +89,10 @@ class NotificationMySqlIntegrationTest {
     void triggersDueManualAndTwoLevelOverdueMessagesWithoutDuplicates() {
         NotificationDtos.ScanResult first = service.scanTenant(1L);
 
-        assertThat(first.createdMessages()).isGreaterThanOrEqualTo(6);
+        assertThat(first.createdMessages()).isGreaterThanOrEqualTo(7);
         assertThat(messageCount(DUE_TASK_ID)).isEqualTo(1);
         assertThat(messageCount(MANUAL_TASK_ID)).isEqualTo(1);
-        assertThat(messageCount(OVERDUE_TASK_ID)).isEqualTo(3);
+        assertThat(messageCount(OVERDUE_TASK_ID)).isEqualTo(4);
         assertThat(jdbc.queryForObject("""
                 SELECT COUNT(*) FROM notification_message
                 WHERE tenant_id = 1 AND business_type = 'INSPECTION'
@@ -100,24 +101,36 @@ class NotificationMySqlIntegrationTest {
                     'INSPECTION_OVERDUE_TEAM',
                     'INSPECTION_OVERDUE_WORKSHOP'
                   )
-                """, Long.class, OVERDUE_TASK_ID)).isEqualTo(3L);
+                """, Long.class, OVERDUE_TASK_ID)).isEqualTo(4L);
         assertThat(jdbc.queryForObject("""
                 SELECT COUNT(*) FROM notification_delivery delivery
                 JOIN notification_message message ON message.id = delivery.message_id
                 WHERE message.tenant_id = 1 AND message.business_id IN (?, ?, ?)
-                """, Long.class, DUE_TASK_ID, MANUAL_TASK_ID, OVERDUE_TASK_ID)).isEqualTo(10L);
+                """, Long.class, DUE_TASK_ID, MANUAL_TASK_ID, OVERDUE_TASK_ID)).isEqualTo(12L);
         assertThat(jdbc.queryForObject("""
                 SELECT COUNT(*) FROM notification_delivery delivery
                 JOIN notification_message message ON message.id = delivery.message_id
                 WHERE message.tenant_id = 1 AND message.business_id IN (?, ?, ?)
                   AND ((delivery.channel_code = 'SYSTEM' AND delivery.delivery_status = 'SENT')
                     OR (delivery.channel_code = 'ANDROID' AND delivery.delivery_status = 'READY'))
-                """, Long.class, DUE_TASK_ID, MANUAL_TASK_ID, OVERDUE_TASK_ID)).isEqualTo(10L);
+                """, Long.class, DUE_TASK_ID, MANUAL_TASK_ID, OVERDUE_TASK_ID)).isEqualTo(12L);
+
+        authenticate(
+                WORKSHOP_MANAGER_ID, "notification_workshop_manager",
+                "提醒车间主任", Set.of("WORKSHOP_MANAGER")
+        );
+        NotificationDtos.MessageRow managerMessage = service.messages(false, 1, 100).records().stream()
+                .filter(message -> message.businessId() == OVERDUE_TASK_ID)
+                .findFirst().orElseThrow();
+        NotificationDtos.BusinessDetail readOnlyDetail = service.businessDetail(managerMessage.id());
+        assertThat(readOnlyDetail.businessId()).isEqualTo(OVERDUE_TASK_ID);
+        assertThat(readOnlyDetail.equipmentName()).isNotBlank();
+        assertThat(readOnlyDetail.taskCode()).isEqualTo("NOTIFY-OVERDUE");
 
         service.scanTenant(1L);
         assertThat(messageCount(DUE_TASK_ID)).isEqualTo(1);
         assertThat(messageCount(MANUAL_TASK_ID)).isEqualTo(1);
-        assertThat(messageCount(OVERDUE_TASK_ID)).isEqualTo(3);
+        assertThat(messageCount(OVERDUE_TASK_ID)).isEqualTo(4);
     }
 
     @Test
@@ -149,6 +162,30 @@ class NotificationMySqlIntegrationTest {
                 SELECT escalation_status FROM notification_escalation
                 WHERE tenant_id = 1 AND business_type = 'INSPECTION' AND business_id = ?
                 """, String.class, OVERDUE_TASK_ID)).isEqualTo("STOPPED");
+    }
+
+    @Test
+    void sendsOverdueEscalationToAssigneeOwnTeamLeaderWhenTaskBelongsToAnotherTeam() {
+        long anotherTeamId = jdbc.queryForObject(
+                "SELECT id FROM organization WHERE tenant_id = 1 AND organization_code = 'TEAM-C-1'",
+                Long.class
+        );
+        insertTask(
+                CROSS_TEAM_OVERDUE_TASK_ID, "NOTIFY-CROSS-TEAM", anotherTeamId,
+                "TEAM-C-1", "PLAN", LocalDateTime.now().minusMinutes(300)
+        );
+
+        service.scanTenant(1L);
+
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*)
+                FROM notification_message
+                WHERE tenant_id = 1
+                  AND business_type = 'INSPECTION'
+                  AND business_id = ?
+                  AND recipient_user_id = ?
+                  AND message_type = 'INSPECTION_OVERDUE_TEAM'
+                """, Long.class, CROSS_TEAM_OVERDUE_TASK_ID, TEAM_LEADER_ID)).isEqualTo(1L);
     }
 
     private void insertUser(long id, String username, String name, long organizationId, String roleCode) {

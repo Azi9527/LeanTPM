@@ -16,6 +16,7 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -89,7 +90,7 @@ class VisualizationMySqlIntegrationTest {
                 LocalDate.now().minusDays(6), LocalDate.now(), 2L, "DAY"
         );
         assertThat(dashboard.core().total()).isEqualTo(8);
-        assertThat(dashboard.statusDistribution()).hasSize(12);
+        assertThat(dashboard.statusDistribution()).hasSize(4);
         assertThat(dashboard.organizationDistribution()).hasSize(4);
         assertThat(dashboard.liveEquipment()).hasSize(8);
         assertThat(dashboard.periodType()).isEqualTo("DAY");
@@ -110,12 +111,51 @@ class VisualizationMySqlIntegrationTest {
         VisualizationDtos.SceneDetail factory = service.scene(1L);
         assertThat(factory.scene().sceneCode()).isEqualTo("SCENE-FACTORY-A");
         assertThat(factory.nodes()).hasSize(2);
-        assertThat(factory.statusColors()).hasSize(12);
+        assertThat(factory.statusColors()).hasSize(4);
 
         VisualizationDtos.EquipmentSnapshot snapshot = service.equipmentSnapshot(1L);
         assertThat(snapshot.equipmentCode()).isEqualTo("VIZ-CNC-01");
         assertThat(snapshot.statusCode()).isEqualTo("RUNNING");
         assertThat(snapshot.recentEvents()).isNotEmpty();
+    }
+
+    @Test
+    void separatesCompletedRegistrationMetricsFromPlannedWorkflowMetrics() {
+        LocalDate statisticDate = LocalDate.now().plusDays(1);
+        var equipment = jdbc.queryForMap("""
+                SELECT id, organization_id, COALESCE(location_id, 1) AS location_id
+                FROM equipment
+                WHERE tenant_id = 1 AND deleted = 0 AND status = 1
+                ORDER BY id
+                LIMIT 1
+                """);
+        LocalDateTime completedTime = statisticDate.atTime(10, 30);
+        jdbc.update("""
+                INSERT INTO inspection_task
+                    (tenant_id, task_code, inspection_type, equipment_id,
+                     organization_id, location_id, planned_date, due_time,
+                     task_status, source_type, completed_time, created_by, updated_by)
+                VALUES
+                    (1, 'VIS-DASHBOARD-QUICK-ENTRY', 'DAILY', ?, ?, ?, ?, ?,
+                     'COMPLETED', 'QUICK_ENTRY', ?, ?, ?)
+                """,
+                equipment.get("id"), equipment.get("organization_id"),
+                equipment.get("location_id"), statisticDate,
+                statisticDate.atTime(23, 59, 59), completedTime, USER_ID, USER_ID
+        );
+
+        VisualizationDtos.DashboardResult dashboard = service.dashboard(
+                statisticDate, statisticDate, null, "DAY"
+        );
+
+        assertThat(dashboard.inspectionRegistration().registered()).isEqualTo(1);
+        assertThat(dashboard.inspectionRegistration().quickRegistered()).isEqualTo(1);
+        assertThat(dashboard.inspectionRegistration().equipmentCovered()).isEqualTo(1);
+        assertThat(dashboard.recentInspectionRegistrations()).hasSize(1);
+        assertThat(dashboard.recentInspectionRegistrations().getFirst().sourceType())
+                .isEqualTo("QUICK_ENTRY");
+        assertThat(dashboard.recentInspectionRegistrations().getFirst().completedTime())
+                .isEqualTo(completedTime);
     }
 
     @Test

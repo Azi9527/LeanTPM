@@ -183,6 +183,20 @@
           AND deleted = 0
     </update>
 
+    <update id="updateLocationOrganizations">
+        UPDATE location
+        SET organization_id = #{organizationId},
+            updated_by = #{operatorId},
+            updated_time = CURRENT_TIMESTAMP(3),
+            version = version + 1
+        WHERE tenant_id = #{tenantId}
+          AND deleted = 0
+          AND id IN
+          <foreach collection="ids" item="id" open="(" separator="," close=")">
+              #{id}
+          </foreach>
+    </update>
+
     <update id="softDeleteLocation">
         UPDATE location
         SET deleted = 1, status = 0, updated_by = #{operatorId}, version = version + 1

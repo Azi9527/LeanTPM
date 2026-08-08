@@ -1,5 +1,6 @@
 package com.leantpm.inspection;
 
+import com.leantpm.common.query.TableQuery;
 import com.leantpm.security.datascope.DataPermission;
 import org.apache.ibatis.annotations.Param;
 
@@ -22,20 +23,26 @@ public interface InspectionMapper {
 
     List<InspectionDtos.ItemRow> findItems(
             @Param("tenantId") long tenantId,
+            @Param("scope") DataPermission scope,
             @Param("keyword") String keyword,
+            @Param("organizationId") Long organizationId,
             @Param("itemCategory") String itemCategory,
             @Param("resultType") String resultType,
             @Param("status") Integer status,
+            @Param("tableQuery") TableQuery tableQuery,
             @Param("offset") int offset,
             @Param("pageSize") int pageSize
     );
 
     long countItems(
             @Param("tenantId") long tenantId,
+            @Param("scope") DataPermission scope,
             @Param("keyword") String keyword,
+            @Param("organizationId") Long organizationId,
             @Param("itemCategory") String itemCategory,
             @Param("resultType") String resultType,
-            @Param("status") Integer status
+            @Param("status") Integer status,
+            @Param("tableQuery") TableQuery tableQuery
     );
 
     InspectionDtos.ItemRow findItem(@Param("tenantId") long tenantId, @Param("id") long id);
@@ -77,6 +84,7 @@ public interface InspectionMapper {
             @Param("keyword") String keyword,
             @Param("inspectionType") String inspectionType,
             @Param("status") Integer status,
+            @Param("tableQuery") TableQuery tableQuery,
             @Param("offset") int offset,
             @Param("pageSize") int pageSize
     );
@@ -85,7 +93,8 @@ public interface InspectionMapper {
             @Param("tenantId") long tenantId,
             @Param("keyword") String keyword,
             @Param("inspectionType") String inspectionType,
-            @Param("status") Integer status
+            @Param("status") Integer status,
+            @Param("tableQuery") TableQuery tableQuery
     );
 
     InspectionDtos.SchemeRow findScheme(@Param("tenantId") long tenantId, @Param("id") long id);
@@ -112,6 +121,14 @@ public interface InspectionMapper {
             @Param("operatorId") long operatorId
     );
 
+    int updateSchemeStatus(
+            @Param("tenantId") long tenantId,
+            @Param("id") long id,
+            @Param("enabled") boolean enabled,
+            @Param("version") int version,
+            @Param("operatorId") long operatorId
+    );
+
     int nextSchemeVersionNumber(@Param("tenantId") long tenantId, @Param("schemeId") long schemeId);
 
     int insertSchemeVersion(
@@ -126,6 +143,15 @@ public interface InspectionMapper {
             @Param("tenantId") long tenantId,
             @Param("schemeId") long schemeId,
             @Param("versionNumber") int versionNumber
+    );
+
+    int insertSchemeDefaultAssignee(
+            @Param("tenantId") long tenantId,
+            @Param("schemeVersionId") long schemeVersionId,
+            @Param("userId") long userId,
+            @Param("primary") boolean primary,
+            @Param("sortOrder") int sortOrder,
+            @Param("operatorId") long operatorId
     );
 
     InspectionDtos.SchemeVersionRow findSchemeVersion(
@@ -221,6 +247,7 @@ public interface InspectionMapper {
             @Param("scope") DataPermission scope,
             @Param("keyword") String keyword,
             @Param("planStatus") String planStatus,
+            @Param("tableQuery") TableQuery tableQuery,
             @Param("offset") int offset,
             @Param("pageSize") int pageSize
     );
@@ -229,7 +256,8 @@ public interface InspectionMapper {
             @Param("tenantId") long tenantId,
             @Param("scope") DataPermission scope,
             @Param("keyword") String keyword,
-            @Param("planStatus") String planStatus
+            @Param("planStatus") String planStatus,
+            @Param("tableQuery") TableQuery tableQuery
     );
 
     InspectionDtos.PlanRow findPlan(
@@ -242,6 +270,18 @@ public interface InspectionMapper {
             @Param("tenantId") long tenantId,
             @Param("id") long id,
             @Param("request") InspectionDtos.UpdatePlanStatusRequest request,
+            @Param("operatorId") long operatorId
+    );
+
+    List<Long> findTaskIdsByPlan(
+            @Param("tenantId") long tenantId,
+            @Param("planId") long planId
+    );
+
+    int softDeletePlan(
+            @Param("tenantId") long tenantId,
+            @Param("id") long id,
+            @Param("version") int version,
             @Param("operatorId") long operatorId
     );
 
@@ -297,6 +337,7 @@ public interface InspectionMapper {
             @Param("primaryAssigneeUserId") Long primaryAssigneeUserId,
             @Param("idempotencyKey") String idempotencyKey,
             @Param("requestHash") String requestHash,
+            @Param("sourceType") String sourceType,
             @Param("operatorId") long operatorId
     );
 
@@ -323,6 +364,22 @@ public interface InspectionMapper {
             @Param("tenantId") long tenantId,
             @Param("scope") DataPermission scope,
             @Param("query") InspectionDtos.TaskQuery query
+    );
+
+    List<InspectionDtos.TaskRow> findTasksTable(
+            @Param("tenantId") long tenantId,
+            @Param("scope") DataPermission scope,
+            @Param("query") InspectionDtos.TaskQuery query,
+            @Param("tableQuery") TableQuery tableQuery,
+            @Param("offset") int offset,
+            @Param("pageSize") int pageSize
+    );
+
+    long countTasksTable(
+            @Param("tenantId") long tenantId,
+            @Param("scope") DataPermission scope,
+            @Param("query") InspectionDtos.TaskQuery query,
+            @Param("tableQuery") TableQuery tableQuery
     );
 
     List<InspectionDtos.TaskResultExportRow> findTaskResultExportRows(
@@ -410,6 +467,35 @@ public interface InspectionMapper {
             @Param("scope") DataPermission scope
     );
 
+    int softDeleteTask(
+            @Param("tenantId") long tenantId,
+            @Param("id") long id,
+            @Param("version") Integer version,
+            @Param("operatorId") long operatorId
+    );
+
+    int softDeleteTaskItems(@Param("tenantId") long tenantId, @Param("taskId") long taskId);
+
+    int softDeleteTaskResults(@Param("tenantId") long tenantId, @Param("taskId") long taskId);
+
+    int softDeleteTaskAbnormalities(
+            @Param("tenantId") long tenantId,
+            @Param("taskId") long taskId,
+            @Param("operatorId") long operatorId
+    );
+
+    int softDeleteTaskAttachments(@Param("tenantId") long tenantId, @Param("taskId") long taskId);
+
+    int softDeleteTaskEvents(@Param("tenantId") long tenantId, @Param("taskId") long taskId);
+
+    int softDeleteTaskAssignees(@Param("tenantId") long tenantId, @Param("taskId") long taskId);
+
+    int softDeleteTaskPhotoEvidence(
+            @Param("tenantId") long tenantId,
+            @Param("taskId") long taskId,
+            @Param("operatorId") long operatorId
+    );
+
     TaskItemData findTaskItem(
             @Param("tenantId") long tenantId,
             @Param("taskId") long taskId,
@@ -452,6 +538,18 @@ public interface InspectionMapper {
     );
 
     int deleteResultAttachments(@Param("tenantId") long tenantId, @Param("taskResultId") long taskResultId);
+
+    int deleteTaskSubmissionAttachments(
+            @Param("tenantId") long tenantId,
+            @Param("taskId") long taskId
+    );
+
+    int insertTaskSubmissionAttachment(
+            @Param("tenantId") long tenantId,
+            @Param("taskId") long taskId,
+            @Param("attachmentId") long attachmentId,
+            @Param("operatorId") long operatorId
+    );
 
     List<Long> findResultAttachmentIds(
             @Param("tenantId") long tenantId,
@@ -533,6 +631,13 @@ public interface InspectionMapper {
             @Param("operatorId") long operatorId
     );
 
+    int copySchemeDefaultAssigneesToTask(
+            @Param("tenantId") long tenantId,
+            @Param("taskId") long taskId,
+            @Param("schemeVersionId") long schemeVersionId,
+            @Param("operatorId") long operatorId
+    );
+
     int countTaskAssignees(
             @Param("tenantId") long tenantId,
             @Param("taskId") long taskId
@@ -581,6 +686,13 @@ public interface InspectionMapper {
 
     int countInvalidResultAttachments(@Param("tenantId") long tenantId, @Param("taskId") long taskId);
 
+    int countTaskSubmissionPhotos(@Param("tenantId") long tenantId, @Param("taskId") long taskId);
+
+    int countNonWatermarkedTaskSubmissionPhotos(
+            @Param("tenantId") long tenantId,
+            @Param("taskId") long taskId
+    );
+
     int insertAbnormal(
             @Param("tenantId") long tenantId,
             @Param("abnormalCode") String abnormalCode,
@@ -618,6 +730,7 @@ public interface InspectionMapper {
             @Param("scope") DataPermission scope,
             @Param("keyword") String keyword,
             @Param("abnormalStatus") String abnormalStatus,
+            @Param("tableQuery") TableQuery tableQuery,
             @Param("offset") int offset,
             @Param("pageSize") int pageSize
     );
@@ -626,7 +739,8 @@ public interface InspectionMapper {
             @Param("tenantId") long tenantId,
             @Param("scope") DataPermission scope,
             @Param("keyword") String keyword,
-            @Param("abnormalStatus") String abnormalStatus
+            @Param("abnormalStatus") String abnormalStatus,
+            @Param("tableQuery") TableQuery tableQuery
     );
 
     List<InspectionDtos.AbnormalRow> findTaskAbnormalities(
@@ -658,10 +772,12 @@ public interface InspectionMapper {
     InspectionDtos.Statistics statistics(
             @Param("tenantId") long tenantId,
             @Param("scope") DataPermission scope,
-            @Param("today") LocalDate today
+            @Param("startDate") LocalDate startDate,
+            @Param("endDate") LocalDate endDate,
+            @Param("organizationId") Long organizationId
     );
 
-    record ApplicableEquipment(long id, long organizationId, long locationId) {
+    record ApplicableEquipment(long id, long organizationId, Long locationId) {
     }
 
     record EquipmentSnapshot(
@@ -669,7 +785,7 @@ public interface InspectionMapper {
             String equipmentCode,
             String equipmentName,
             long organizationId,
-            long locationId
+            Long locationId
     ) {
     }
 

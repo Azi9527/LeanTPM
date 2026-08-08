@@ -358,12 +358,12 @@ public class MaintenanceTaskService {
             );
         }
         if (Boolean.TRUE.equals(task.stopRequiredFlag())
-                && !"MAINTENANCE".equals(runtime.statusCode())) {
+                && !"STOPPED".equals(runtime.statusCode())) {
             equipmentService.changeStatusFromBusiness(
                     task.equipmentId(),
                     new EquipmentDtos.ChangeStatusRequest(
-                            "MAINTENANCE",
-                            "维保任务 " + task.taskCode() + " 开始，设备进入保养状态",
+                            "STOPPED",
+                            "维保任务 " + task.taskCode() + " 开始，设备进入停机状态",
                             "MAINTENANCE",
                             runtime.statusVersion()
                     )
@@ -999,11 +999,15 @@ public class MaintenanceTaskService {
         }
         MaintenanceMapper.EquipmentRuntime runtime =
                 mapper.findEquipmentRuntime(current.tenantId(), task.equipmentId());
-        if (runtime == null || !"MAINTENANCE".equals(runtime.statusCode())) {
+        if (runtime == null || !"STOPPED".equals(runtime.statusCode())) {
             return;
         }
         String target = clean(task.restoreStatusCode()) == null
                 ? "IDLE" : task.restoreStatusCode();
+        target = "RUNNING".equals(target) ? "RUNNING" : "STOPPED".equals(target) ? "STOPPED" : "IDLE";
+        if (target.equals(runtime.statusCode())) {
+            return;
+        }
         equipmentService.changeStatusFromBusiness(
                 task.equipmentId(),
                 new EquipmentDtos.ChangeStatusRequest(

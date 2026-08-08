@@ -71,14 +71,14 @@ class EquipmentServiceTest {
     void rejectsIllegalStatusTransitionBeforeWritingHistory() {
         when(mapper.findCurrentStatus(1L, 100L)).thenReturn(
                 new EquipmentMapper.CurrentStatus(
-                        1L, "RUNNING", LocalDateTime.now().minusHours(1),
+                        1L, "SCRAPPED", LocalDateTime.now().minusHours(1),
                         null, "MANUAL", 3
                 )
         );
 
         assertThatThrownBy(() -> service.changeStatus(
                 100L,
-                new EquipmentDtos.ChangeStatusRequest("REPAIR", "非法跳转", "MANUAL", 3)
+                new EquipmentDtos.ChangeStatusRequest("RUNNING", "非法跳转", "MANUAL", 3)
         ))
                 .isInstanceOf(BusinessException.class)
                 .extracting("code")
@@ -96,24 +96,24 @@ class EquipmentServiceTest {
                 null, "MANUAL", 3
         );
         EquipmentMapper.CurrentStatus updated = new EquipmentMapper.CurrentStatus(
-                1L, "FAULT", LocalDateTime.now(), "异常停机", "MANUAL", 4
+                1L, "STOPPED", LocalDateTime.now(), "异常停机", "MANUAL", 4
         );
         when(mapper.findCurrentStatus(1L, 100L)).thenReturn(current, updated);
         when(mapper.updateCurrentStatus(
-                eq(1L), eq(100L), eq("FAULT"), any(), eq("异常停机"),
+                eq(1L), eq(100L), eq("STOPPED"), any(), eq("异常停机"),
                 eq("MANUAL"), eq(3), eq(7L)
         )).thenReturn(1);
 
         service.changeStatus(
                 100L,
                 new EquipmentDtos.ChangeStatusRequest(
-                        "FAULT", "异常停机", "MANUAL", 3
+                        "STOPPED", "异常停机", "MANUAL", 3
                 )
         );
 
         verify(mapper).closeOpenStatusHistory(eq(1L), eq(100L), any());
         verify(mapper).insertStatusHistory(
-                eq(1L), eq(100L), eq("RUNNING"), eq("FAULT"), any(),
+                eq(1L), eq(100L), eq("RUNNING"), eq("STOPPED"), any(),
                 eq("异常停机"), eq("MANUAL"), eq(7L)
         );
         verify(changeLogService).record(

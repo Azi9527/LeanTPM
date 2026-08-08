@@ -67,12 +67,12 @@ class SecurityHeadersMySqlIntegrationTest {
     @Test
     void acceptsConfiguredCorsOrigin() throws Exception {
         mockMvc.perform(options("/api/v1/mobile/bootstrap")
-                        .header("Origin", "http://localhost:5173")
+                        .header("Origin", "http://localhost:15173")
                         .header("Access-Control-Request-Method", "GET"))
                 .andExpect(status().isOk())
                 .andExpect(header().string(
                         "Access-Control-Allow-Origin",
-                        "http://localhost:5173"
+                        "http://localhost:15173"
                 ));
     }
 
@@ -87,8 +87,8 @@ class SecurityHeadersMySqlIntegrationTest {
     void exposesPublicCustomerBrandingWithoutAuthentication() throws Exception {
         mockMvc.perform(get("/api/v1/public/branding").secure(true))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.systemName").value("宝山矿业设备管理系统"))
-                .andExpect(jsonPath("$.data.shortName").value("宝山矿业"))
+                .andExpect(jsonPath("$.data.systemName").value("大宝山矿业设备管理系统"))
+                .andExpect(jsonPath("$.data.shortName").value("大宝山矿业"))
                 .andExpect(jsonPath("$.data.logoUrl").value("/branding/baoshan-mining-logo.png"))
                 .andExpect(jsonPath("$.data.primaryColor").value("#1c7d50"))
                 .andExpect(jsonPath("$.data.secondaryColor").value("#3e3a39"))

@@ -653,16 +653,16 @@ public class FaultService {
     }
 
     private void markEquipmentFault(FaultDtos.EquipmentTarget equipment, String reason) {
-        if (Set.of("FAULT", "REPAIR").contains(equipment.statusCode())) return;
+        if ("STOPPED".equals(equipment.statusCode())) return;
         equipmentService.changeStatusFromBusiness(equipment.id(), new EquipmentDtos.ChangeStatusRequest(
-                "FAULT", reason, "SYSTEM", equipment.statusVersion()
+                "STOPPED", reason, "SYSTEM", equipment.statusVersion()
         ));
     }
 
     private void markEquipmentRepair(FaultDtos.EquipmentTarget equipment, String reason) {
-        if ("REPAIR".equals(equipment.statusCode())) return;
+        if ("STOPPED".equals(equipment.statusCode())) return;
         equipmentService.changeStatusFromBusiness(equipment.id(), new EquipmentDtos.ChangeStatusRequest(
-                "REPAIR", reason, "SYSTEM", equipment.statusVersion()
+                "STOPPED", reason, "SYSTEM", equipment.statusVersion()
         ));
     }
 
@@ -816,7 +816,9 @@ public class FaultService {
     }
 
     private String defaultRestore(String status) {
-        return status == null || status.isBlank() ? "IDLE" : status.trim().toUpperCase();
+        if (status == null || status.isBlank()) return "IDLE";
+        String normalized = status.trim().toUpperCase();
+        return Set.of("IDLE", "RUNNING", "STOPPED").contains(normalized) ? normalized : "IDLE";
     }
 
     private String clean(String value) {
