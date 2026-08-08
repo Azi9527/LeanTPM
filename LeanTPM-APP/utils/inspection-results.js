@@ -73,10 +73,13 @@ export function validateInspectionResults(items, drafts) {
 	return ''
 }
 
-export function buildInspectionPayload(task, items, drafts, executionRemark = '') {
+export function buildInspectionPayload(task, items, drafts, executionRemark = '', taskAttachmentIds = []) {
 	return {
 		taskVersion: task.version,
 		executionRemark: executionRemark.trim() || null,
+		taskAttachmentIds: (taskAttachmentIds || [])
+			.filter((id) => Number.isSafeInteger(Number(id)) && Number(id) > 0)
+			.map(Number),
 		results: items.map((item) => {
 			const draft = drafts[item.id]
 			return {

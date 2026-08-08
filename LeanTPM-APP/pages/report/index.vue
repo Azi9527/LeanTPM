@@ -34,11 +34,32 @@
 
 		<view v-if="error" class="error" @click="load">{{ error }} · 点击重试</view>
 
+		<text class="metric-group-title">全部点检任务</text>
 		<view class="metrics">
 			<view><text>{{ due }}</text><text>应完成</text></view>
 			<view><text class="green">{{ completed }}</text><text>已完成</text></view>
 			<view><text class="orange">{{ pending }}</text><text>未完成</text></view>
 			<view><text class="red">{{ overdue }}</text><text>已逾期</text></view>
+		</view>
+
+		<view class="registration-card">
+			<view class="card-head"><view><text class="section-title">现场登记指标</text><text class="section-subtitle">按实际提交时间统计，不替代计划考核</text></view><text class="registration-badge">{{ quickRegistered }} 条扫码登记</text></view>
+			<view class="registration-metrics">
+				<view><text>{{ registered }}</text><text>完成登记</text></view>
+				<view><text>{{ equipmentCovered }}</text><text>覆盖设备</text></view>
+				<view><text>{{ quickRegistered }}</text><text>扫码直检</text></view>
+				<view><text>{{ abnormal }}</text><text>异常记录</text></view>
+			</view>
+		</view>
+
+		<view class="plan-card">
+			<view class="card-head"><view><text class="section-title">计划执行指标</text><text class="section-subtitle">仅统计由点检计划生成的任务</text></view><text class="plan-rate">{{ planCompletionRate }}%</text></view>
+			<view class="plan-metrics">
+				<view><text>{{ planDue }}</text><text>计划应检</text></view>
+				<view><text>{{ planCompleted }}</text><text>计划完成</text></view>
+				<view><text>{{ planOverdue }}</text><text>计划逾期</text></view>
+			</view>
+			<view class="plan-progress"><view :style="{ width: `${planCompletionRate}%` }" /></view>
 		</view>
 
 		<view class="chart-card completion-card">
@@ -115,6 +136,15 @@
 	const pending = computed(() => Number(report.value.pending || 0))
 	const overdue = computed(() => Number(report.value.overdue || 0))
 	const abnormal = computed(() => Number(report.value.abnormal || 0))
+	const planDue = computed(() => Number(report.value.planDue || 0))
+	const planCompleted = computed(() => Number(report.value.planCompleted || 0))
+	const planOverdue = computed(() => Number(report.value.planOverdue || 0))
+	const registered = computed(() => Number(report.value.registered || 0))
+	const quickRegistered = computed(() => Number(report.value.quickRegistered || 0))
+	const equipmentCovered = computed(() => Number(report.value.equipmentCovered || 0))
+	const planCompletionRate = computed(() => planDue.value
+		? Math.min(100, Math.round(planCompleted.value * 100 / planDue.value))
+		: 0)
 	const pendingWithoutOverdue = computed(() => Math.max(0, pending.value - overdue.value))
 	const completionRate = computed(() => due.value
 		? Math.min(100, Math.round(completed.value * 100 / due.value))
@@ -209,7 +239,8 @@
 	.hero-badge { min-width: 112rpx; padding: 18rpx 12rpx; border: 1rpx solid rgba(255,255,255,.24); border-radius: 18rpx; background: rgba(255,255,255,.08); text-align: center; }
 	.hero-badge text:first-child { font-size: 28rpx; font-weight: 800; }
 	.hero-badge text:last-child { margin-top: 5rpx; font-size: 18rpx; opacity: .68; }
-	.filter-card, .chart-card, .insight-card { margin-top: 20rpx; padding: 28rpx; border-radius: 22rpx; background: #fff; box-shadow: 0 10rpx 32rpx rgba(25,53,42,.05); }
+	.filter-card, .chart-card, .insight-card, .registration-card, .plan-card { margin-top: 20rpx; padding: 28rpx; border-radius: 22rpx; background: #fff; box-shadow: 0 10rpx 32rpx rgba(25,53,42,.05); }
+	.metric-group-title { display: block; margin: 24rpx 4rpx -6rpx; color: #264236; font-size: 25rpx; font-weight: 800; }
 	.section-title { display: block; color: #264236; font-size: 29rpx; font-weight: 800; }
 	.section-subtitle { display: block; margin-top: 6rpx; color: #8a9690; font-size: 20rpx; }
 	.quick-periods { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12rpx; margin-top: 20rpx; }
@@ -227,6 +258,18 @@
 	.metrics view { text-align: center; }
 	.metrics text { display: block; color: #31483e; font-size: 32rpx; font-weight: 800; }
 	.metrics text:last-child { margin-top: 6rpx; color: #89938e; font-size: 20rpx; font-weight: 400; }
+	.registration-badge { padding: 8rpx 13rpx; border-radius: 999rpx; color: #176c46; background: #e6f4ec; font-size: 19rpx; white-space: nowrap; }
+	.registration-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8rpx; margin-top: 24rpx; }
+	.registration-metrics view { text-align: center; }
+	.registration-metrics text { display: block; color: var(--brand-primary, #1c7d50); font-size: 34rpx; font-weight: 850; }
+	.registration-metrics text:last-child { margin-top: 7rpx; color: #87928c; font-size: 19rpx; font-weight: 400; }
+	.plan-rate { color: var(--brand-primary, #1c7d50); font-size: 35rpx; font-weight: 900; }
+	.plan-metrics { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 24rpx; }
+	.plan-metrics view { text-align: center; }
+	.plan-metrics text { display: block; color: #30483d; font-size: 31rpx; font-weight: 850; }
+	.plan-metrics text:last-child { margin-top: 6rpx; color: #89938e; font-size: 20rpx; font-weight: 400; }
+	.plan-progress { overflow: hidden; height: 14rpx; margin-top: 22rpx; border-radius: 999rpx; background: #e8eeeb; }
+	.plan-progress view { height: 100%; border-radius: inherit; background: var(--brand-primary, #1c7d50); }
 	.card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16rpx; }
 	.rate-status { padding: 8rpx 13rpx; border-radius: 999rpx; font-size: 19rpx; white-space: nowrap; }
 	.rate-status.good { color: #176c46; background: #e6f4ec; }

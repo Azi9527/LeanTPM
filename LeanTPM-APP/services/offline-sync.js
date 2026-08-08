@@ -31,7 +31,7 @@ async function doSync() {
 			attachQueuedPhotoToDraft(photo, uploaded.attachmentId)
 			removeQueuedPhoto(photo.id)
 			removeSavedFile(photo.originalPath)
-			removeSavedFile(photo.watermarkedPath)
+			if (photo.watermarkedPath !== photo.originalPath) removeSavedFile(photo.watermarkedPath)
 			photoCount += 1
 		} catch { break }
 	}

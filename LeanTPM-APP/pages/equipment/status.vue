@@ -34,9 +34,9 @@
 	import { errorMessage } from '../../utils/errors.js'
 
 	const statusOptions = [
-		{ label: '全部', value: '' }, { label: '运行', value: 'RUNNING' },
-		{ label: '停机', value: 'STOPPED' }, { label: '故障', value: 'FAULT' },
-		{ label: '维修', value: 'REPAIR' }, { label: '离线', value: 'OFFLINE' }
+		{ label: '全部', value: '' }, { label: '空闲', value: 'IDLE' },
+		{ label: '运行', value: 'RUNNING' }, { label: '停机', value: 'STOPPED' },
+		{ label: '报废', value: 'SCRAPPED' }
 	]
 	const labels = Object.fromEntries(statusOptions.map((item) => [item.value, item.label]))
 	const status = ref('')

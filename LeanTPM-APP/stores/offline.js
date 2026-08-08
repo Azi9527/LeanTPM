@@ -43,6 +43,14 @@ export function removeQueuedPhoto(id) {
 export function attachQueuedPhotoToDraft(record, attachmentId) {
 	const envelope = loadDraftEnvelope(record.workflow, record.taskId)
 	if (!envelope?.payload?.results) return false
+	if (record.taskItemId === null || record.taskItemId === undefined) {
+		envelope.payload.taskAttachmentIds = Array.from(new Set([
+			...(envelope.payload.taskAttachmentIds || []).filter((id) => id !== `queued:${record.id}`),
+			attachmentId
+		]))
+		saveDraftEnvelope(envelope)
+		return true
+	}
 	const result = envelope.payload.results.find((item) => item.taskItemId === record.taskItemId)
 	if (!result) return false
 	result.attachmentIds = Array.from(new Set([

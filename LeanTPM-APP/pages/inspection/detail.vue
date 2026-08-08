@@ -10,6 +10,10 @@
 				<view class="task-meta"><text>截止 {{ dateTime(detail.task.dueTime) }}</text><text>{{ detail.task.locationName }}</text></view>
 				<text v-if="detail.task.assigneeName" class="assignee">主执行：{{ detail.task.assigneeName }}；所有协作人均可提交，任一人提交即完成任务</text>
 			</view>
+			<view class="task-photo-policy" :class="{ required: detail.task.submissionPhotoRequiredFlag }">
+				<text>{{ detail.task.submissionPhotoRequiredFlag ? '提交要求：至少上传 1 张水印图片' : '提交图片：选传' }}</text>
+				<text>整单 {{ taskPhotoCount }}/{{ detail.task.submissionPhotoMaxCount || 9 }} 张</text>
+			</view>
 
 			<view v-if="['COMPLETED', 'PENDING_REVIEW'].includes(detail.task.taskStatus)" class="notice success">任务已完成，当前为只读结果</view>
 
@@ -54,8 +58,25 @@
 				</template>
 			</view>
 
-			<view v-if="executable" class="remark-card">
-				<text>执行备注</text><textarea :value="executionRemark" maxlength="1000" placeholder="可填写本次点检补充说明" @input="executionRemark = eventValue($event)" />
+			<view class="remark-card">
+				<text>执行备注</text><textarea :disabled="!executable" :value="executionRemark" maxlength="1000" placeholder="可填写本次点检补充说明" @input="executionRemark = eventValue($event)" />
+				<view class="task-photo-section">
+					<view class="task-photo-heading">
+						<view><text class="task-photo-title">整单现场图片</text><text class="task-photo-hint">{{ detail.task.submissionPhotoRequiredFlag ? '提交前至少上传 1 张，自动添加水印' : '可选上传，自动添加水印' }}</text></view>
+						<text class="task-photo-count">{{ taskPhotoCount }}/{{ taskPhotoMaximum }} 张</text>
+					</view>
+					<view class="task-photo-grid">
+						<view v-for="attachment in taskPhotoAttachments" :key="attachment.id" class="task-photo-tile" @click="previewAttachment(attachment)">
+							<image v-if="attachmentPreviewSource(attachment)" :src="attachmentPreviewSource(attachment)" mode="aspectFill" />
+							<view v-else class="task-photo-loading">图片</view>
+							<view v-if="executable" class="task-photo-remove" @click.stop="removeTaskPhoto(attachment)">×</view>
+							<text v-if="String(attachment.id).startsWith('queued:')" class="task-photo-pending">待同步</text>
+						</view>
+						<view v-if="executable && taskPhotoCount < taskPhotoMaximum" class="task-photo-add" @click="captureTaskPhotos">
+							<text class="task-photo-plus">＋</text><text>{{ uploadingTaskPhotos ? '处理中' : '照片' }}</text>
+						</view>
+					</view>
+				</view>
 			</view>
 			<view v-if="executable" class="bottom-space" />
 			<view v-if="executable" class="actions">
@@ -73,12 +94,12 @@
 	import { inspectionApi } from '../../api/inspection.js'
 	import { downloadFile } from '../../api/request.js'
 	import { connected } from '../../platform/network.js'
-	import { choosePhotos, persistTempFile, renderWatermark, watermarkLines } from '../../platform/photo.js'
+	import { choosePhotos, normalizePhotoPolicy, persistTempFile, removeSavedFile, renderWatermark, watermarkLines } from '../../platform/photo.js'
 	import { uploadPhotoEvidence, newPhotoQueueId } from '../../services/photo-evidence.js'
 	import { syncPendingWork } from '../../services/offline-sync.js'
 	import { brandingState } from '../../stores/branding.js'
 	import { mobileState } from '../../stores/mobile.js'
-	import { listQueuedPhotos, loadDraftEnvelope, queuePhoto, removeDraftEnvelope, saveDraftEnvelope } from '../../stores/offline.js'
+	import { listQueuedPhotos, loadDraftEnvelope, queuePhoto, removeDraftEnvelope, removeQueuedPhoto, saveDraftEnvelope } from '../../stores/offline.js'
 	import { displayName } from '../../stores/session.js'
 	import { createIdempotencyKey } from '../../utils/idempotency.js'
 	import { errorMessage, isConflict } from '../../utils/errors.js'
@@ -88,6 +109,7 @@
 	const detail = ref(null)
 	const drafts = reactive({})
 	const executionRemark = ref('')
+	const taskAttachmentIds = ref([])
 	const loading = ref(false)
 	const saving = ref(false)
 	const error = ref('')
@@ -95,6 +117,8 @@
 	const taskAttachments = ref([])
 	const localAttachments = ref([])
 	const uploadingItemId = ref(0)
+	const uploadingTaskPhotos = ref(false)
+	const taskPreviewPaths = reactive({})
 	const pendingSubmit = ref(false)
 	const localSavedAt = ref('')
 	const restoring = ref(false)
@@ -102,12 +126,25 @@
 	let autosaveTimer = null
 	const executable = computed(() => detail.value && ['PENDING', 'IN_PROGRESS', 'OVERDUE'].includes(detail.value.task.taskStatus))
 	const labels = { PENDING: '待执行', IN_PROGRESS: '执行中', PENDING_REVIEW: '已完成', COMPLETED: '已完成', OVERDUE: '已逾期', CANCELLED: '已取消', VOIDED: '已作废' }
+	const photoPolicy = computed(() => normalizePhotoPolicy(mobileState.bootstrap?.photoPolicy))
+	const taskPhotoMaximum = computed(() => Number(detail.value?.task?.submissionPhotoMaxCount || 9))
+	const taskPhotoCount = computed(() => taskAttachmentIds.value.length)
+	const taskPhotoAttachments = computed(() => {
+		const selected = new Set(taskAttachmentIds.value.map(String))
+		return taskAttachments.value
+			.filter((item) => item.attachmentType === 'TASK_PHOTO' && selected.has(String(item.id)))
+			.concat(localAttachments.value.filter((item) => item.taskItemId == null && selected.has(String(item.id))))
+	})
+	const effectivePhotoPolicy = computed(() => detail.value?.task?.submissionPhotoRequiredFlag
+		? { ...photoPolicy.value, watermarkEnabled: true, saveWatermarked: true }
+		: photoPolicy.value)
 
 	onLoad((query) => { taskId.value = Number(query?.id || 0); submitKey.value = createIdempotencyKey(`inspection-${taskId.value}`); load() })
 	onPullDownRefresh(async () => { try { await load() } finally { uni.stopPullDownRefresh() } })
 	onUnload(() => { if (autosaveTimer) clearTimeout(autosaveTimer); persistLocal(pendingSubmit.value) })
 	watch(drafts, scheduleLocalSave, { deep: true })
 	watch(executionRemark, scheduleLocalSave)
+	watch(taskAttachmentIds, scheduleLocalSave, { deep: true })
 
 	function eventValue(event) { return String(event?.detail?.value ?? '') }
 	function statusLabel(value) { return labels[value] || value }
@@ -127,7 +164,11 @@
 			for (const key of Object.keys(drafts)) delete drafts[key]
 			for (const item of result.items) drafts[item.id] = initialResultDraft(item)
 			try { taskAttachments.value = await inspectionApi.taskAttachments(taskId.value) } catch { taskAttachments.value = [] }
-			localAttachments.value = listQueuedPhotos().filter((item) => item.workflow === 'inspection' && item.taskId === taskId.value).map((item) => ({ id: `queued:${item.id}`, taskItemId: item.taskItemId, originalName: '离线现场照片.jpg', fileSize: 0, createdTime: item.createdAt, localPath: item.watermarkedPath, contentType: 'image/jpeg' }))
+			taskAttachmentIds.value = taskAttachments.value
+				.filter((item) => item.attachmentType === 'TASK_PHOTO')
+				.map((item) => item.id)
+			localAttachments.value = listQueuedPhotos().filter((item) => item.workflow === 'inspection' && item.taskId === taskId.value).map((item) => ({ id: `queued:${item.id}`, taskItemId: item.taskItemId, originalName: '离线现场照片.jpg', fileSize: 0, createdTime: item.createdAt, localPath: item.watermarkedPath || item.originalPath, contentType: 'image/jpeg' }))
+			void loadTaskPhotoPreviews()
 			const local = loadDraftEnvelope('inspection', taskId.value)
 			if (local && local.taskVersion === result.task.version) {
 				applyLocalPayload(local.payload)
@@ -136,6 +177,7 @@
 				localSavedAt.value = local.updatedAt || ''
 				uni.showToast({ title: local.pendingSubmit ? '已恢复待提交草稿' : '已恢复本地草稿', icon: 'none' })
 			} else if (local) removeDraftEnvelope('inspection', taskId.value)
+			restoreQueuedAttachmentIds()
 			if (executable.value) {
 				for (const item of result.items) if (item.resultType === 'NUMBER') applyNumericAbnormalState(item, drafts[item.id])
 			}
@@ -146,7 +188,17 @@
 	function applyLocalPayload(payload) {
 		if (!payload) return
 		executionRemark.value = payload.executionRemark || ''
+		if (Array.isArray(payload.taskAttachmentIds)) taskAttachmentIds.value = payload.taskAttachmentIds.slice()
 		for (const result of payload.results || []) if (drafts[result.taskItemId]) Object.assign(drafts[result.taskItemId], result)
+	}
+	function restoreQueuedAttachmentIds() {
+		for (const attachment of localAttachments.value) {
+			if (attachment.taskItemId == null) {
+				if (!taskAttachmentIds.value.map(String).includes(String(attachment.id))) taskAttachmentIds.value.push(attachment.id)
+			} else if (drafts[attachment.taskItemId] && !drafts[attachment.taskItemId].attachmentIds.map(String).includes(String(attachment.id))) {
+				drafts[attachment.taskItemId].attachmentIds.push(attachment.id)
+			}
+		}
 	}
 
 	function scheduleLocalSave() {
@@ -157,7 +209,7 @@
 
 	function persistLocal(submit) {
 		if (!detail.value || !executable.value) return
-		const payload = buildInspectionPayload(detail.value.task, detail.value.items, drafts, executionRemark.value)
+		const payload = buildInspectionPayload(detail.value.task, detail.value.items, drafts, executionRemark.value, taskAttachmentIds.value)
 		payload.results.forEach((result) => {
 			result.attachmentIds = (drafts[result.taskItemId]?.attachmentIds || []).slice()
 		})
@@ -201,6 +253,15 @@
 	function attachmentsForItem(itemId) {
 		return taskAttachments.value.filter((item) => item.taskItemId === itemId).concat(localAttachments.value.filter((item) => item.taskItemId === itemId))
 	}
+	function attachmentPreviewSource(attachment) {
+		return attachment.localPath || taskPreviewPaths[attachment.id] || ''
+	}
+	async function loadTaskPhotoPreviews() {
+		for (const attachment of taskAttachments.value.filter((item) => item.attachmentType === 'TASK_PHOTO' && String(item.contentType || '').startsWith('image/'))) {
+			if (taskPreviewPaths[attachment.id]) continue
+			try { taskPreviewPaths[attachment.id] = await downloadFile(`/inspection/tasks/${taskId.value}/attachments/${attachment.id}/content`) } catch { /* 点击时仍可重试 */ }
+		}
+	}
 	function fileSize(value) {
 		const bytes = Number(value || 0)
 		return bytes > 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`
@@ -209,7 +270,7 @@
 	async function capturePhoto(item) {
 		if (!executable.value || uploadingItemId.value) return
 		const remaining = Number(item.photoMaxCount || 10) - drafts[item.id].attachmentIds.length
-		if (remaining <= 0) return uni.showToast({ title: `最多 ${item.photoMaxCount} 张`, icon: 'none' })
+		if (remaining <= 0) return uni.showToast({ title: `本项目最多 ${item.photoMaxCount || 10} 张`, icon: 'none' })
 		uploadingItemId.value = item.id
 		try {
 			const sourceType = await choosePhotoSource()
@@ -225,7 +286,7 @@
 			uni.showToast({
 				title: !connected.value
 					? `${originalPaths.length} 张照片已加入离线队列`
-					: clockSkewWarning ? `${originalPaths.length} 张已上传，设备时钟有偏差` : `${originalPaths.length} 张水印照片已上传`,
+					: clockSkewWarning ? `${originalPaths.length} 张已上传，设备时钟有偏差` : `${originalPaths.length} 张现场照片已上传`,
 				icon: 'none'
 			})
 		} catch (cause) {
@@ -233,36 +294,89 @@
 		} finally { uploadingItemId.value = 0 }
 	}
 
+	async function captureTaskPhotos() {
+		if (!executable.value || uploadingTaskPhotos.value) return
+		const remaining = taskPhotoMaximum.value - taskPhotoCount.value
+		if (remaining <= 0) return uni.showToast({ title: `整单最多 ${taskPhotoMaximum.value} 张`, icon: 'none' })
+		uploadingTaskPhotos.value = true
+		try {
+			const sourceType = await choosePhotoSource()
+			if (!sourceType) return
+			const originalPaths = await choosePhotos([sourceType], sourceType === 'camera' ? 1 : remaining)
+			if (!originalPaths.length) return
+			let clockSkewWarning = false
+			for (const originalPath of originalPaths) {
+				const result = await processSelectedPhoto(null, originalPath)
+				clockSkewWarning ||= result.clockSkewWarning
+			}
+			if (!connected.value) persistLocal(false)
+			uni.showToast({
+				title: !connected.value ? `${originalPaths.length} 张整单图片已加入离线队列` : clockSkewWarning ? `${originalPaths.length} 张已上传，设备时钟有偏差` : `${originalPaths.length} 张整单图片已上传`,
+				icon: 'none'
+			})
+		} catch (cause) {
+			if (!String(cause?.errMsg || cause?.message || '').includes('cancel')) uni.showToast({ title: errorMessage(cause, '图片处理失败'), icon: 'none' })
+		} finally { uploadingTaskPhotos.value = false }
+	}
+
 	async function processSelectedPhoto(item, originalPath) {
 		const capturedAt = new Date()
-		const lines = watermarkLines({ brandName: brandingState.shortName, equipmentName: detail.value.task.equipmentName, equipmentCode: detail.value.task.equipmentCode, taskCode: detail.value.task.taskCode, itemName: item.itemName, executorName: displayName(), faultLocationText: item.inspectionPart || detail.value.task.locationName || item.itemName, capturedAt })
-		const watermarkedPath = await renderWatermark({ src: originalPath, canvasId: 'inspectionWatermark', page, lines })
+		const taskLevel = !item
+		const itemName = taskLevel ? '整单现场图片' : item.itemName
+		const locationText = taskLevel ? (detail.value.task.locationName || detail.value.task.equipmentName) : (item.inspectionPart || detail.value.task.locationName || item.itemName)
+		const policy = effectivePhotoPolicy.value
+		const lines = policy.watermarkEnabled ? watermarkLines({ brandName: brandingState.shortName, equipmentName: detail.value.task.equipmentName, equipmentCode: detail.value.task.equipmentCode, taskCode: detail.value.task.taskCode, itemName, executorName: displayName(), faultLocationText: locationText, capturedAt }, policy) : []
+		const generatedWatermarkedPath = policy.watermarkEnabled && policy.saveWatermarked
+			? await renderWatermark({
+				src: originalPath, canvasId: 'inspectionWatermark', page, lines,
+				position: policy.position, backgroundOpacity: policy.backgroundOpacity,
+				fontColor: policy.fontColor, backgroundColor: policy.backgroundColor
+			})
+			: ''
 		const serverTime = mobileState.bootstrap?.serverTime || capturedAt.toISOString()
 		const serverDate = new Date(serverTime)
-		const id = newPhotoQueueId(taskId.value, item.id)
+		const id = newPhotoQueueId(taskId.value, taskLevel ? 'task' : item.id)
 		const record = {
-			id, workflow: 'inspection', taskId: taskId.value, taskItemId: item.id,
-			originalPath, watermarkedPath,
+			id, workflow: 'inspection', taskId: taskId.value, taskItemId: taskLevel ? null : item.id,
+			originalPath: policy.saveOriginal ? originalPath : '',
+			watermarkedPath: generatedWatermarkedPath,
+			photoPolicy: policy,
 			metadata: {
-				workflowType: 'INSPECTION', taskId: taskId.value, taskItemId: item.id,
+				workflowType: 'INSPECTION', taskId: taskId.value, taskItemId: taskLevel ? null : item.id,
 				capturedDeviceTime: capturedAt.toISOString(), serverReferenceTime: serverTime,
 				deviceClockOffsetSeconds: Number.isNaN(serverDate.getTime()) ? 0 : Math.round((capturedAt.getTime() - serverDate.getTime()) / 1000),
-				faultLocationText: item.inspectionPart || detail.value.task.locationName || item.itemName,
-				watermarkText: lines.join('\n')
+				faultLocationText: locationText,
+				watermarkText: policy.watermarkEnabled ? lines.join('\n') : ''
 			}
 		}
 		if (!connected.value) {
-			record.originalPath = await persistTempFile(originalPath)
-			record.watermarkedPath = await persistTempFile(watermarkedPath)
+			if (record.originalPath) record.originalPath = await persistTempFile(record.originalPath)
+			if (record.watermarkedPath) record.watermarkedPath = await persistTempFile(record.watermarkedPath)
 			queuePhoto(record)
-			drafts[item.id].attachmentIds.push(`queued:${id}`)
-			localAttachments.value.push({ id: `queued:${id}`, taskItemId: item.id, originalName: `现场照片-${capturedAt.getTime()}.jpg`, fileSize: 0, createdTime: capturedAt.toISOString(), localPath: record.watermarkedPath, contentType: 'image/jpeg' })
+			if (taskLevel) taskAttachmentIds.value.push(`queued:${id}`)
+			else drafts[item.id].attachmentIds.push(`queued:${id}`)
+			localAttachments.value.push({ id: `queued:${id}`, taskItemId: taskLevel ? null : item.id, attachmentType: taskLevel ? 'TASK_PHOTO' : 'RESULT_PHOTO', originalName: `现场照片-${capturedAt.getTime()}.jpg`, fileSize: 0, createdTime: capturedAt.toISOString(), localPath: record.watermarkedPath || record.originalPath, contentType: 'image/jpeg' })
 			return { clockSkewWarning: false }
 		}
 		const uploaded = await uploadPhotoEvidence(record)
-		drafts[item.id].attachmentIds.push(uploaded.attachmentId)
-		localAttachments.value.push({ id: uploaded.attachmentId, taskItemId: item.id, originalName: uploaded.attachment.originalName || `现场照片-${capturedAt.getTime()}.jpg`, fileSize: uploaded.attachment.fileSize, createdTime: uploaded.attachment.createdTime, localPath: watermarkedPath, contentType: 'image/jpeg' })
+		if (taskLevel) taskAttachmentIds.value.push(uploaded.attachmentId)
+		else drafts[item.id].attachmentIds.push(uploaded.attachmentId)
+		localAttachments.value.push({ id: uploaded.attachmentId, taskItemId: taskLevel ? null : item.id, attachmentType: taskLevel ? 'TASK_PHOTO' : 'RESULT_PHOTO', originalName: uploaded.attachment.originalName || `现场照片-${capturedAt.getTime()}.jpg`, fileSize: uploaded.attachment.fileSize, createdTime: uploaded.attachment.createdTime, localPath: generatedWatermarkedPath || originalPath, contentType: 'image/jpeg' })
 		return { clockSkewWarning: Boolean(uploaded.evidence?.clockSkewWarning) }
+	}
+
+	function removeTaskPhoto(attachment) {
+		taskAttachmentIds.value = taskAttachmentIds.value.filter((id) => String(id) !== String(attachment.id))
+		localAttachments.value = localAttachments.value.filter((item) => String(item.id) !== String(attachment.id))
+		if (String(attachment.id).startsWith('queued:')) {
+			const queueId = String(attachment.id).slice('queued:'.length)
+			const queued = listQueuedPhotos().find((item) => item.id === queueId)
+			removeQueuedPhoto(queueId)
+			if (queued) {
+				removeSavedFile(queued.originalPath)
+				if (queued.watermarkedPath !== queued.originalPath) removeSavedFile(queued.watermarkedPath)
+			}
+		}
 	}
 
 	function choosePhotoSource() {
@@ -289,10 +403,16 @@
 		if (submit) {
 			const validation = validateInspectionResults(detail.value.items, drafts)
 			if (validation) return uni.showModal({ title: '无法提交', content: validation, showCancel: false })
+			if (detail.value.task.submissionPhotoRequiredFlag && taskPhotoCount.value < 1) {
+				return uni.showModal({ title: '无法提交', content: '本点检方案要求至少上传 1 张现场水印图片', showCancel: false })
+			}
+			if (taskPhotoCount.value > Number(detail.value.task.submissionPhotoMaxCount || 9)) {
+				return uni.showModal({ title: '无法提交', content: `整单最多允许上传 ${detail.value.task.submissionPhotoMaxCount || 9} 张图片`, showCancel: false })
+			}
 		}
 		saving.value = true
 		try {
-			let payload = buildInspectionPayload(detail.value.task, detail.value.items, drafts, executionRemark.value)
+			let payload = buildInspectionPayload(detail.value.task, detail.value.items, drafts, executionRemark.value, taskAttachmentIds.value)
 			persistLocal(submit)
 			if (!connected.value) {
 				uni.showToast({ title: submit ? '已离线排队，联网后自动提交' : '草稿已保存在本机', icon: 'none' })
@@ -310,7 +430,7 @@
 					await load()
 					return
 				}
-				if (updated) { applyLocalPayload(updated.payload); payload = buildInspectionPayload(detail.value.task, detail.value.items, drafts, executionRemark.value) }
+				if (updated) { applyLocalPayload(updated.payload); payload = buildInspectionPayload(detail.value.task, detail.value.items, drafts, executionRemark.value, taskAttachmentIds.value) }
 			}
 			if (submit) await inspectionApi.submitTask(taskId.value, payload, submitKey.value)
 			else await inspectionApi.saveDraft(taskId.value, payload)
@@ -334,6 +454,8 @@
 	.loading, .error { padding: 80rpx 24rpx; color: #839089; text-align: center; font-size: 25rpx; }
 	.error { color: #a00008; }
 	.task-hero { padding: 32rpx; border-radius: 26rpx; color: #fff; background: linear-gradient(140deg, #193f31, var(--brand-primary, #1c7d50)); }
+	.task-photo-policy { display: flex; justify-content: space-between; gap: 18rpx; margin-top: 18rpx; padding: 18rpx 22rpx; border-radius: 16rpx; color: #53615a; background: #eaf1ed; font-size: 22rpx; }
+	.task-photo-policy.required { color: #8a5b00; background: #fff5dc; font-weight: 700; }
 	.task-line, .task-meta, .stop-row { display: flex; align-items: center; justify-content: space-between; gap: 18rpx; }
 	.code { font-family: monospace; font-size: 22rpx; opacity: .75; }
 	.status { padding: 8rpx 16rpx; border-radius: 20rpx; background: rgba(255,255,255,.18); font-size: 21rpx; }
@@ -381,6 +503,20 @@
 	.remark-card { margin-top: 20rpx; padding: 26rpx; border-radius: 23rpx; background: #fff; }
 	.remark-card > text { color: #273f35; font-size: 27rpx; font-weight: 700; }
 	.remark-card textarea { box-sizing: border-box; width: 100%; height: 120rpx; margin-top: 15rpx; padding: 15rpx; border: 2rpx solid #dce5e0; border-radius: 14rpx; font-size: 24rpx; }
+	.task-photo-section { margin-top: 24rpx; padding-top: 23rpx; border-top: 1rpx solid #e4ebe7; }
+	.task-photo-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18rpx; }
+	.task-photo-title, .task-photo-hint { display: block; }
+	.task-photo-title { color: #273f35; font-size: 27rpx; font-weight: 700; }
+	.task-photo-hint { margin-top: 7rpx; color: #86928c; font-size: 20rpx; }
+	.task-photo-count { flex: 0 0 auto; color: var(--brand-primary, #1c7d50); font-size: 22rpx; font-weight: 700; }
+	.task-photo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14rpx; margin-top: 20rpx; }
+	.task-photo-tile, .task-photo-add { position: relative; overflow: hidden; aspect-ratio: 1; border-radius: 14rpx; }
+	.task-photo-tile image { width: 100%; height: 100%; }
+	.task-photo-loading, .task-photo-add { display: flex; align-items: center; justify-content: center; color: #84918a; background: #f0f4f2; font-size: 22rpx; }
+	.task-photo-add { flex-direction: column; border: 2rpx dashed #c8d6ce; }
+	.task-photo-plus { color: var(--brand-primary, #1c7d50); font-size: 52rpx; line-height: 1; }
+	.task-photo-remove { position: absolute; top: 8rpx; right: 8rpx; display: flex; width: 38rpx; height: 38rpx; align-items: center; justify-content: center; border-radius: 50%; color: #fff; background: rgba(0,0,0,.62); font-size: 30rpx; }
+	.task-photo-pending { position: absolute; right: 0; bottom: 0; left: 0; padding: 6rpx; color: #fff; background: rgba(0,0,0,.58); text-align: center; font-size: 18rpx; }
 	.bottom-space { height: calc(125rpx + env(safe-area-inset-bottom)); }
 	.actions { position: fixed; z-index: 20; right: 0; bottom: 0; left: 0; display: grid; grid-template-columns: 1fr 1.4fr; gap: 16rpx; padding: 18rpx 24rpx calc(18rpx + env(safe-area-inset-bottom)); border-top: 1rpx solid #e3e9e6; background: rgba(255,255,255,.97); }
 	.actions button { margin: 0; border-radius: 16rpx; font-size: 27rpx; }

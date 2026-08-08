@@ -40,20 +40,21 @@
 
 			<view class="action-card">
 				<text class="section-title">现场作业</text>
-				<button class="primary" :disabled="!context.inspectionSchemes.length || !canCreateTask" @click="openCreate">手工创建点检任务</button>
+				<button class="primary report-primary" :loading="quickReporting" :disabled="!context.inspectionSchemes.length || !canDirectReport" @click="openQuickReport">直接点检报告</button>
+				<button v-if="canCreateTask" class="secondary-action" :disabled="!context.inspectionSchemes.length" @click="openCreate">自定义创建点检任务</button>
 				<button class="disabled" disabled>设备保养（尚未开发）</button>
 				<button class="disabled" disabled>故障报修（尚未开发）</button>
-				<text v-if="!context.inspectionSchemes.length" class="tip">该设备暂无适用且已发布的点检方案</text>
-				<text v-else-if="!canCreateTask" class="tip">当前账号没有创建点检任务权限，请联系班组长或管理员</text>
+				<text v-if="!context.inspectionSchemes.length" class="tip">当前没有已启用且已发布的点检模板</text>
+				<text v-else-if="!canDirectReport" class="tip">当前账号没有点检执行权限，请联系班组长或管理员</text>
 			</view>
 
 			<view class="scheme-card">
-				<view class="section-head"><text class="section-title">适用点检方案</text><text>{{ context.inspectionSchemes.length }}</text></view>
+				<view class="section-head"><text class="section-title">可用点检模板</text><text>{{ context.inspectionSchemes.length }}</text></view>
 				<view v-for="scheme in context.inspectionSchemes" :key="scheme.schemeVersionId" class="scheme-row">
 					<view><text>{{ scheme.schemeName }}</text><text>{{ scheme.schemeCode }} · {{ inspectionTypeLabel(scheme.inspectionType) }}</text></view>
 					<text>已发布</text>
 				</view>
-				<text v-if="!context.inspectionSchemes.length" class="empty compact">暂无适用点检方案</text>
+				<text v-if="!context.inspectionSchemes.length" class="empty compact">暂无可用点检模板</text>
 			</view>
 
 			<view class="task-card">
@@ -66,6 +67,27 @@
 				<text v-if="!context.activeTasks.length" class="empty">当前没有分派给你的未关闭任务</text>
 			</view>
 		</template>
+
+		<view v-if="quickVisible && context" class="mask" @click.self="quickVisible = false">
+			<view class="sheet quick-sheet">
+				<view class="sheet-head"><text>直接点检报告</text><text @click="quickVisible = false">×</text></view>
+				<view class="quick-equipment"><text>{{ context.equipment.equipmentName }}</text><text>{{ context.equipment.equipmentCode }}</text></view>
+				<template v-if="context.inspectionSchemes.length > 1">
+					<text class="label">选择点检模板 *</text>
+					<picker :range="schemeLabels" :value="quickSchemeIndex" @change="changeQuickScheme"><view class="picker">{{ schemeLabels[quickSchemeIndex] || '请选择' }}<text>⌄</text></view></picker>
+				</template>
+				<view v-else class="single-scheme"><text>点检模板</text><text>{{ schemeLabels[0] }}</text></view>
+				<view v-if="matchingTodayInspection" class="duplicate-warning">
+					<text>今日已有同方案点检记录</text>
+					<text>{{ matchingTodayInspection.taskCode }} · {{ todayInspectionStatus(matchingTodayInspection.taskStatus) }}</text>
+					<text>{{ matchingTodayInspection.executorName || '尚未提交' }}{{ matchingTodayInspection.completedTime ? ` · ${dateTime(matchingTodayInspection.completedTime)}` : '' }}</text>
+				</view>
+				<view class="quick-note"><text>执行人</text><text>当前登录用户</text><text>计划日期</text><text>今天</text><text>完成规则</text><text>提交报告即完成任务</text></view>
+				<button v-if="matchingTodayInspection" class="secondary-action" @click="openTodayInspection">查看/继续今日记录</button>
+				<button class="primary submit" :loading="quickReporting" @click="createQuickReport(Boolean(matchingTodayInspection))">{{ matchingTodayInspection ? '仍要新增一条点检登记' : '开始点检报告' }}</button>
+				<view class="safe-space" />
+			</view>
+		</view>
 
 		<view v-if="createVisible && context" class="mask" @click.self="createVisible = false">
 			<scroll-view scroll-y class="sheet">
@@ -105,8 +127,9 @@
 	import { navigateTo, routeWithQuery } from '../../constants/routes.js'
 	import { can, sessionState } from '../../stores/session.js'
 	import { createIdempotencyKey } from '../../utils/idempotency.js'
-	import { errorMessage } from '../../utils/errors.js'
+	import { equipmentScanErrorMessage, errorMessage } from '../../utils/errors.js'
 	import { requireEquipmentToken } from '../../utils/equipment-token.js'
+	import { rememberEquipment } from '../../stores/recent-equipment.js'
 
 	const token = ref('')
 	const context = ref(null)
@@ -114,13 +137,23 @@
 	const error = ref('')
 	const createVisible = ref(false)
 	const creating = ref(false)
+	const quickVisible = ref(false)
+	const quickReporting = ref(false)
+	const quickSchemeIndex = ref(0)
+	const quickKey = ref('')
 	const createKey = ref('')
 	const schemeIndex = ref(0)
 	const teamIndex = ref(0)
 	const createForm = reactive({ assigneeUserIds: [], plannedDate: '', dueClock: '23:59', teamCode: '', remark: '设备扫码手工创建' })
 	const schemeLabels = computed(() => context.value?.inspectionSchemes?.map((item) => `${item.schemeName}（${item.schemeCode}）`) || [])
+	const matchingTodayInspection = computed(() => {
+		const scheme = context.value?.inspectionSchemes?.[quickSchemeIndex.value]
+		if (!scheme) return null
+		return context.value?.todayInspections?.find((item) => item.schemeVersionId === scheme.schemeVersionId) || null
+	})
 	const teamLabels = computed(() => ['不指定班组'].concat(context.value?.teams?.map((item) => item.teamName) || []))
 	const canCreateTask = computed(() => can('inspection:task:create'))
+	const canDirectReport = computed(() => can('inspection:task:execute'))
 	const lifecycleLabels = { PLANNED: '计划中', IN_SERVICE: '在役', IDLE: '闲置', RETIRED: '已退役', SCRAPPED: '已报废' }
 
 	onLoad((query) => {
@@ -150,8 +183,11 @@
 	async function load() {
 		if (!token.value || loading.value) return
 		loading.value = true; error.value = ''
-		try { context.value = await mobileApi.equipment(token.value) }
-		catch (cause) { error.value = errorMessage(cause, '设备二维码无效或无权访问') }
+		try {
+			context.value = await mobileApi.equipment(token.value)
+			rememberEquipment(token.value, context.value?.equipment)
+		}
+		catch (cause) { error.value = equipmentScanErrorMessage(cause) }
 		finally { loading.value = false }
 	}
 
@@ -166,6 +202,50 @@
 		teamIndex.value = matchedTeam >= 0 ? matchedTeam + 1 : 0
 		createKey.value = createIdempotencyKey('mobile-create')
 		createVisible.value = true
+	}
+	function openQuickReport() {
+		if (!canDirectReport.value) return uni.showToast({ title: '当前账号无点检执行权限', icon: 'none' })
+		if (!context.value?.inspectionSchemes?.length) return uni.showToast({ title: '暂无可用点检模板', icon: 'none' })
+		quickSchemeIndex.value = 0
+		quickKey.value = createIdempotencyKey('mobile-direct-report')
+		if (context.value.inspectionSchemes.length === 1 && !matchingTodayInspection.value) {
+			createQuickReport(false)
+			return
+		}
+		quickVisible.value = true
+	}
+	function changeQuickScheme(event) {
+		quickSchemeIndex.value = Number(event.detail.value)
+		quickKey.value = createIdempotencyKey('mobile-direct-report')
+	}
+	function todayInspectionStatus(status) {
+		return ({ PENDING: '待执行', IN_PROGRESS: '执行中', OVERDUE: '已逾期', PENDING_REVIEW: '已提交', COMPLETED: '已完成' })[status] || status
+	}
+	function openTodayInspection() {
+		const record = matchingTodayInspection.value
+		if (!record) return
+		quickVisible.value = false
+		navigateTo(routeWithQuery('/pages/inspection/detail', { id: record.taskId }))
+	}
+	async function createQuickReport(allowRepeat = false) {
+		const scheme = context.value?.inspectionSchemes?.[quickSchemeIndex.value]
+		if (!scheme) return uni.showToast({ title: '请选择点检方案', icon: 'none' })
+		if (quickReporting.value) return
+		quickReporting.value = true
+		try {
+			const result = await mobileApi.createInspectionReport(token.value, {
+				schemeVersionId: scheme.schemeVersionId,
+				remark: '设备扫码直接点检报告',
+				allowRepeat
+			}, quickKey.value)
+			quickVisible.value = false
+			uni.showToast({ title: '点检报告已创建', icon: 'success' })
+			navigateTo(routeWithQuery('/pages/inspection/detail', { id: result.id }))
+		} catch (cause) {
+			await load()
+			quickVisible.value = true
+			uni.showModal({ title: '无法开始点检', content: errorMessage(cause), showCancel: false })
+		} finally { quickReporting.value = false }
 	}
 	function changeScheme(event) { schemeIndex.value = Number(event.detail.value) }
 	function changeDate(event) { createForm.plannedDate = event.detail.value }
@@ -236,6 +316,8 @@
 	.section-title { color: #213e32; font-size: 30rpx; font-weight: 750; }
 	.action-card button { margin-top: 20rpx; border-radius: 16rpx; font-size: 26rpx; }
 	.primary { color: #fff; background: var(--brand-primary, #1c7d50); }
+	.report-primary { min-height: 94rpx; font-size: 30rpx !important; font-weight: 800; box-shadow: 0 12rpx 28rpx rgba(28,125,80,.22); }
+	.secondary-action { color: var(--brand-primary, #1c7d50); border: 2rpx solid var(--brand-primary, #1c7d50); background: #fff; }
 	.disabled { color: #9ca5a0; background: #eef1f0; }
 	.tip { display: block; margin-top: 15rpx; color: #b0760e; font-size: 22rpx; }
 	.section-head { display: flex; justify-content: space-between; }
@@ -257,6 +339,18 @@
 	.sheet { box-sizing: border-box; width: 100%; max-height: 91vh; padding: 32rpx 30rpx 0; border-radius: 34rpx 34rpx 0 0; background: #fff; }
 	.sheet-head { display: flex; justify-content: space-between; color: #213f32; font-size: 32rpx; font-weight: 800; }
 	.sheet-head text:last-child { padding: 0 12rpx; font-size: 42rpx; font-weight: 400; }
+	.quick-sheet { max-height: 76vh; }
+	.quick-equipment { display: flex; align-items: baseline; justify-content: space-between; gap: 18rpx; margin-top: 22rpx; padding: 22rpx; border-radius: 16rpx; background: #edf7f2; }
+	.quick-equipment text:first-child { color: #203f31; font-size: 28rpx; font-weight: 800; }
+	.quick-equipment text:last-child { color: #718079; font-family: monospace; font-size: 22rpx; }
+	.single-scheme { display: grid; grid-template-columns: 150rpx 1fr; gap: 16rpx; margin-top: 22rpx; padding: 20rpx 22rpx; border-radius: 16rpx; background: #f6f8f7; font-size: 23rpx; }
+	.single-scheme text:first-child { color: #87928c; }
+	.single-scheme text:last-child { color: #30483d; font-weight: 700; text-align: right; }
+	.duplicate-warning { margin-top: 20rpx; padding: 20rpx 22rpx; border: 2rpx solid #f2c56e; border-radius: 16rpx; color: #8b5a08; background: #fff7e5; }
+	.duplicate-warning text { display: block; font-size: 22rpx; line-height: 1.55; }
+	.duplicate-warning text:first-child { font-size: 25rpx; font-weight: 800; }
+	.quick-note { display: grid; grid-template-columns: 150rpx 1fr; gap: 14rpx 20rpx; margin-top: 26rpx; padding: 22rpx; border-radius: 16rpx; color: #30483d; background: #f6f8f7; font-size: 23rpx; }
+	.quick-note text:nth-child(odd) { color: #87928c; }
 	.label { display: block; margin: 28rpx 0 12rpx; color: #46574f; font-size: 24rpx; font-weight: 650; }
 	.picker { display: flex; height: 84rpx; align-items: center; justify-content: space-between; padding: 0 22rpx; border: 2rpx solid #dce5e0; border-radius: 16rpx; font-size: 25rpx; }
 	.chips { display: flex; flex-wrap: wrap; gap: 12rpx; }

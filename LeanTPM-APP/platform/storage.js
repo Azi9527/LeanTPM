@@ -14,6 +14,7 @@ export const STORAGE_KEYS = Object.freeze({
 	branding: `${PREFIX}branding`,
 	drafts: `${PREFIX}drafts`,
 	photoQueue: `${PREFIX}photo_queue`,
+	recentEquipment: `${PREFIX}recent_equipment`,
 	lastMessageIds: `${PREFIX}last_message_ids`
 })
 
@@ -74,6 +75,7 @@ export function clearBusinessStorage() {
 	for (const key of [
 		STORAGE_KEYS.drafts,
 		STORAGE_KEYS.photoQueue,
+		STORAGE_KEYS.recentEquipment,
 		STORAGE_KEYS.lastMessageIds
 	]) removeStored(key)
 }

@@ -23,7 +23,9 @@ export function displayName() {
 }
 
 export function can(permission) {
-	return Boolean(state.user?.permissions?.includes(permission))
+	const roles = Array.isArray(state.user?.roles) ? state.user.roles : []
+	const administrator = roles.some((role) => ['ADMIN', 'SUPER_ADMIN'].includes(String(role).toUpperCase()))
+	return administrator || Boolean(state.user?.permissions?.includes(permission))
 }
 
 export function rememberedUsername() {

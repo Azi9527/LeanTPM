@@ -12,14 +12,20 @@ async function upload(path, businessType, businessId, idempotencyKey) {
 }
 
 export async function uploadPhotoEvidence(record) {
-	const original = await upload(record.originalPath, 'MOBILE_PHOTO_ORIGINAL', record.taskId, `${record.id}-original`)
-	const watermarked = await upload(record.watermarkedPath, 'MOBILE_INSPECTION_WATERMARK', record.taskId, `${record.id}-watermarked`)
+	const original = record.originalPath
+		? await upload(record.originalPath, 'MOBILE_PHOTO_ORIGINAL', record.taskId, `${record.id}-original`)
+		: null
+	const watermarked = record.watermarkedPath
+		? await upload(record.watermarkedPath, 'MOBILE_INSPECTION_WATERMARK', record.taskId, `${record.id}-watermarked`)
+		: null
 	const evidence = await mobileApi.registerPhotoEvidence({
 		...record.metadata,
-		originalAttachmentId: original.id,
-		watermarkedAttachmentId: watermarked.id
+		originalAttachmentId: original?.id || null,
+		watermarkedAttachmentId: watermarked?.id || null
 	}, `${record.id}-evidence`)
-	return { attachmentId: watermarked.id, evidence, attachment: watermarked }
+	const attachment = watermarked || original
+	if (!attachment) throw new Error('没有可上传的现场照片')
+	return { attachmentId: attachment.id, evidence, attachment }
 }
 
 export function newPhotoQueueId(taskId, taskItemId) {

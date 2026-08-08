@@ -1,7 +1,7 @@
 <template>
 	<view class="launch-page">
 		<image class="customer-logo" src="/static/branding/baoshan-mining-logo.png" mode="widthFix" />
-		<text class="name">宝山矿业</text>
+		<text class="name">大宝山矿业</text>
 		<text class="subtitle">精益设备管理 · LeanTPM</text>
 		<view class="loading-line"><view class="loading-value"></view></view>
 	</view>

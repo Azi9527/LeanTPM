@@ -16,13 +16,33 @@
 
 		<view v-if="mobileState.error" class="error-card" @click="load">{{ mobileState.error }} · 点击重试</view>
 
+		<view class="scan-entry" @click="openScan">
+			<view class="scan-symbol">扫</view>
+			<view><text class="scan-title">扫码点检登记</text><text class="scan-subtitle">扫描设备二维码，直接进入设备并开始今日点检</text></view>
+			<text class="scan-arrow">›</text>
+		</view>
+
+		<view v-if="pendingOfflineWork" class="sync-banner" @click="openProfile">
+			<view><text>有 {{ pendingOfflineWork }} 项现场数据待同步</text><text>网络恢复后可在“我的”中立即同步</text></view><text>去同步 ›</text>
+		</view>
+
+		<view v-if="recentEquipment.length" class="section recent-section">
+			<view class="section-header"><text>最近扫码设备</text><text class="section-link" @click="openScan">继续扫码</text></view>
+			<view class="recent-card">
+				<view v-for="item in recentEquipment.slice(0, 3)" :key="item.equipmentId" class="recent-row" @click="openRecentEquipment(item)">
+					<view><text>{{ item.equipmentName }}</text><text>{{ item.equipmentCode }} · {{ item.organizationName || '未设置组织' }}</text></view>
+					<text>{{ item.statusName || '查看' }} ›</text>
+				</view>
+			</view>
+		</view>
+
 		<view class="section">
 			<view class="section-header" @click="openEquipmentStatus('')"><text>设备状态</text><text class="section-link">查看明细</text></view>
 			<view class="equipment-grid">
-				<view class="metric equipment-total" @click="openEquipmentStatus('')"><text class="metric-value">{{ equipment.total }}</text><text class="metric-label">设备总数</text></view>
+				<view class="metric equipment-total" @click="openEquipmentStatus('IDLE')"><text class="metric-value">{{ equipment.idle }}</text><text class="metric-label">空闲</text></view>
 				<view class="metric" @click="openEquipmentStatus('RUNNING')"><text class="metric-value running">{{ equipment.running }}</text><text class="metric-label">运行</text></view>
 				<view class="metric" @click="openEquipmentStatus('STOPPED')"><text class="metric-value warning">{{ equipment.stopped }}</text><text class="metric-label">停机</text></view>
-				<view class="metric" @click="openEquipmentStatus('FAULT')"><text class="metric-value danger">{{ equipment.fault }}</text><text class="metric-label">故障</text></view>
+				<view class="metric" @click="openEquipmentStatus('SCRAPPED')"><text class="metric-value">{{ equipment.scrapped }}</text><text class="metric-label">报废</text></view>
 			</view>
 		</view>
 
@@ -89,12 +109,14 @@
 	import { errorMessage, isServiceUnavailable } from '../../utils/errors.js'
 	import { inspectionTodoRows } from '../../utils/inspection-todos.js'
 	import AppBottomNav from '../../components/AppBottomNav.vue'
+	import { pendingWorkCount } from '../../stores/offline.js'
+	import { listRecentEquipment } from '../../stores/recent-equipment.js'
 
 	let serviceAlertShown = false
 
 	const todayText = ref('')
 	const avatarText = computed(() => displayName().slice(0, 1))
-	const equipment = computed(() => mobileState.bootstrap?.equipmentStatus || { total: 0, running: 0, stopped: 0, fault: 0, offline: 0 })
+	const equipment = computed(() => mobileState.bootstrap?.equipmentStatus || { total: 0, idle: 0, running: 0, stopped: 0, scrapped: 0 })
 	const inspection = computed(() => mobileState.bootstrap?.inspection || { dueToday: 0, pending: 0, overdue: 0, completedToday: 0 })
 	const report = computed(() => mobileState.bootstrap?.personalInspectionReport || {})
 	const completionRate = computed(() => report.value.due ? Math.round((report.value.completed || 0) * 100 / report.value.due) : 0)
@@ -103,6 +125,8 @@
 	const todoTotal = ref(0)
 	const todoLoading = ref(false)
 	const todoError = ref('')
+	const pendingOfflineWork = ref(0)
+	const recentEquipment = ref([])
 	const taskLabels = { PENDING: '待执行', IN_PROGRESS: '执行中', OVERDUE: '已逾期' }
 
 	onLoad(() => {
@@ -118,6 +142,8 @@
 
 	async function load() {
 		if (!sessionState.user) return
+		pendingOfflineWork.value = pendingWorkCount()
+		recentEquipment.value = listRecentEquipment()
 		try {
 			const bootstrap = await refreshMobileBootstrap()
 			serviceAlertShown = false
@@ -150,6 +176,7 @@
 	function taskStatusLabel(status) { return taskLabels[status] || status }
 	function dateTime(value) { return value ? String(value).replace('T', ' ').slice(0, 16) : '—' }
 	function openTask(id) { navigateTo(routeWithQuery('/pages/inspection/detail', { id })) }
+	function openRecentEquipment(item) { navigateTo(routeWithQuery(ROUTES.equipmentContext, { token: item.token })) }
 
 	function openProfile() { navigateTo(ROUTES.profile) }
 	function openScan() { navigateTo(ROUTES.scan) }
@@ -172,6 +199,25 @@
 	.network-dot { width: 15rpx; height: 15rpx; margin-right: 12rpx; border-radius: 50%; background: #77e2a9; box-shadow: 0 0 0 8rpx rgba(119,226,169,.14); }
 	.network-dot.offline { background: #ffcd70; box-shadow: 0 0 0 8rpx rgba(255,205,112,.14); }
 	.error-card { margin: 26rpx 28rpx 0; padding: 24rpx; border-radius: 18rpx; color: #a00008; background: #fff0f0; font-size: 25rpx; text-align: center; }
+	.scan-entry { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 20rpx; margin: 28rpx 28rpx 0; padding: 28rpx; border-radius: 25rpx; color: #fff; background: linear-gradient(135deg, var(--brand-primary, #1c7d50), #2d9967); box-shadow: 0 16rpx 38rpx rgba(28,125,80,.22); }
+	.scan-symbol { display: flex; width: 82rpx; height: 82rpx; align-items: center; justify-content: center; border-radius: 25rpx; background: rgba(255,255,255,.18); font-size: 32rpx; font-weight: 850; }
+	.scan-title, .scan-subtitle { display: block; }
+	.scan-title { font-size: 31rpx; font-weight: 850; }
+	.scan-subtitle { margin-top: 8rpx; color: rgba(255,255,255,.75); font-size: 21rpx; line-height: 1.5; }
+	.scan-arrow { font-size: 44rpx; }
+	.sync-banner { display: flex; align-items: center; justify-content: space-between; gap: 20rpx; margin: 20rpx 28rpx 0; padding: 22rpx 25rpx; border: 2rpx solid #e8bd65; border-radius: 20rpx; color: #895b0d; background: #fff7e5; }
+	.sync-banner view text { display: block; font-size: 23rpx; font-weight: 750; }
+	.sync-banner view text:last-child { margin-top: 5rpx; color: #a17b38; font-size: 19rpx; font-weight: 400; }
+	.sync-banner > text { flex: none; font-size: 22rpx; font-weight: 750; }
+	.recent-section { margin-top: 24rpx; }
+	.recent-card { overflow: hidden; border-radius: 22rpx; background: #fff; box-shadow: 0 12rpx 38rpx rgba(25,53,42,.06); }
+	.recent-row { display: flex; align-items: center; justify-content: space-between; gap: 20rpx; padding: 22rpx 24rpx; border-bottom: 1rpx solid #edf1ef; }
+	.recent-row:last-child { border-bottom: 0; }
+	.recent-row view { min-width: 0; }
+	.recent-row view text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.recent-row view text:first-child { color: #203d31; font-size: 26rpx; font-weight: 760; }
+	.recent-row view text:last-child { margin-top: 6rpx; color: #87928c; font-size: 20rpx; }
+	.recent-row > text { flex: none; color: var(--brand-primary, #1c7d50); font-size: 21rpx; }
 	.section { margin: 28rpx 28rpx 0; }
 	.section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18rpx; color: #203c31; font-size: 31rpx; font-weight: 750; }
 	.section-link { color: var(--brand-primary, #1c7d50); font-size: 23rpx; font-weight: 500; }

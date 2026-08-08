@@ -9,6 +9,11 @@ export const API_BASE_URL_KEY = STORAGE_KEYS.serverBaseUrl
 
 export const DEFAULT_SERVER_URL = 'http://192.168.31.91:18080'
 
+export const SERVER_PRESETS = Object.freeze([
+	{ label: '测试云服务', url: 'https://851xn5pikw00.guyubao.com' },
+	{ label: '测试内网服务', url: 'http://192.168.31.91:18080' }
+])
+
 export function normalizeServerBaseUrl(value) {
 	const clean = String(value || '').trim().replace(/\/+$/, '')
 	if (!/^https?:\/\/[^\s/]+(?::\d+)?(?:\/.*)?$/i.test(clean)) {
@@ -30,6 +35,9 @@ export function saveServerBaseUrl(value) {
 	const previous = getServerBaseUrl()
 	if (previous && previous !== normalized) clearEnterpriseStorage()
 	setStored(API_BASE_URL_KEY, normalized)
+	if (getServerBaseUrl() !== normalized) {
+		throw new Error('服务地址保存失败，请检查 APP 存储权限后重试')
+	}
 	return normalized
 }
 

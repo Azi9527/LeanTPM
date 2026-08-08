@@ -9,6 +9,11 @@
 			<text class="equipment">{{ task.equipmentName }}</text>
 			<text class="scheme">{{ task.schemeNameSnapshot }}</text>
 			<view class="meta"><text>{{ task.locationName || '未设置位置' }}</text><text>截止 {{ dateTime(task.dueTime) }}</text></view>
+			<view v-if="isCompleted(task)" class="completion-overview">
+				<view><text class="overview-label">完成时间</text><text>{{ dateTime(task.completedTime || task.submittedTime) }}</text></view>
+				<view><text class="overview-label">完成人</text><text>{{ task.completedByName || '—' }}</text></view>
+				<view><text class="overview-label">异常概况</text><text :class="task.abnormalItemCount > 0 ? 'abnormal' : 'normal'">{{ task.abnormalItemCount > 0 ? `${task.abnormalItemCount} 个异常项` : '无异常项' }}</text></view>
+			</view>
 			<view class="progress"><view :style="{ width: `${progress(task)}%` }" /></view>
 			<view class="progress-text"><text>{{ task.completedItemCount }}/{{ task.itemCount }} 项</text><text v-if="task.assigneeName">主执行：{{ task.assigneeName }}</text></view>
 		</view>
@@ -43,6 +48,7 @@
 
 	function statusLabel(value) { return labels[value] || value }
 	function dateTime(value) { return value ? String(value).replace('T', ' ').slice(0, 16) : '—' }
+	function isCompleted(task) { return ['COMPLETED', 'PENDING_REVIEW'].includes(task?.taskStatus) }
 	function progress(task) { return task.itemCount ? Math.min(100, Math.round(task.completedItemCount * 100 / task.itemCount)) : 0 }
 	async function selectStatus(value) { activeStatus.value = value; await load() }
 
@@ -50,7 +56,16 @@
 		if (loading.value) return
 		loading.value = true; error.value = ''
 		try {
-			const result = await inspectionApi.tasks({ taskStatus: activeStatus.value || undefined, mineOnly: true, page: 1, pageSize: 100 })
+			const completed = activeStatus.value === 'COMPLETED'
+			const result = await inspectionApi.tasks({
+				taskStatus: completed ? undefined : (activeStatus.value || undefined),
+				statusGroup: completed ? 'COMPLETED' : undefined,
+				sortBy: completed ? 'completedTime' : undefined,
+				sortDirection: completed ? 'DESC' : undefined,
+				mineOnly: true,
+				page: 1,
+				pageSize: 100
+			})
 			rows.value = result?.records || []
 			if (initialTaskId > 0) { const id = initialTaskId; initialTaskId = 0; openTask(id) }
 		} catch (cause) { error.value = errorMessage(cause, '点检任务加载失败') }
@@ -76,6 +91,11 @@
 	.equipment { margin-top: 20rpx; color: #213e32; font-size: 31rpx; font-weight: 800; }
 	.scheme { margin-top: 7rpx; color: #75827c; font-size: 24rpx; }
 	.meta { margin-top: 22rpx; color: #89938e; font-size: 21rpx; }
+	.completion-overview { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12rpx; margin-top: 22rpx; padding: 18rpx; border-radius: 16rpx; background: #f4f7f5; color: #315044; font-size: 21rpx; }
+	.completion-overview view { display: flex; min-width: 0; flex-direction: column; gap: 7rpx; }
+	.overview-label { color: #89938e; font-size: 19rpx; }
+	.abnormal { color: #b4232d; font-weight: 700; }
+	.normal { color: #1c7d50; font-weight: 700; }
 	.progress { overflow: hidden; height: 10rpx; margin-top: 22rpx; border-radius: 5rpx; background: #edf1ef; }
 	.progress view { height: 100%; border-radius: 5rpx; background: var(--brand-primary, #1c7d50); }
 	.progress-text { margin-top: 10rpx; color: #8c9691; font-size: 20rpx; }

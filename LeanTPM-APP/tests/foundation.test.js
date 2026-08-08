@@ -8,7 +8,13 @@ globalThis.uni = {
 	removeStorageSync: (key) => values.delete(key)
 }
 
-const { normalizeServerBaseUrl, testServerConnection } = await import('../utils/server.js')
+const {
+	SERVER_PRESETS,
+	getServerBaseUrl,
+	normalizeServerBaseUrl,
+	saveServerBaseUrl,
+	testServerConnection
+} = await import('../utils/server.js')
 const { createIdempotencyKey } = await import('../utils/idempotency.js')
 const { brandingLogoSource, normalizeBranding } = await import('../utils/branding.js')
 const { reportPeriodRange } = await import('../utils/report-period.js')
@@ -16,9 +22,10 @@ const { inspectionTodoRows } = await import('../utils/inspection-todos.js')
 const { extractEquipmentToken, requireEquipmentToken } = await import('../utils/equipment-token.js')
 const { applyNumericAbnormalState, initialResultDraft, inferAbnormal, validateInspectionResults, buildInspectionPayload } = await import('../utils/inspection-results.js')
 const { saveDraftEnvelope, loadDraftEnvelope, queuePhoto, attachQueuedPhotoToDraft, listQueuedPhotos, removeDraftEnvelope } = await import('../stores/offline.js')
-const { choosePhoto, choosePhotos, formatBusinessDateTime, watermarkLines } = await import('../platform/photo.js')
+const { listRecentEquipment, rememberEquipment } = await import('../stores/recent-equipment.js')
+const { choosePhoto, choosePhotos, formatBusinessDateTime, normalizePhotoPolicy, watermarkLines } = await import('../platform/photo.js')
 const { compareVersionCodes } = await import('../utils/version.js')
-const { ApiError, errorMessage, isConflict } = await import('../utils/errors.js')
+const { ApiError, equipmentScanErrorMessage, errorMessage, isConflict } = await import('../utils/errors.js')
 const secureStorage = await import('../platform/secure-storage.js')
 const storage = await import('../platform/storage.js')
 
@@ -26,6 +33,38 @@ test('normalizes enterprise server URLs', () => {
 	assert.equal(normalizeServerBaseUrl(' http://192.168.31.91:18080/ '), 'http://192.168.31.91:18080/api/v1')
 	assert.equal(normalizeServerBaseUrl('https://tpm.example.com/api/v1'), 'https://tpm.example.com/api/v1')
 	assert.throws(() => normalizeServerBaseUrl('127.0.0.1:8080'), /HTTP/)
+})
+
+test('explains equipment scan failures with actionable business reasons', () => {
+	assert.equal(
+		equipmentScanErrorMessage(new ApiError(
+			'MOBILE_EQUIPMENT_DATA_SCOPE_DENIED',
+			'循环泵站一号（VIZ-PUMP-01）归属「机加二线」，当前账号的数据范围不包含该组织或其下级。',
+			403
+		)),
+		'循环泵站一号（VIZ-PUMP-01）归属「机加二线」，当前账号的数据范围不包含该组织或其下级。'
+	)
+	assert.match(
+		equipmentScanErrorMessage(new ApiError('FORBIDDEN', '无权执行此操作', 403)),
+		/设备扫码查看/
+	)
+})
+
+test('provides cloud and intranet server presets while retaining manual URL support', () => {
+	assert.deepEqual(SERVER_PRESETS, [
+		{ label: '测试云服务', url: 'https://851xn5pikw00.guyubao.com' },
+		{ label: '测试内网服务', url: 'http://192.168.31.91:18080' }
+	])
+	assert.equal(
+		normalizeServerBaseUrl(SERVER_PRESETS[0].url),
+		'https://851xn5pikw00.guyubao.com/api/v1'
+	)
+})
+
+test('persists the exact API base URL used by subsequent login requests', () => {
+	const saved = saveServerBaseUrl('http://192.168.31.91:18080')
+	assert.equal(saved, 'http://192.168.31.91:18080/api/v1')
+	assert.equal(getServerBaseUrl(), saved)
 })
 
 test('reports WeChat request-domain failures clearly', async () => {
@@ -92,6 +131,16 @@ test('extracts LeanTPM equipment tokens from labels and URLs', () => {
 	assert.throws(() => requireEquipmentToken('bad'), /LeanTPM/)
 })
 
+test('keeps recently scanned equipment unique and newest first', () => {
+	values.delete('leantpm_uni_recent_equipment')
+	rememberEquipment('token-1', { equipmentId: 1, equipmentCode: 'E-01', equipmentName: '设备一', statusName: '运行' })
+	rememberEquipment('token-2', { equipmentId: 2, equipmentCode: 'E-02', equipmentName: '设备二', statusName: '空闲' })
+	rememberEquipment('token-1-new', { equipmentId: 1, equipmentCode: 'E-01', equipmentName: '设备一', statusName: '停机' })
+	assert.deepEqual(listRecentEquipment().map((item) => item.equipmentId), [1, 2])
+	assert.equal(listRecentEquipment()[0].token, 'token-1-new')
+	assert.equal(listRecentEquipment()[0].statusName, '停机')
+})
+
 test('validates qualitative and quantitative inspection results', () => {
 	const items = [
 		{ id: 1, itemName: '防护罩', resultType: 'PASS_FAIL', abnormalDefaultStopFlag: false },
@@ -104,8 +153,9 @@ test('validates qualitative and quantitative inspection results', () => {
 	applyNumericAbnormalState(items[1], drafts[2])
 	drafts[2].abnormalDescription = '超过上限'
 	assert.equal(validateInspectionResults(items, drafts), '')
-	const payload = buildInspectionPayload({ version: 3 }, items, drafts, '现场完成')
+	const payload = buildInspectionPayload({ version: 3 }, items, drafts, '现场完成', [81, '82', 'queued:local'])
 	assert.equal(payload.taskVersion, 3)
+	assert.deepEqual(payload.taskAttachmentIds, [81, 82])
 	assert.equal(payload.results[1].numericValue, 90)
 })
 
@@ -152,11 +202,14 @@ test('selects camera or phone album as the photo source', async () => {
 })
 
 test('queues photos before pending drafts and writes attachment ids back', () => {
-	const envelope = saveDraftEnvelope({ workflow: 'inspection', taskId: 9, taskVersion: 2, pendingSubmit: true, idempotencyKey: 'submit-9', payload: { taskVersion: 2, results: [{ taskItemId: 12, attachmentIds: [] }] } })
+	const envelope = saveDraftEnvelope({ workflow: 'inspection', taskId: 9, taskVersion: 2, pendingSubmit: true, idempotencyKey: 'submit-9', payload: { taskVersion: 2, taskAttachmentIds: [], results: [{ taskItemId: 12, attachmentIds: [] }] } })
 	queuePhoto({ id: 'photo-1', workflow: 'inspection', taskId: 9, taskItemId: 12, originalPath: 'a.jpg', watermarkedPath: 'b.jpg' })
 	assert.equal(listQueuedPhotos().length, 1)
 	assert.equal(attachQueuedPhotoToDraft(listQueuedPhotos()[0], 88), true)
 	assert.deepEqual(loadDraftEnvelope('inspection', 9).payload.results[0].attachmentIds, [88])
+	queuePhoto({ id: 'task-photo-1', workflow: 'inspection', taskId: 9, taskItemId: null, originalPath: 'c.jpg', watermarkedPath: 'd.jpg' })
+	assert.equal(attachQueuedPhotoToDraft(listQueuedPhotos().find((item) => item.id === 'task-photo-1'), 89), true)
+	assert.deepEqual(loadDraftEnvelope('inspection', 9).payload.taskAttachmentIds, [89])
 	removeDraftEnvelope('inspection', 9)
 })
 
@@ -169,6 +222,27 @@ test('builds a GPS-free equipment location watermark', () => {
 	assert.equal(formatBusinessDateTime(capturedAt), '2026-08-04 11:49:21')
 	assert.doesNotMatch(lines.at(-1), /Tue|GMT|CST/)
 	assert.doesNotMatch(lines.join(' '), /GPS|经度|纬度/)
+})
+
+test('normalizes configurable photo retention and watermark templates', () => {
+	assert.deepEqual(
+		normalizePhotoPolicy({ watermarkEnabled: false, saveOriginal: false, saveWatermarked: true }),
+		{
+			watermarkEnabled: false,
+			saveOriginal: true,
+			saveWatermarked: false,
+			template: '{brand}\n{equipmentName} ({equipmentCode})\n{taskCode} · {itemName}\n位置/部位 {location}\n{capturedAt} · 执行人 {executor}',
+			position: 'BOTTOM',
+			backgroundOpacity: 74,
+			fontColor: '#ffffff',
+			backgroundColor: '#031922'
+		}
+	)
+	const lines = watermarkLines(
+		{ brandName: '客户矿业', equipmentCode: 'P-01', executorName: '001', capturedAt: new Date(2026, 7, 5, 9, 8, 7) },
+		{ template: '{brand} / {equipmentCode}\n{capturedAt} / {executor}', position: 'TOP' }
+	)
+	assert.deepEqual(lines, ['客户矿业 / P-01', '2026-08-05 09:08:07 / 001'])
 })
 
 test('enforces minimum Android version codes', () => {

@@ -22,9 +22,6 @@
 		},
 		onShow: function() {
 			recoverMissingSession()
-		},
-		onHide: function() {
-			console.log('App Hide')
 		}
 	}
 </script>
