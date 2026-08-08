@@ -30,11 +30,17 @@ export function accessToken(): string | null {
 export async function initializeHttpStorage(): Promise<void> {
   accessTokenCache = await vaultGet(ACCESS_TOKEN_KEY)
   refreshTokenCache = await vaultGet(REFRESH_TOKEN_KEY)
-  const configuredBaseUrl = await vaultGet(API_BASE_URL_KEY)
-  if (configuredBaseUrl) {
-    apiBaseUrlCache = normalizeApiBaseUrl(configuredBaseUrl)
-    http.defaults.baseURL = apiBaseUrlCache
+  // The configurable server address belongs to the installed native app only.
+  // Reusing it in the browser makes the PC client silently send requests to an
+  // old LAN/tunnel address instead of the Vite/Nginx same-origin `/api/v1`.
+  if (!nativeContainer) {
+    apiBaseUrlCache = WEB_API_BASE_URL
+    http.defaults.baseURL = WEB_API_BASE_URL
+    return
   }
+  const configuredBaseUrl = await vaultGet(API_BASE_URL_KEY)
+  if (configuredBaseUrl) apiBaseUrlCache = normalizeApiBaseUrl(configuredBaseUrl)
+  http.defaults.baseURL = apiBaseUrlCache
 }
 
 export async function storeTokens(tokens: TokenPair): Promise<void> {

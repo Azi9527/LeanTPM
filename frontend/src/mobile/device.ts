@@ -24,6 +24,18 @@ export interface PhotoCaptureContext {
   brandName: string
   faultLocationText: string
   photoCompressionQuality: number
+  photoPolicy: PhotoWatermarkPolicy
+}
+
+export interface PhotoWatermarkPolicy {
+  watermarkEnabled: boolean
+  saveOriginal: boolean
+  saveWatermarked: boolean
+  template: string
+  position: 'TOP' | 'BOTTOM'
+  backgroundOpacity: number
+  fontColor: string
+  backgroundColor: string
 }
 
 export interface PhotoEvidenceMetadata {
@@ -38,8 +50,8 @@ export interface PhotoEvidenceMetadata {
 }
 
 export interface CapturedPhotoEvidence {
-  originalFile: File
-  watermarkedFile: File
+  originalFile?: File
+  watermarkedFile?: File
   metadata: PhotoEvidenceMetadata
 }
 
@@ -123,27 +135,25 @@ export async function capturePhotoEvidence(
     : Math.round((capturedAt.getTime() - serverReference.getTime()) / 1000)
   const calibratedTime = Number.isNaN(serverReference.getTime())
     ? capturedAt : serverReference
-  const lines = [
-    context.brandName,
-    `${context.equipmentName} (${context.equipmentCode})`,
-    `${context.taskCode} · ${context.itemName}`,
-    `服务时间 ${formatWatermarkTime(calibratedTime)}  执行人 ${context.executorName}`,
-    `故障位置/部位 ${context.faultLocationText}`,
-  ]
-  const watermarkedBlob = await renderWatermark(
-    originalFile, lines, context.photoCompressionQuality,
-  )
-  const limit = Math.max(1, maxSizeMb) * 1024 * 1024
-  if (watermarkedBlob.size > limit) {
-    throw new Error(`水印照片超过 ${maxSizeMb} MB，请重新拍摄`)
+  const lines = context.photoPolicy.watermarkEnabled
+    ? watermarkLines(context, calibratedTime) : []
+  let watermarkedFile: File | undefined
+  if (context.photoPolicy.watermarkEnabled && context.photoPolicy.saveWatermarked) {
+    const watermarkedBlob = await renderWatermark(
+      originalFile, lines, context.photoCompressionQuality, context.photoPolicy,
+    )
+    const limit = Math.max(1, maxSizeMb) * 1024 * 1024
+    if (watermarkedBlob.size > limit) {
+      throw new Error(`水印照片超过 ${maxSizeMb} MB，请重新拍摄`)
+    }
+    watermarkedFile = new File(
+      [watermarkedBlob],
+      `${filenamePrefix}-${Date.now()}-watermarked.jpeg`,
+      { type: 'image/jpeg' },
+    )
   }
-  const watermarkedFile = new File(
-    [watermarkedBlob],
-    `${filenamePrefix}-${Date.now()}-watermarked.jpeg`,
-    { type: 'image/jpeg' },
-  )
   return {
-    originalFile,
+    originalFile: context.photoPolicy.saveOriginal ? originalFile : undefined,
     watermarkedFile,
     metadata: {
       workflowType: context.workflowType,
@@ -164,6 +174,7 @@ async function renderWatermark(
   file: File,
   lines: string[],
   compressionQuality: number,
+  policy: PhotoWatermarkPolicy,
 ): Promise<Blob> {
   const bitmap = await createImageBitmap(file)
   const scale = Math.min(1, 1920 / Math.max(bitmap.width, bitmap.height))
@@ -180,11 +191,11 @@ async function renderWatermark(
   const lineHeight = Math.round(fontSize * 1.45)
   const padding = Math.round(fontSize * .8)
   const panelHeight = lineHeight * lines.length + padding * 2
-  const top = Math.max(0, height - panelHeight)
-  drawing.fillStyle = 'rgba(3, 25, 34, .74)'
+  const top = policy.position === 'TOP' ? 0 : Math.max(0, height - panelHeight)
+  drawing.fillStyle = colorWithOpacity(policy.backgroundColor, policy.backgroundOpacity)
   drawing.fillRect(0, top, width, panelHeight)
   drawing.font = `600 ${fontSize}px sans-serif`
-  drawing.fillStyle = '#ffffff'
+  drawing.fillStyle = validColor(policy.fontColor, '#ffffff')
   drawing.textBaseline = 'top'
   lines.forEach((line, index) => drawing.fillText(
     line,
@@ -197,6 +208,33 @@ async function renderWatermark(
     'image/jpeg',
     Math.max(.4, Math.min(.95, compressionQuality / 100)),
   ))
+}
+
+function watermarkLines(context: PhotoCaptureContext, capturedAt: Date): string[] {
+  const values: Record<string, string> = {
+    brand: context.brandName,
+    equipmentName: context.equipmentName,
+    equipmentCode: context.equipmentCode,
+    taskCode: context.taskCode,
+    itemName: context.itemName,
+    capturedAt: formatWatermarkTime(capturedAt),
+    executor: context.executorName,
+    location: context.faultLocationText,
+  }
+  return context.photoPolicy.template.split(/\r?\n/).map((line) => line.replace(
+    /\{(brand|equipmentName|equipmentCode|taskCode|itemName|capturedAt|executor|location)\}/g,
+    (_, key: string) => values[key] || '',
+  ).trim()).filter(Boolean).slice(0, 5)
+}
+
+function validColor(value: string, fallback: string): string {
+  return /^#[0-9a-f]{6}$/i.test(value) ? value : fallback
+}
+
+function colorWithOpacity(value: string, opacity: number): string {
+  const hex = validColor(value, '#031922').slice(1)
+  const rgb = [0, 2, 4].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16))
+  return `rgba(${rgb.join(', ')}, ${Math.min(100, Math.max(0, opacity)) / 100})`
 }
 
 function formatWatermarkTime(value: Date): string {

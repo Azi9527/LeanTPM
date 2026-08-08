@@ -108,6 +108,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '附件管理', permission: 'system:attachment:view' },
       },
       {
+        path: 'system/app-releases',
+        name: 'SystemAppReleases',
+        component: () => import('@/views/system/app-releases/AppReleaseView.vue'),
+        meta: { title: 'APP 发布管理', permission: 'system:app-release:view' },
+      },
+      {
         path: 'system/login-logs',
         name: 'SystemLoginLogs',
         component: () => import('@/views/system/logs/LoginLogView.vue'),

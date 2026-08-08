@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   masterDataApi,
+  type OrganizationDeleteImpact,
   type OrganizationRow,
   type ReferenceUser,
 } from '@/api/masterData'
@@ -156,11 +157,46 @@ async function save() {
 }
 
 async function remove(row: OrganizationRow) {
-  await ElMessageBox.confirm(`确认删除组织“${row.organizationName}”吗？`, '删除组织', {
-    type: 'warning',
-  })
+  let impact: OrganizationDeleteImpact
   try {
-    await masterDataApi.deleteOrganization(row.id, row.version)
+    impact = await masterDataApi.organizationDeleteImpact(row.id)
+  } catch (error) {
+    ElMessage.error(errorMessage(error, '无法检查组织关联关系'))
+    return
+  }
+  if (impact.childOrganizations > 0) {
+    await ElMessageBox.alert(
+      `组织“${row.organizationName}”还有 ${impact.childOrganizations} 个下级组织，请先删除或调整下级组织。`,
+      '暂时不能删除',
+      { type: 'warning' },
+    )
+    return
+  }
+  const details = [
+    impact.users ? `用户 ${impact.users} 个` : '',
+    impact.locations ? `位置 ${impact.locations} 个` : '',
+    impact.equipment ? `设备 ${impact.equipment} 台` : '',
+    impact.teamMemberships ? `班组任职关系 ${impact.teamMemberships} 条` : '',
+    impact.dataScopes ? `数据权限关系 ${impact.dataScopes} 条` : '',
+    impact.businessRecords ? `业务记录 ${impact.businessRecords} 条` : '',
+    impact.visualizationRecords ? `可视化配置 ${impact.visualizationRecords} 条` : '',
+  ].filter(Boolean)
+  const hasRelations = impact.totalReferences > 0
+  const message = hasRelations
+    ? `组织“${row.organizationName}”存在以下关联：${details.join('、')}。是否将业务数据转移到上级组织、删除班组任职及数据权限关系，然后删除该组织？`
+    : `确认删除组织“${row.organizationName}”吗？`
+  try {
+    await ElMessageBox.confirm(message, hasRelations ? '删除组织及关联关系' : '删除组织', {
+      type: 'warning',
+      confirmButtonText: hasRelations ? '删除关联关系并删除组织' : '确认删除',
+      cancelButtonText: '取消',
+      distinguishCancelAndClose: true,
+    })
+  } catch {
+    return
+  }
+  try {
+    await masterDataApi.deleteOrganization(row.id, row.version, hasRelations)
     ElMessage.success('组织已删除')
     await load()
   } catch (error) {

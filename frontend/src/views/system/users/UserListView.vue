@@ -11,6 +11,9 @@ import { Download, Plus, UploadFilled } from '@element-plus/icons-vue'
 import {
   systemApi,
   type OrganizationNode,
+  type PersonnelOrganizationRow,
+  type PersonnelOrganizationSnapshot,
+  type PersonnelUserRow,
   type RoleRow,
   type UserImportResult,
   type UserRow,
@@ -32,8 +35,16 @@ const formRef = ref<FormInstance>()
 const rows = ref<UserRow[]>([])
 const roles = ref<RoleRow[]>([])
 const organizations = ref<OrganizationNode[]>([])
+const activeTab = ref('relationships')
+const relationshipLoading = ref(false)
+const relationshipSavingId = ref<number>()
+const relationship = ref<PersonnelOrganizationSnapshot>({ organizations: [], users: [] })
+const managerDraft = reactive<Record<number, number[]>>({})
+const memberDraft = reactive<Record<number, number[]>>({})
+const relationshipKeyword = ref('')
+const selectedOrganizationId = ref<number>()
 const total = ref(0)
-const query = reactive({ keyword: '', status: undefined as number | undefined, page: 1, pageSize: 20 })
+const query = reactive({ keyword: '', status: undefined as number | undefined, page: 1, pageSize: 100 })
 const form = reactive({
   username: '',
   realName: '',
@@ -69,7 +80,7 @@ const statusOptions = [
 ]
 
 onMounted(async () => {
-  await Promise.all([load(), loadRoles(), loadOrganizations()])
+  await Promise.all([load(), loadRoles(), loadOrganizations(), loadRelationships()])
 })
 
 const organizationTree = computed(() => {
@@ -90,6 +101,80 @@ const organizationTreeProps = {
   disabled: (data: OrganizationNode) => data.status !== 1,
 }
 
+const workshopManagerOptions = computed(() =>
+  relationship.value.users.filter((user) => user.roleCodes.includes('WORKSHOP_MANAGER')),
+)
+const teamLeaderOptions = computed(() =>
+  relationship.value.users.filter((user) => user.roleCodes.includes('TEAM_LEADER')),
+)
+const employeeOptions = computed(() =>
+  relationship.value.users.filter((user) => user.status === 1 && user.roleCodes.includes('OPERATOR')),
+)
+
+type RelationNode = PersonnelOrganizationRow & { children: RelationNode[] }
+
+const relationshipTree = computed<RelationNode[]>(() => {
+  const nodes = new Map<number, RelationNode>()
+  relationship.value.organizations.forEach((item) => nodes.set(item.id, { ...item, children: [] }))
+  const roots: RelationNode[] = []
+  nodes.forEach((item) => {
+    const parent = nodes.get(item.parentId)
+    if (parent) parent.children.push(item)
+    else roots.push(item)
+  })
+  return roots
+})
+
+const filteredRelationshipTree = computed(() => {
+  const keyword = relationshipKeyword.value.trim().toLowerCase()
+  if (!keyword) return relationshipTree.value
+  const filterNodes = (nodes: RelationNode[]): RelationNode[] => nodes.flatMap((node) => {
+    const children = filterNodes(node.children || [])
+    const matched = `${node.organizationName} ${node.organizationCode} ${organizationTypeLabel(node.organizationType)}`
+      .toLowerCase()
+      .includes(keyword)
+    return matched || children.length ? [{ ...node, children }] : []
+  })
+  return filterNodes(relationshipTree.value)
+})
+
+const selectedOrganization = computed(() =>
+  relationship.value.organizations.find((item) => item.id === selectedOrganizationId.value),
+)
+
+const selectedOrganizationPath = computed(() => {
+  if (!selectedOrganization.value) return []
+  const nodes = new Map(relationship.value.organizations.map((item) => [item.id, item]))
+  const path: PersonnelOrganizationRow[] = []
+  let current: PersonnelOrganizationRow | undefined = selectedOrganization.value
+  while (current) {
+    path.unshift(current)
+    current = nodes.get(current.parentId)
+  }
+  return path
+})
+
+const selectedDirectChildren = computed(() =>
+  relationship.value.organizations.filter((item) => item.parentId === selectedOrganizationId.value),
+)
+
+const selectedMemberUsers = computed(() => {
+  const ids = memberDraft[selectedOrganizationId.value || 0] || []
+  return relationship.value.users.filter((user) => ids.includes(user.id))
+})
+
+function organizationTypeLabel(type: string) {
+  return ({ ENTERPRISE: '企业', FACTORY: '工厂', WORKSHOP: '车间', LINE: '产线', TEAM: '班组' } as Record<string, string>)[type] || type
+}
+
+function selectOrganization(node: PersonnelOrganizationRow) {
+  selectedOrganizationId.value = node.id
+}
+
+function userLabel(user: PersonnelUserRow) {
+  return `${user.realName}（${user.username}${user.employeeNo ? ` / ${user.employeeNo}` : ''}）${user.status === 1 ? '' : ' · 已停用'}`
+}
+
 async function load() {
   loading.value = true
   try {
@@ -104,7 +189,7 @@ async function load() {
 }
 
 async function loadRoles() {
-  if (!auth.can('system:role:view')) return
+  if (!auth.can('system:user:view') && !auth.can('system:role:view')) return
   roles.value = await systemApi.roles()
 }
 
@@ -113,6 +198,58 @@ async function loadOrganizations() {
     organizations.value = await systemApi.organizations()
   } catch (error) {
     ElMessage.error(errorMessage(error, '组织数据加载失败'))
+  }
+}
+
+async function loadRelationships() {
+  relationshipLoading.value = true
+  try {
+    relationship.value = await systemApi.personnelOrganization()
+    relationship.value.organizations.forEach((organization) => {
+      managerDraft[organization.id] = [...(organization.managerUserIds || (organization.managerUserId ? [organization.managerUserId] : []))]
+      memberDraft[organization.id] = [...(organization.memberUserIds || [])]
+    })
+    if (!relationship.value.organizations.some((item) => item.id === selectedOrganizationId.value)) {
+      selectedOrganizationId.value = relationship.value.organizations.find((item) => item.organizationType === 'WORKSHOP')?.id
+        || relationship.value.organizations[0]?.id
+    }
+  } catch (error) {
+    ElMessage.error(errorMessage(error, '人员组织关系加载失败'))
+  } finally {
+    relationshipLoading.value = false
+  }
+}
+
+async function saveOrganizationManager(organization: PersonnelOrganizationRow) {
+  relationshipSavingId.value = organization.id
+  try {
+    await systemApi.updateOrganizationManager(organization.id, {
+      managerUserIds: managerDraft[organization.id] || [],
+      version: organization.version,
+    })
+    ElMessage.success(organization.organizationType === 'WORKSHOP' ? '车间主任已更新' : '班组长已更新')
+    await loadRelationships()
+  } catch (error) {
+    ElMessage.error(errorMessage(error, '负责人保存失败'))
+  } finally {
+    relationshipSavingId.value = undefined
+  }
+}
+
+async function saveTeamRelationships(organization: PersonnelOrganizationRow) {
+  relationshipSavingId.value = organization.id
+  try {
+    await systemApi.updateTeamRelationships(organization.id, {
+      managerUserIds: managerDraft[organization.id] || [],
+      userIds: memberDraft[organization.id] || [],
+      version: organization.version,
+    })
+    ElMessage.success('班组长和班组成员已统一保存')
+    await loadRelationships()
+  } catch (error) {
+    ElMessage.error(errorMessage(error, '班组关系保存失败'))
+  } finally {
+    relationshipSavingId.value = undefined
   }
 }
 
@@ -175,7 +312,7 @@ async function save() {
     }
     ElMessage.success(editing.value ? '用户已更新' : '用户已创建')
     dialogVisible.value = false
-    await load()
+    await Promise.all([load(), loadRelationships()])
   } catch (error) {
     ElMessage.error(errorMessage(error))
   } finally {
@@ -238,7 +375,7 @@ async function downloadImportTemplate() {
     const url = URL.createObjectURL(response.data)
     const anchor = document.createElement('a')
     anchor.href = url
-    anchor.download = 'LeanTPM-user-import-template.xlsx'
+    anchor.download = 'LeanTPM用户导入模板.xlsx'
     anchor.click()
     URL.revokeObjectURL(url)
   } catch (error) {
@@ -292,13 +429,148 @@ const pageSummary = computed(() => `共 ${total.value} 个用户`)
 <template>
   <div class="page-shell">
     <header class="page-header">
-      <div><h1>用户管理</h1><p>维护人员账号、使用范围和业务角色。</p></div>
-      <div class="page-actions">
+      <div><h1>人员与组织关系</h1><p>统一维护车间主任、班组长、员工上下级关系及员工多班组任职。</p></div>
+      <div v-if="activeTab === 'users'" class="page-actions">
         <el-button v-if="auth.can('system:user:import')" :icon="UploadFilled" @click="openImport">批量导入</el-button>
         <el-button v-if="auth.can('system:user:create')" type="primary" :icon="Plus" @click="openCreate">新增用户</el-button>
       </div>
     </header>
 
+    <el-tabs v-model="activeTab" class="personnel-tabs">
+      <el-tab-pane label="组织人员关系" name="relationships">
+        <section class="surface-card relationship-card">
+          <el-alert
+            title="层级规则：车间主任负责车间；每个班组设置一名班组长；员工可以同时加入多个班组。点检异常优先上报任务所属班组长，再按规则升级到车间主任。"
+            type="info"
+            :closable="false"
+            show-icon
+          />
+          <div v-loading="relationshipLoading" class="organization-workspace">
+            <aside class="organization-navigator">
+              <div class="navigator-heading">
+                <div>
+                  <strong>组织架构</strong>
+                  <span>{{ relationship.organizations.length }} 个组织节点</span>
+                </div>
+              </div>
+              <el-input v-model="relationshipKeyword" clearable placeholder="搜索组织名称、编码或类型" class="organization-search" />
+              <el-tree
+                v-if="filteredRelationshipTree.length"
+                :data="filteredRelationshipTree"
+                node-key="id"
+                default-expand-all
+                highlight-current
+                :current-node-key="selectedOrganizationId"
+                :expand-on-click-node="false"
+                @node-click="selectOrganization"
+              >
+                <template #default="{ data }">
+                  <div class="organization-tree-node">
+                    <span class="type-icon" :class="`type-${data.organizationType.toLowerCase()}`">
+                      {{ organizationTypeLabel(data.organizationType).slice(0, 1) }}
+                    </span>
+                    <span class="tree-node-copy">
+                      <strong>{{ data.organizationName }}</strong>
+                      <small>{{ organizationTypeLabel(data.organizationType) }} · {{ data.organizationCode }}</small>
+                    </span>
+                    <span v-if="data.organizationType === 'TEAM'" class="member-count">
+                      {{ memberDraft[data.id]?.length || 0 }} 人
+                    </span>
+                  </div>
+                </template>
+              </el-tree>
+              <el-empty v-else :image-size="64" description="未找到匹配的组织" />
+            </aside>
+
+            <main v-if="selectedOrganization" class="organization-detail">
+              <div class="organization-breadcrumb">
+                <template v-for="(item, index) in selectedOrganizationPath" :key="item.id">
+                  <span>{{ item.organizationName }}</span><i v-if="index < selectedOrganizationPath.length - 1">/</i>
+                </template>
+              </div>
+              <header class="detail-header">
+                <div class="detail-title-block">
+                  <span class="detail-type-icon" :class="`type-${selectedOrganization.organizationType.toLowerCase()}`">
+                    {{ organizationTypeLabel(selectedOrganization.organizationType).slice(0, 1) }}
+                  </span>
+                  <div>
+                    <div class="detail-title-line">
+                      <h2>{{ selectedOrganization.organizationName }}</h2>
+                      <el-tag effect="plain">{{ organizationTypeLabel(selectedOrganization.organizationType) }}</el-tag>
+                    </div>
+                    <p>组织编码 {{ selectedOrganization.organizationCode }}</p>
+                  </div>
+                </div>
+                <div class="detail-stats">
+                  <span><strong>{{ selectedDirectChildren.length }}</strong>直属下级</span>
+                  <span><strong>{{ selectedOrganization.organizationType === 'TEAM' ? selectedMemberUsers.length : '—' }}</strong>班组成员</span>
+                </div>
+              </header>
+
+              <section v-if="selectedOrganization.organizationType === 'WORKSHOP'" class="maintenance-panel">
+                <div class="panel-heading">
+                  <div><h3>车间负责人</h3><p>异常升级到该车间时，系统将通知这里设置的车间主任。</p></div>
+                  <el-tag type="success">管理关系</el-tag>
+                </div>
+                <el-form label-position="top">
+                  <el-form-item label="车间主任">
+                    <el-select v-model="managerDraft[selectedOrganization.id]" multiple collapse-tags collapse-tags-tooltip clearable filterable placeholder="可选择多名车间主任" style="width: 100%">
+                      <el-option v-for="user in workshopManagerOptions" :key="user.id" :label="userLabel(user)" :value="user.id" :disabled="user.status !== 1" />
+                    </el-select>
+                  </el-form-item>
+                </el-form>
+                <div class="panel-actions">
+                  <el-button type="primary" :loading="relationshipSavingId === selectedOrganization.id" @click="saveOrganizationManager(selectedOrganization)">保存车间主任</el-button>
+                </div>
+              </section>
+
+              <template v-else-if="selectedOrganization.organizationType === 'TEAM'">
+                <section class="maintenance-panel">
+                  <div class="panel-heading">
+                    <div><h3>班组管理关系</h3><p>班组长是本班组员工的直接上级，也是点检异常的首要接收人。</p></div>
+                    <el-tag type="warning">直接上级</el-tag>
+                  </div>
+                  <el-form label-position="top">
+                    <el-form-item label="班组长">
+                      <el-select v-model="managerDraft[selectedOrganization.id]" multiple collapse-tags collapse-tags-tooltip clearable filterable placeholder="可选择多名班组长" style="width: 100%">
+                        <el-option v-for="user in teamLeaderOptions" :key="user.id" :label="`${userLabel(user)}${user.status === 1 ? '' : ' · 已停用'}`" :value="user.id" />
+                      </el-select>
+                    </el-form-item>
+                    <el-form-item label="班组员工（支持多选，员工可加入多个班组）">
+                      <el-select v-model="memberDraft[selectedOrganization.id]" multiple collapse-tags collapse-tags-tooltip filterable placeholder="选择本班组员工" style="width: 100%">
+                        <el-option v-for="user in employeeOptions" :key="user.id" :label="userLabel(user)" :value="user.id" />
+                      </el-select>
+                    </el-form-item>
+                  </el-form>
+                  <div v-if="selectedMemberUsers.length" class="member-preview">
+                    <span v-for="user in selectedMemberUsers" :key="user.id">{{ user.realName }}<small>{{ user.employeeNo || user.username }}</small></span>
+                  </div>
+                  <div class="panel-actions">
+                    <el-button type="primary" :loading="relationshipSavingId === selectedOrganization.id" @click="saveTeamRelationships(selectedOrganization)">保存班组关系</el-button>
+                  </div>
+                </section>
+              </template>
+
+              <section v-else class="maintenance-panel overview-panel">
+                <div class="panel-heading">
+                  <div><h3>层级概览</h3><p>当前层级用于组织归属和数据权限汇总，负责人由下级车间或班组分别维护。</p></div>
+                  <el-tag type="info">汇总节点</el-tag>
+                </div>
+                <div class="child-grid">
+                  <button v-for="child in selectedDirectChildren" :key="child.id" type="button" @click="selectOrganization(child)">
+                    <span class="type-icon" :class="`type-${child.organizationType.toLowerCase()}`">{{ organizationTypeLabel(child.organizationType).slice(0, 1) }}</span>
+                    <span><strong>{{ child.organizationName }}</strong><small>{{ organizationTypeLabel(child.organizationType) }} · {{ child.organizationCode }}</small></span>
+                  </button>
+                  <el-empty v-if="!selectedDirectChildren.length" :image-size="72" description="暂无直属下级组织" />
+                </div>
+              </section>
+            </main>
+            <el-empty v-else class="organization-detail empty-detail" description="请从左侧选择一个组织节点" />
+          </div>
+        </section>
+      </el-tab-pane>
+
+      <el-tab-pane label="用户账号" name="users">
     <section class="surface-card query-bar">
       <el-input v-model="query.keyword" clearable placeholder="姓名、账号或工号" style="width: 260px" @keyup.enter="load">
         <template #prefix><el-icon><Search /></el-icon></template>
@@ -357,6 +629,8 @@ const pageSummary = computed(() => `共 ${total.value} 个用户`)
         />
       </div>
     </section>
+      </el-tab-pane>
+    </el-tabs>
 
     <el-dialog v-model="dialogVisible" :title="editing ? '编辑用户' : '新增用户'" width="min(680px, 94vw)" destroy-on-close>
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top" class="user-form">
@@ -399,7 +673,8 @@ const pageSummary = computed(() => `共 ${total.value} 个用户`)
 
     <el-dialog v-model="importDialogVisible" title="批量导入用户" width="min(820px, 96vw)" destroy-on-close>
       <el-alert
-        title="支持仅新增、或新增并更新；组织和角色使用编码匹配。单次最多 1000 行，初始密码最低 6 位。"
+        title="账号、角色和组织关系可在同一份 Excel 中导入"
+        description="可指定主要归属组织、多个任职班组、主班组，以及车间主任或班组长负责的组织。模板的“组织关系说明”页已列出全部可用组织编码和填写规则。"
         type="info"
         :closable="false"
         show-icon
@@ -456,6 +731,95 @@ const pageSummary = computed(() => `共 ${total.value} 个用户`)
 
 <style scoped lang="scss">
 .role-tag { margin: 2px 4px 2px 0; }
+.personnel-tabs { margin-top: -6px; }
+.relationship-card { padding: 16px; }
+.organization-workspace {
+  display: grid;
+  grid-template-columns: minmax(300px, 32%) 1fr;
+  min-height: 560px;
+  margin-top: 16px;
+  overflow: hidden;
+  border: 1px solid var(--tpm-border);
+  border-radius: 14px;
+  background: var(--tpm-card);
+}
+.organization-navigator {
+  min-width: 0;
+  padding: 18px 14px;
+  border-right: 1px solid var(--tpm-border);
+  background: linear-gradient(180deg, rgb(28 125 80 / 6%), transparent 180px);
+}
+.navigator-heading { display: flex; align-items: center; justify-content: space-between; margin: 0 4px 14px; }
+.navigator-heading > div { display: flex; flex-direction: column; gap: 3px; }
+.navigator-heading strong { color: var(--tpm-text); font-size: 16px; }
+.navigator-heading span { color: var(--tpm-text-secondary); font-size: 12px; }
+.organization-search { margin-bottom: 14px; }
+.organization-navigator :deep(.el-tree) { background: transparent; }
+.organization-navigator :deep(.el-tree-node__content) {
+  height: auto;
+  min-height: 54px;
+  margin: 3px 0;
+  padding-right: 8px;
+  border-radius: 10px;
+}
+.organization-navigator :deep(.el-tree-node__content:hover) { background: rgb(28 125 80 / 8%); }
+.organization-navigator :deep(.el-tree-node.is-current > .el-tree-node__content) {
+  color: var(--tpm-primary);
+  background: rgb(28 125 80 / 13%);
+  box-shadow: inset 3px 0 var(--tpm-primary);
+}
+.organization-tree-node { display: flex; min-width: 0; flex: 1; align-items: center; gap: 10px; padding: 7px 0; }
+.type-icon,
+.detail-type-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  color: #fff;
+  background: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+}
+.type-enterprise { background: #163d2f; }
+.type-factory { background: #1c7d50; }
+.type-workshop { background: #2f9665; }
+.type-line { background: #287e8b; }
+.type-team { background: #b7791f; }
+.tree-node-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 3px; }
+.tree-node-copy strong { overflow: hidden; color: inherit; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.tree-node-copy small { overflow: hidden; color: var(--tpm-text-secondary); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.member-count { flex: 0 0 auto; color: var(--tpm-text-secondary); font-size: 11px; }
+.organization-detail { min-width: 0; padding: 24px; background: linear-gradient(135deg, #fff 0%, #fbfdfc 100%); }
+.organization-breadcrumb { display: flex; flex-wrap: wrap; gap: 7px; color: var(--tpm-text-secondary); font-size: 12px; }
+.organization-breadcrumb i { color: var(--tpm-border); font-style: normal; }
+.detail-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 18px 0 22px; border-bottom: 1px solid var(--tpm-border); }
+.detail-title-block { display: flex; min-width: 0; align-items: center; gap: 14px; }
+.detail-type-icon { width: 48px; height: 48px; border-radius: 13px; font-size: 18px; }
+.detail-title-line { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.detail-title-line h2 { margin: 0; color: var(--tpm-text); font-size: 22px; }
+.detail-title-block p { margin: 5px 0 0; color: var(--tpm-text-secondary); font: 12px Consolas, monospace; }
+.detail-stats { display: flex; flex: 0 0 auto; gap: 10px; }
+.detail-stats span { display: flex; min-width: 82px; flex-direction: column; gap: 3px; padding: 10px 14px; border-radius: 10px; color: var(--tpm-text-secondary); background: #f3f7f5; font-size: 11px; text-align: center; }
+.detail-stats strong { color: var(--tpm-primary); font-size: 20px; }
+.maintenance-panel { margin-top: 22px; padding: 20px; border: 1px solid var(--tpm-border); border-radius: 12px; background: #fff; }
+.panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.panel-heading h3 { margin: 0 0 5px; color: var(--tpm-text); font-size: 17px; }
+.panel-heading p { margin: 0; color: var(--tpm-text-secondary); font-size: 12px; line-height: 1.6; }
+.panel-actions { display: flex; justify-content: flex-end; padding-top: 4px; }
+.member-preview { display: flex; flex-wrap: wrap; gap: 8px; margin: -2px 0 18px; }
+.member-preview > span { display: inline-flex; align-items: center; gap: 7px; padding: 7px 10px; border: 1px solid rgb(28 125 80 / 16%); border-radius: 999px; color: var(--tpm-text); background: rgb(28 125 80 / 5%); font-size: 12px; }
+.member-preview small { color: var(--tpm-text-secondary); }
+.child-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.child-grid button { display: flex; min-width: 0; align-items: center; gap: 11px; padding: 13px; border: 1px solid var(--tpm-border); border-radius: 10px; color: inherit; background: #fff; text-align: left; cursor: pointer; transition: 0.2s ease; }
+.child-grid button:hover { border-color: rgb(28 125 80 / 45%); box-shadow: 0 6px 18px rgb(16 58 42 / 8%); transform: translateY(-1px); }
+.child-grid button > span:last-child { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.child-grid strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.child-grid small { color: var(--tpm-text-secondary); }
+.empty-detail { min-height: 420px; }
+.muted-text { color: var(--tpm-text-secondary); font-size: 12px; }
 .user-form {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -468,5 +832,17 @@ const pageSummary = computed(() => `共 ${total.value} 个用户`)
 @media (max-width: 600px) {
   .user-form { grid-template-columns: 1fr; }
   .full-width { grid-column: auto; }
+}
+@media (max-width: 980px) {
+  .organization-workspace { grid-template-columns: 1fr; }
+  .organization-navigator { border-right: 0; border-bottom: 1px solid var(--tpm-border); }
+  .organization-navigator :deep(.el-tree) { max-height: 340px; overflow: auto; }
+  .detail-header { align-items: flex-start; flex-direction: column; }
+}
+@media (max-width: 600px) {
+  .organization-detail { padding: 18px 14px; }
+  .detail-stats { width: 100%; }
+  .detail-stats span { flex: 1; }
+  .child-grid { grid-template-columns: 1fr; }
 }
 </style>

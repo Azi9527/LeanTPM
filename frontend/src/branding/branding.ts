@@ -13,8 +13,8 @@ export interface BrandingSettings {
 }
 
 export const DEFAULT_BRANDING: BrandingSettings = {
-  systemName: '宝山矿业设备管理系统',
-  shortName: '宝山矿业',
+  systemName: '大宝山矿业设备管理系统',
+  shortName: '大宝山矿业',
   subtitle: '精益设备管理',
   logoUrl: '/branding/baoshan-mining-logo.png',
   primaryColor: '#1c7d50',

@@ -52,11 +52,10 @@ function scrollToReport() {
 
     <section class="section-title"><div><h2>全厂设备状态</h2><p>普通用户可只读查看全部设备状态</p></div></section>
     <section class="status-grid">
-      <button type="button" @click="router.push('/mobile/equipment-status')"><b>{{ equipmentStatus?.total ?? 0 }}</b><span>设备总数</span></button>
+      <button type="button" @click="router.push({ path: '/mobile/equipment-status', query: { status: 'IDLE' } })"><b>{{ equipmentStatus?.idle ?? 0 }}</b><span>空闲</span></button>
       <button type="button" @click="router.push({ path: '/mobile/equipment-status', query: { status: 'RUNNING' } })"><b class="success">{{ equipmentStatus?.running ?? 0 }}</b><span>运行</span></button>
       <button type="button" @click="router.push({ path: '/mobile/equipment-status', query: { status: 'STOPPED' } })"><b>{{ equipmentStatus?.stopped ?? 0 }}</b><span>停机</span></button>
-      <button type="button" @click="router.push({ path: '/mobile/equipment-status', query: { status: 'FAULT' } })"><b class="danger">{{ equipmentStatus?.fault ?? 0 }}</b><span>故障/维修</span></button>
-      <button type="button" @click="router.push({ path: '/mobile/equipment-status', query: { status: 'OFFLINE' } })"><b>{{ equipmentStatus?.offline ?? 0 }}</b><span>离线</span></button>
+      <button type="button" @click="router.push({ path: '/mobile/equipment-status', query: { status: 'SCRAPPED' } })"><b>{{ equipmentStatus?.scrapped ?? 0 }}</b><span>报废</span></button>
     </section>
 
     <section class="quick-grid">

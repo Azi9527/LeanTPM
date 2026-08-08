@@ -24,7 +24,7 @@ const query = reactive({
   startDate: '',
   endDate: '',
   page: 1,
-  pageSize: 20,
+  pageSize: 100,
 })
 const form = reactive({
   equipmentId: undefined as number | undefined,
@@ -186,7 +186,7 @@ async function downloadTemplate() {
     const url = URL.createObjectURL(response.data)
     const anchor = document.createElement('a')
     anchor.href = url
-    anchor.download = 'LeanTPM-OEE-import-template.xlsx'
+    anchor.download = 'OEE数据导入模板.xlsx'
     anchor.click()
     URL.revokeObjectURL(url)
   } catch (error) {

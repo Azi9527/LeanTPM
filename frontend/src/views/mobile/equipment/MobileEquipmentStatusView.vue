@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import { equipmentApi, type EquipmentRow } from '@/api/equipment'
 import { errorMessage } from '@/utils/http'
 import { ElMessage } from 'element-plus'
+import { EQUIPMENT_STATUS_OPTIONS, equipmentStatusLabel } from '@/utils/equipment-status'
 
 const route = useRoute()
 const rows = ref<EquipmentRow[]>([])
@@ -11,13 +12,8 @@ const loading = ref(false)
 const status = ref(typeof route.query.status === 'string' ? route.query.status : '')
 const statusOptions = [
   { label: '全部状态', value: '' },
-  { label: '运行', value: 'RUNNING' },
-  { label: '停机', value: 'STOPPED' },
-  { label: '故障', value: 'FAULT' },
-  { label: '维修', value: 'REPAIR' },
-  { label: '离线', value: 'OFFLINE' },
+  ...EQUIPMENT_STATUS_OPTIONS,
 ]
-const statusLabel: Record<string, string> = Object.fromEntries(statusOptions.map((item) => [item.value, item.label]))
 
 async function load() {
   loading.value = true
@@ -44,7 +40,7 @@ onMounted(load)
     <el-segmented v-model="status" :options="statusOptions" class="status-filter" @change="load" />
     <section class="equipment-list">
       <article v-for="row in rows" :key="row.id" class="equipment-card">
-        <header><div><strong>{{ row.equipmentName }}</strong><span>{{ row.equipmentCode }}</span></div><el-tag>{{ statusLabel[row.currentStatusCode] || row.currentStatusCode }}</el-tag></header>
+        <header><div><strong>{{ row.equipmentName }}</strong><span>{{ row.equipmentCode }}</span></div><el-tag>{{ equipmentStatusLabel(row.currentStatusCode) }}</el-tag></header>
         <p>{{ row.organizationName }} · {{ row.locationName }}</p>
         <small>负责人：{{ row.primaryResponsibleName || '未设置' }}</small>
       </article>

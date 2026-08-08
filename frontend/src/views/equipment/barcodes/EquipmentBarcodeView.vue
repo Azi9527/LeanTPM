@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { equipmentApi, type BarcodeRow, type EquipmentRow } from '@/api/equipment'
+import { masterDataApi, type OrganizationRow } from '@/api/masterData'
 import { useAuthStore } from '@/stores/auth'
 import { errorMessage } from '@/utils/http'
 
@@ -9,6 +10,8 @@ const auth = useAuthStore()
 const loading = ref(false)
 const rows = ref<BarcodeRow[]>([])
 const equipment = ref<EquipmentRow[]>([])
+const organizations = ref<OrganizationRow[]>([])
+const organizationId = ref<number>()
 const equipmentId = ref<number>()
 const activeOnly = ref(true)
 const dialogVisible = ref(false)
@@ -16,6 +19,7 @@ const previewVisible = ref(false)
 const selected = ref<BarcodeRow | null>(null)
 const selectedPrintIds = ref<number[]>([])
 const selectablePrintIds = computed(() => rows.value.filter((row) => row.active).map((row) => row.id))
+const activeOrganizations = computed(() => organizations.value.filter((row) => row.status === 1))
 const allPrintSelected = computed(() =>
   selectablePrintIds.value.length > 0
   && selectablePrintIds.value.every((id) => selectedPrintIds.value.includes(id)),
@@ -32,14 +36,30 @@ const form = reactive({
 })
 
 onMounted(async () => {
-  await Promise.all([loadEquipment(), load()])
+  await Promise.all([loadOrganizations(), loadEquipment(), load()])
 })
 onBeforeUnmount(revokeImages)
 
+async function loadOrganizations() {
+  try {
+    organizations.value = await masterDataApi.organizations()
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  }
+}
+
 async function loadEquipment() {
   try {
-    const result = await equipmentApi.page({ page: 1, pageSize: 200, status: 1 })
+    const result = await equipmentApi.page({
+      organizationId: organizationId.value,
+      page: 1,
+      pageSize: 200,
+      status: 1,
+    })
     equipment.value = result.records
+    if (equipmentId.value && !equipment.value.some((row) => row.id === equipmentId.value)) {
+      equipmentId.value = undefined
+    }
   } catch (error) {
     ElMessage.error(errorMessage(error))
   }
@@ -51,6 +71,7 @@ async function load() {
   try {
     rows.value = await equipmentApi.barcodes({
       equipmentId: equipmentId.value,
+      organizationId: organizationId.value,
       activeOnly: activeOnly.value,
     })
     selectedPrintIds.value = selectedPrintIds.value.filter((id) =>
@@ -71,6 +92,11 @@ async function load() {
   } finally {
     loading.value = false
   }
+}
+
+async function search() {
+  await loadEquipment()
+  await load()
 }
 
 function togglePrint(id: number, checked: boolean) {
@@ -137,8 +163,8 @@ async function generateAll() {
 }
 
 async function downloadPngArchive(selectedOnly: boolean) {
-  const ids = selectedOnly ? selectedPrintIds.value : undefined
-  if (selectedOnly && !ids?.length) {
+  const ids = selectedOnly ? selectedPrintIds.value : selectablePrintIds.value
+  if (!ids.length) {
     ElMessage.warning('请先选择需要下载的有效二维码')
     return
   }
@@ -260,6 +286,21 @@ function escapeHtml(value: string) {
     </header>
 
     <section class="surface-card query-bar">
+      <el-select
+        v-model="organizationId"
+        clearable
+        filterable
+        placeholder="全部部门"
+        style="width: min(260px, 100%)"
+        @change="equipmentId = undefined"
+      >
+        <el-option
+          v-for="item in activeOrganizations"
+          :key="item.id"
+          :label="`${item.organizationName}（${item.organizationCode}）`"
+          :value="item.id"
+        />
+      </el-select>
       <el-select v-model="equipmentId" clearable filterable placeholder="按设备筛选" style="width: min(320px, 100%)">
         <el-option
           v-for="item in equipment"
@@ -278,7 +319,7 @@ function escapeHtml(value: string) {
         <el-option label="高清 900px" :value="900" />
         <el-option label="超清 1200px" :value="1200" />
       </el-select>
-      <el-button type="primary" @click="load">查询</el-button>
+      <el-button type="primary" @click="search">查询</el-button>
       <el-button
         v-if="auth.can('equipment:barcode:print')"
         :disabled="!selectablePrintIds.length"
@@ -312,6 +353,7 @@ function escapeHtml(value: string) {
             >选择打印</el-checkbox>
             <span class="mono">{{ row.equipmentCode }}</span>
             <h3>{{ row.equipmentName }}</h3>
+            <small class="organization-name">{{ row.organizationName }}</small>
           </div>
           <el-tag :type="row.active ? 'success' : 'info'">
             {{ row.active ? '有效' : '已失效' }}

@@ -9,6 +9,7 @@ import {
   type EquipmentRow,
   type LifecycleStage,
 } from '@/api/equipment'
+import { applySmartTableQuery, type SmartTableServerQuery } from '@/components/table/smart-table-context'
 import {
   masterDataApi,
   type AttributeDefinitionRow,
@@ -19,6 +20,7 @@ import {
 } from '@/api/masterData'
 import { useAuthStore } from '@/stores/auth'
 import { errorMessage } from '@/utils/http'
+import { equipmentStatusLabel, equipmentStatusType } from '@/utils/equipment-status'
 import { useRoute } from 'vue-router'
 
 interface ResponsibleDraft {
@@ -40,7 +42,7 @@ const organizations = ref<OrganizationRow[]>([])
 const locations = ref<LocationRow[]>([])
 const users = ref<ReferenceUser[]>([])
 const definitions = ref<AttributeDefinitionRow[]>([])
-const query = reactive<EquipmentQuery>({ page: 1, pageSize: 20 })
+const query = reactive<EquipmentQuery>({ page: 1, pageSize: 100 })
 
 const formVisible = ref(false)
 const detailVisible = ref(false)
@@ -86,20 +88,6 @@ const transferForm = reactive({
 })
 const copyForm = reactive({ equipmentCode: '', equipmentName: '' })
 
-const statusLabels: Record<string, string> = {
-  NOT_ENABLED: '未启用',
-  IDLE: '空闲',
-  RUNNING: '运行',
-  COMMISSIONING: '调试',
-  CHANGEOVER: '换型',
-  MAINTENANCE: '保养',
-  INSPECTION: '点检',
-  FAULT: '故障',
-  REPAIR: '维修',
-  STOPPED: '停机',
-  SCRAPPED: '报废',
-  OFFLINE: '离线',
-}
 const lifecycleLabels: Record<LifecycleStage, string> = {
   PLANNING: '规划',
   INSTALLATION: '安装',
@@ -114,6 +102,28 @@ const responsibilityLabels = {
   OPERATOR: '操作人',
   INSPECTOR: '点检人',
   MAINTAINER: '维保人',
+}
+const changeOperationLabels: Record<string, string> = {
+  CREATE: '新增', UPDATE: '修改', DELETE: '删除', ENABLE: '启用', DISABLE: '停用',
+  TRANSFER: '调拨', COPY: '复制', BIND: '关联', UNBIND: '解除关联', IMPORT: '导入',
+}
+const changeFieldLabels: Record<string, string> = {
+  equipmentCode: '设备编码', equipmentName: '设备名称', categoryId: '设备分类',
+  model: '型号', specification: '规格', brand: '品牌', manufacturer: '制造商',
+  factorySerialNumber: '出厂编号', productionDate: '生产日期', commissioningDate: '投产日期',
+  organizationId: '所属部门', locationId: '物理位置', primaryResponsibleUserId: '负责人',
+  assetNumber: '资产编号', lifecycleStage: '生命周期', critical: '关键设备', special: '特种设备',
+  oeeEnabled: '纳入 OEE', enabled: '启用状态', description: '设备说明', statusCode: '设备状态',
+}
+
+function changedFieldText(value?: string) {
+  try {
+    const fields = JSON.parse(value || '[]')
+    if (!Array.isArray(fields) || !fields.length) return '—'
+    return fields.map((field) => changeFieldLabels[String(field)] || String(field)).join('、')
+  } catch {
+    return '—'
+  }
 }
 
 const filteredLocations = computed(() =>
@@ -182,6 +192,12 @@ async function load() {
   }
 }
 
+function applyTableQuery(tableQuery: SmartTableServerQuery) {
+  applySmartTableQuery(query, tableQuery)
+  query.page = 1
+  void load()
+}
+
 async function changeCategory(categoryId?: number, existing?: AttributeValueRow[]) {
   definitions.value = categoryId
     ? await masterDataApi.attributes(categoryId, true)
@@ -239,8 +255,8 @@ function addResponsible() {
 }
 
 async function save() {
-  if (!form.equipmentName.trim() || !form.categoryId || !form.organizationId || !form.locationId) {
-    ElMessage.warning('请完整填写设备名称、分类、组织和物理位置')
+  if (!form.equipmentName.trim() || !form.categoryId || !form.organizationId) {
+    ElMessage.warning('请完整填写设备名称、分类和所属组织')
     return
   }
   saving.value = true
@@ -304,8 +320,7 @@ function openTransfer(row: EquipmentRow) {
 }
 
 async function transfer() {
-  if (!selected.value || !transferForm.organizationId || !transferForm.locationId
-    || !transferForm.reason.trim()) {
+  if (!selected.value || !transferForm.organizationId || !transferForm.reason.trim()) {
     ElMessage.warning('请完整填写调拨目标和原因')
     return
   }
@@ -403,6 +418,17 @@ function duration(seconds?: number) {
   return [days ? `${days}天` : '', hours ? `${hours}时` : '', `${minutes}分`]
     .filter(Boolean).join(' ')
 }
+
+function equipmentFlagLabel(_: unknown, row: Record<string, unknown>) {
+  if (row.criticalFlag && row.specialFlag) return '关键、特种'
+  if (row.criticalFlag) return '关键'
+  if (row.specialFlag) return '特种'
+  return '无标识'
+}
+
+function enabledLabel(value: unknown) {
+  return Number(value) === 1 ? '启用' : '停用'
+}
 </script>
 
 <template>
@@ -429,36 +455,6 @@ function duration(seconds?: number) {
       </div>
     </header>
 
-    <section class="surface-card query-bar equipment-query">
-      <el-input
-        v-model="query.keyword"
-        clearable
-        placeholder="编码、名称、型号、资产编号"
-        @keyup.enter="query.page = 1; load()"
-      />
-      <el-select v-model="query.categoryId" clearable filterable placeholder="设备分类">
-        <el-option
-          v-for="item in categories"
-          :key="item.id"
-          :label="item.categoryName"
-          :value="item.id"
-        />
-      </el-select>
-      <el-select v-model="query.organizationId" clearable filterable placeholder="所属组织">
-        <el-option
-          v-for="item in organizations"
-          :key="item.id"
-          :label="item.organizationName"
-          :value="item.id"
-        />
-      </el-select>
-      <el-select v-model="query.currentStatusCode" clearable placeholder="运行状态">
-        <el-option v-for="(label, code) in statusLabels" :key="code" :label="label" :value="code" />
-      </el-select>
-      <el-button type="primary" @click="query.page = 1; load()">查询</el-button>
-      <el-button @click="Object.assign(query, { page: 1, pageSize: 20, keyword: undefined, categoryId: undefined, organizationId: undefined, currentStatusCode: undefined }); load()">重置</el-button>
-    </section>
-
     <el-alert
       v-if="loadError"
       :title="loadError"
@@ -472,7 +468,7 @@ function duration(seconds?: number) {
         <span class="table-title">设备列表</span>
         <span class="result-count">共 {{ total }} 台</span>
       </div>
-      <el-table :data="rows" row-key="id">
+      <el-table :data="rows" row-key="id" server-query @smart-query-change="applyTableQuery">
         <el-table-column prop="equipmentCode" label="设备编码" min-width="160">
           <template #default="{ row }">
             <el-button link type="primary" @click="showDetail(row)">{{ row.equipmentCode }}</el-button>
@@ -485,23 +481,48 @@ function duration(seconds?: number) {
         <el-table-column prop="primaryResponsibleName" label="负责人" width="110">
           <template #default="{ row }">{{ row.primaryResponsibleName || '—' }}</template>
         </el-table-column>
-        <el-table-column label="当前状态" width="110">
+        <el-table-column
+          prop="currentStatusCode"
+          label="当前状态"
+          width="110"
+          :filter-formatter="equipmentStatusLabel"
+          smart-filter="select"
+        >
           <template #default="{ row }">
-            <el-tag :type="row.currentStatusCode === 'FAULT' ? 'danger' : row.currentStatusCode === 'RUNNING' ? 'success' : 'info'">
-              {{ statusLabels[row.currentStatusCode] || row.currentStatusCode }}
+            <el-tag :type="equipmentStatusType(row.currentStatusCode)">
+              {{ equipmentStatusLabel(row.currentStatusCode) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="持续时间" width="120">
+        <el-table-column
+          prop="statusDurationSeconds"
+          label="持续时间"
+          width="120"
+          :filter-formatter="duration"
+          smart-filter="number"
+        >
           <template #default="{ row }">{{ duration(row.statusDurationSeconds) }}</template>
         </el-table-column>
-        <el-table-column label="标识" width="120">
+        <el-table-column
+          prop="criticalFlag"
+          label="标识"
+          width="120"
+          :filter-formatter="equipmentFlagLabel"
+          smart-filter="number"
+        >
           <template #default="{ row }">
             <el-tag v-if="row.criticalFlag" size="small" type="warning">关键</el-tag>
             <el-tag v-if="row.specialFlag" size="small" type="danger">特种</el-tag>
+            <span v-if="!row.criticalFlag && !row.specialFlag">—</span>
           </template>
         </el-table-column>
-        <el-table-column label="启用" width="80">
+        <el-table-column
+          prop="status"
+          label="启用"
+          width="80"
+          :filter-formatter="enabledLabel"
+          smart-filter="number"
+        >
           <template #default="{ row }">
             <el-tag :type="row.status === 1 ? 'success' : 'info'">
               {{ row.status === 1 ? '启用' : '停用' }}
@@ -566,7 +587,12 @@ function duration(seconds?: number) {
           </el-select>
         </el-form-item>
         <el-form-item label="物理位置">
-          <el-select v-model="form.locationId" filterable>
+          <el-select
+            v-model="form.locationId"
+            clearable
+            filterable
+            placeholder="可选；未指定物理位置"
+          >
             <el-option v-for="item in filteredLocations" :key="item.id" :label="item.locationName" :value="item.id" />
           </el-select>
         </el-form-item>
@@ -652,7 +678,7 @@ function duration(seconds?: number) {
             <span class="mono">{{ detail.equipment.equipmentCode }}</span>
             <h2>{{ detail.equipment.equipmentName }}</h2>
           </div>
-          <el-tag>{{ statusLabels[detail.equipment.currentStatusCode] || detail.equipment.currentStatusCode }}</el-tag>
+          <el-tag :type="equipmentStatusType(detail.equipment.currentStatusCode)">{{ equipmentStatusLabel(detail.equipment.currentStatusCode) }}</el-tag>
         </div>
         <el-tabs>
           <el-tab-pane label="档案">
@@ -687,8 +713,8 @@ function duration(seconds?: number) {
           <el-tab-pane :label="`状态履历 (${detail.statusHistory.length})`">
             <el-timeline>
               <el-timeline-item v-for="item in detail.statusHistory" :key="item.id" :timestamp="item.startedTime">
-                {{ statusLabels[item.fromStatusCode || ''] || '初始状态' }} →
-                {{ statusLabels[item.toStatusCode] || item.toStatusCode }}
+                {{ item.fromStatusCode ? equipmentStatusLabel(item.fromStatusCode) : '初始状态' }} →
+                {{ equipmentStatusLabel(item.toStatusCode) }}
                 <span v-if="item.reason"> · {{ item.reason }}</span>
               </el-timeline-item>
             </el-timeline>
@@ -714,11 +740,13 @@ function duration(seconds?: number) {
           <el-tab-pane :label="`操作记录 (${detail.changeLogs.length})`">
             <el-table :data="detail.changeLogs">
               <el-table-column prop="changeTime" label="时间" min-width="180" />
-              <el-table-column prop="operationType" label="操作" width="120" />
+              <el-table-column prop="operationType" label="操作" width="120">
+                <template #default="{ row }">{{ changeOperationLabels[row.operationType] || '数据变更' }}</template>
+              </el-table-column>
               <el-table-column prop="operatorName" label="操作人" width="120" />
               <el-table-column label="变更字段" min-width="220">
                 <template #default="{ row }">
-                  {{ JSON.parse(row.changedFields || '[]').join('、') || '—' }}
+                  {{ changedFieldText(row.changedFields) }}
                 </template>
               </el-table-column>
             </el-table>
@@ -737,7 +765,12 @@ function duration(seconds?: number) {
           </el-select>
         </el-form-item>
         <el-form-item label="目标位置">
-          <el-select v-model="transferForm.locationId" filterable>
+          <el-select
+            v-model="transferForm.locationId"
+            clearable
+            filterable
+            placeholder="可选；未指定物理位置"
+          >
             <el-option v-for="item in transferLocations" :key="item.id" :label="item.locationName" :value="item.id" />
           </el-select>
         </el-form-item>

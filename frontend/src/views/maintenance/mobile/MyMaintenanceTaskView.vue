@@ -365,6 +365,7 @@ async function capture(itemId: number, kind: AttachmentKind) {
         brandName: branding.shortName,
         faultLocationText: item.maintenancePart || detail.value.task.locationName || item.itemName,
         photoCompressionQuality: 82,
+        photoPolicy: mobile.bootstrap.photoPolicy,
       },
     )
     if (!mobile.online) {

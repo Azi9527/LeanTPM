@@ -177,7 +177,7 @@ export interface TaskRow {
   equipmentName: string
   organizationId: number
   organizationName: string
-  locationId: number
+  locationId?: number
   locationName: string
   plannedDate: string
   plannedStartTime?: string

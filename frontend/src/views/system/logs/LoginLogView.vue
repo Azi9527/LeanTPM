@@ -7,7 +7,7 @@ import { errorMessage } from '@/utils/http'
 const loading = ref(false)
 const rows = ref<LoginLogRow[]>([])
 const total = ref(0)
-const query = reactive({ keyword: '', page: 1, pageSize: 20 })
+const query = reactive({ keyword: '', page: 1, pageSize: 100 })
 onMounted(load)
 async function load() {
   loading.value = true

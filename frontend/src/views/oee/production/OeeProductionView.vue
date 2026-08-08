@@ -25,7 +25,7 @@ const query = reactive({
   startDate: '',
   endDate: '',
   page: 1,
-  pageSize: 20,
+  pageSize: 100,
 })
 const outputForm = reactive({
   equipmentId: undefined as number | undefined,

@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { equipmentApi, type EquipmentRow } from '@/api/equipment'
 import { inspectionApi, type PlanRow, type SchemeRow } from '@/api/inspection'
 import { useAuthStore } from '@/stores/auth'
 import { errorMessage } from '@/utils/http'
+import { applySmartTableQuery, type SmartTableServerQuery } from '@/components/table/smart-table-context'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -16,11 +17,18 @@ const total = ref(0)
 const page = ref(1)
 const keyword = ref('')
 const status = ref<string>()
+const smartTableQuery = reactive({
+  tableFilters: undefined as string | undefined,
+  sortBy: undefined as string | undefined,
+  sortDirection: undefined as 'asc' | 'desc' | undefined,
+})
 const manualVisible = ref(false)
 const manualLoading = ref(false)
 const manualSaving = ref(false)
 const schemes = ref<SchemeRow[]>([])
 const equipment = ref<EquipmentRow[]>([])
+const applicableEquipmentIds = ref<Set<number>>(new Set())
+const applicabilityLoading = ref(false)
 const manualForm = reactive<{ schemeId?: number; equipmentIds: number[] }>({
   schemeId: undefined,
   equipmentIds: [],
@@ -40,6 +48,43 @@ const cycleLabels: Record<string, string> = {
 const selectedScheme = computed(() =>
   schemes.value.find((item) => item.id === manualForm.schemeId),
 )
+const availableEquipment = computed(() =>
+  equipment.value.filter((item) => applicableEquipmentIds.value.has(item.id)),
+)
+
+watch(() => manualForm.schemeId, async (schemeId) => {
+  manualForm.equipmentIds = []
+  applicableEquipmentIds.value = new Set()
+  if (!schemeId) return
+  applicabilityLoading.value = true
+  try {
+    applicableEquipmentIds.value = new Set(await inspectionApi.applicableEquipmentIds(schemeId))
+  } catch (error) {
+    ElMessage.error(errorMessage(error, '适用设备加载失败'))
+  } finally {
+    applicabilityLoading.value = false
+  }
+})
+
+function optionLabel(...parts: unknown[]) {
+  return parts
+    .map((part) => String(part ?? '').trim())
+    .filter((part) => part && !['undefined', 'null'].includes(part.toLowerCase()))
+    .join(' · ')
+}
+
+function schemeOptionLabel(scheme: SchemeRow) {
+  const version = Number(scheme.currentVersionNumber)
+  return optionLabel(
+    scheme.schemeCode,
+    scheme.schemeName,
+    Number.isFinite(version) && version > 0 ? `V${version}` : '',
+  )
+}
+
+function equipmentOptionLabel(item: EquipmentRow) {
+  return optionLabel(item.equipmentCode, item.equipmentName, item.locationName)
+}
 
 onMounted(load)
 
@@ -49,8 +94,9 @@ async function load() {
     const result = await inspectionApi.plans({
       keyword: keyword.value || undefined,
       planStatus: status.value,
+      ...smartTableQuery,
       page: page.value,
-      pageSize: 20,
+      pageSize: 100,
     })
     rows.value = result.records
     total.value = result.total
@@ -59,6 +105,12 @@ async function load() {
   } finally {
     loading.value = false
   }
+}
+
+function applyTableQuery(query: SmartTableServerQuery) {
+  applySmartTableQuery(smartTableQuery, query)
+  page.value = 1
+  void load()
 }
 
 async function generate() {
@@ -78,6 +130,7 @@ async function openManual() {
   manualVisible.value = true
   manualForm.schemeId = undefined
   manualForm.equipmentIds = []
+  applicableEquipmentIds.value = new Set()
   manualLoading.value = true
   try {
     const [schemePage, equipmentPage] = await Promise.all([
@@ -111,6 +164,11 @@ async function createManualPlans() {
     )
     manualVisible.value = false
     page.value = 1
+    keyword.value = ''
+    status.value = undefined
+    smartTableQuery.tableFilters = undefined
+    smartTableQuery.sortBy = undefined
+    smartTableQuery.sortDirection = undefined
     await load()
   } catch (error) {
     ElMessage.error(errorMessage(error, '手工创建计划失败'))
@@ -136,6 +194,21 @@ async function changeStatus(row: PlanRow, target: 'ACTIVE' | 'PAUSED' | 'CANCELL
     ElMessage.error(errorMessage(error))
   }
 }
+
+async function removePlan(row: PlanRow) {
+  await ElMessageBox.confirm(
+    `删除“${row.schemeName} / ${row.equipmentName}”计划？该计划及其已生成任务会一并逻辑删除，且不再参与任何查询和报表。`,
+    '删除点检计划',
+    { type: 'warning', confirmButtonText: '确认删除' },
+  )
+  try {
+    await inspectionApi.deletePlan(row.id, row.version)
+    ElMessage.success('点检计划及关联任务已删除')
+    await load()
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  }
+}
 </script>
 
 <template>
@@ -154,19 +227,21 @@ async function changeStatus(row: PlanRow, target: 'ACTIVE' | 'PAUSED' | 'CANCELL
     </section>
     <section class="surface-card table-card" v-loading="loading">
       <div class="table-toolbar"><span class="table-title">设备计划</span><span>共 {{ total }} 条</span></div>
-      <el-table :data="rows" row-key="id">
-        <el-table-column label="方案" min-width="220"><template #default="{ row }"><strong>{{ row.schemeName }}</strong><div class="muted mono">{{ row.schemeCode }} · V{{ row.schemeVersionNumber }}</div></template></el-table-column>
-        <el-table-column label="设备" min-width="200"><template #default="{ row }"><strong>{{ row.equipmentName }}</strong><div class="muted mono">{{ row.equipmentCode }}</div></template></el-table-column>
-        <el-table-column label="位置" min-width="170"><template #default="{ row }">{{ row.organizationName }} / {{ row.locationName }}</template></el-table-column>
-        <el-table-column label="周期" width="130"><template #default="{ row }">{{ cycleLabels[row.cycleType] || row.cycleType }} × {{ row.cycleInterval }}</template></el-table-column>
+      <el-table :data="rows" row-key="id" server-query @smart-query-change="applyTableQuery">
+        <el-table-column prop="schemeName" label="方案" min-width="220"><template #default="{ row }"><strong>{{ row.schemeName }}</strong><div class="muted mono">{{ row.schemeCode }} · V{{ row.schemeVersionNumber }}</div></template></el-table-column>
+        <el-table-column prop="equipmentName" label="设备" min-width="200"><template #default="{ row }"><strong>{{ row.equipmentName }}</strong><div class="muted mono">{{ row.equipmentCode }}</div></template></el-table-column>
+        <el-table-column prop="organizationName" label="所属部门" min-width="150" />
+        <el-table-column prop="locationName" label="物理位置" min-width="140"><template #default="{ row }">{{ row.locationName || '未设置' }}</template></el-table-column>
+        <el-table-column prop="cycleType" label="周期" smart-filter="select" width="130"><template #default="{ row }">{{ cycleLabels[row.cycleType] || row.cycleType }} × {{ row.cycleInterval }}</template></el-table-column>
         <el-table-column prop="assigneeName" label="执行人" width="120"><template #default="{ row }">{{ row.assigneeName || '待派工' }}</template></el-table-column>
-        <el-table-column prop="nextGenerationDate" label="下次生成日" width="130" />
-        <el-table-column label="状态" width="100"><template #default="{ row }"><el-tag :type="statusMeta[row.planStatus].type">{{ statusMeta[row.planStatus].label }}</el-tag></template></el-table-column>
-        <el-table-column v-if="auth.can('inspection:plan:manage')" label="操作" width="170" fixed="right">
+        <el-table-column prop="nextGenerationDate" label="下次生成日" smart-filter="date" width="130" />
+        <el-table-column prop="planStatus" label="状态" smart-filter="select" width="100"><template #default="{ row }"><el-tag :type="statusMeta[row.planStatus].type">{{ statusMeta[row.planStatus].label }}</el-tag></template></el-table-column>
+        <el-table-column v-if="auth.can('inspection:plan:manage')" label="操作" smart-filter="none" width="220" fixed="right">
           <template #default="{ row }">
             <el-button v-if="row.planStatus === 'ACTIVE'" link type="warning" @click="changeStatus(row, 'PAUSED')">暂停</el-button>
             <el-button v-if="row.planStatus === 'PAUSED'" link type="success" @click="changeStatus(row, 'ACTIVE')">恢复</el-button>
             <el-button v-if="row.planStatus !== 'CANCELLED'" link type="danger" @click="changeStatus(row, 'CANCELLED')">取消</el-button>
+            <el-button link type="danger" @click="removePlan(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -192,7 +267,7 @@ async function changeStatus(row: PlanRow, target: 'ACTIVE' | 'PAUSED' | 'CANCELL
               <el-option
                 v-for="scheme in schemes"
                 :key="scheme.id"
-                :label="`${scheme.schemeCode} · ${scheme.schemeName} · V${scheme.currentVersionNumber}`"
+                :label="schemeOptionLabel(scheme)"
                 :value="scheme.id"
               />
             </el-select>
@@ -208,6 +283,8 @@ async function changeStatus(row: PlanRow, target: 'ACTIVE' | 'PAUSED' | 'CANCELL
               v-model="manualForm.equipmentIds"
               multiple
               filterable
+              :disabled="!manualForm.schemeId"
+              :loading="applicabilityLoading"
               collapse-tags
               collapse-tags-tooltip
               :max-collapse-tags="4"
@@ -215,13 +292,17 @@ async function changeStatus(row: PlanRow, target: 'ACTIVE' | 'PAUSED' | 'CANCELL
               style="width: 100%"
             >
               <el-option
-                v-for="item in equipment"
+                v-for="item in availableEquipment"
                 :key="item.id"
-                :label="`${item.equipmentCode} · ${item.equipmentName} · ${item.locationName}`"
+                :label="equipmentOptionLabel(item)"
                 :value="item.id"
               />
             </el-select>
-            <p class="field-help">已选择 {{ manualForm.equipmentIds.length }} 台设备，最多一次处理 200 台。</p>
+            <p class="field-help">
+              <span v-if="!manualForm.schemeId">请先选择点检方案，系统只显示该方案适用的设备。</span>
+              <span v-else-if="applicabilityLoading">正在加载适用设备……</span>
+              <span v-else>可选 {{ availableEquipment.length }} 台，已选择 {{ manualForm.equipmentIds.length }} 台，最多一次处理 200 台。</span>
+            </p>
           </el-form-item>
           <el-form-item v-if="selectedScheme" label="计划周期">
             <el-tag type="info">

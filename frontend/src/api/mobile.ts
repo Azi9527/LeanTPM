@@ -29,6 +29,14 @@ export interface MobileBootstrap {
   maxUploadMb: number
   photoPolicy: {
     clockSkewWarningSeconds: number
+    watermarkEnabled: boolean
+    saveOriginal: boolean
+    saveWatermarked: boolean
+    template: string
+    position: 'TOP' | 'BOTTOM'
+    backgroundOpacity: number
+    fontColor: string
+    backgroundColor: string
   }
   androidVersion: {
     minimumVersionCode: number
@@ -42,6 +50,8 @@ export interface MobileBootstrap {
     stopped: number
     fault: number
     offline: number
+    idle: number
+    scrapped: number
   }
   inspection: MobileWorkCount
   inspectionAbnormal: {
@@ -64,8 +74,8 @@ export interface PhotoEvidencePayload {
   workflowType: 'INSPECTION' | 'MAINTENANCE'
   taskId: number
   taskItemId: number
-  originalAttachmentId: number
-  watermarkedAttachmentId: number
+  originalAttachmentId?: number
+  watermarkedAttachmentId?: number
   capturedDeviceTime: string
   serverReferenceTime: string
   deviceClockOffsetSeconds: number

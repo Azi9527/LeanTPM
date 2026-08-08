@@ -11,6 +11,8 @@ export const useAuthStore = defineStore('auth', () => {
 
   const displayName = computed(() => user.value?.realName || user.value?.username || '用户')
   const permissions = computed(() => new Set(user.value?.permissions || []))
+  const administrator = computed(() => (user.value?.roles || [])
+    .some((role) => ['ADMIN', 'SUPER_ADMIN'].includes(role.toUpperCase())))
 
   async function signIn(
     username: string,
@@ -60,7 +62,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function can(permission: string): boolean {
-    return permissions.value.has(permission)
+    return administrator.value || permissions.value.has(permission)
   }
 
   return {

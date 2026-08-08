@@ -15,12 +15,24 @@ export interface OrganizationRow {
   version: number
 }
 
+export interface OrganizationDeleteImpact {
+  childOrganizations: number
+  users: number
+  locations: number
+  equipment: number
+  teamMemberships: number
+  dataScopes: number
+  businessRecords: number
+  visualizationRecords: number
+  totalReferences: number
+}
+
 export interface LocationRow {
   id: number
   parentId: number
   locationCode: string
   locationName: string
-  locationType: 'ENTERPRISE' | 'FACTORY' | 'PLANT_AREA' | 'WORKSHOP' | 'LINE' | 'WORKSTATION'
+  locationType: 'AREA' | 'BUILDING' | 'FLOOR' | 'ZONE' | 'SPOT'
   organizationId: number
   organizationName: string
   managerUserId?: number
@@ -86,8 +98,12 @@ export const masterDataApi = {
   createOrganization: (data: object) => http.post('/master-data/organizations', data),
   updateOrganization: (id: number, data: object) =>
     http.put(`/master-data/organizations/${id}`, data),
-  deleteOrganization: (id: number, version: number) =>
-    http.delete(`/master-data/organizations/${id}`, { params: { version } }),
+  organizationDeleteImpact: (id: number) =>
+    getData<OrganizationDeleteImpact>(`/master-data/organizations/${id}/delete-impact`),
+  deleteOrganization: (id: number, version: number, cascadeRelations = false) =>
+    http.delete(`/master-data/organizations/${id}`, {
+      params: { version, cascadeRelations },
+    }),
 
   locations: () => getData<LocationRow[]>('/master-data/locations'),
   createLocation: (data: object) => http.post('/master-data/locations', data),

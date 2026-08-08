@@ -15,7 +15,7 @@ const equipment = ref<EquipmentRow[]>([])
 const total = ref(0)
 const dialog = ref(false)
 const editingId = ref<number>()
-const query = reactive({ keyword: '', targetLevel: '', status: undefined as number | undefined, page: 1, pageSize: 20 })
+const query = reactive({ keyword: '', targetLevel: '', status: undefined as number | undefined, page: 1, pageSize: 100 })
 const form = reactive({
   targetName: '',
   targetLevel: 'EQUIPMENT',

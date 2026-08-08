@@ -18,9 +18,9 @@ export interface EquipmentRow {
   organizationId: number
   organizationCode: string
   organizationName: string
-  locationId: number
-  locationCode: string
-  locationName: string
+  locationId?: number
+  locationCode?: string
+  locationName?: string
   primaryResponsibleUserId?: number
   primaryResponsibleUsername?: string
   primaryResponsibleName?: string
@@ -92,8 +92,8 @@ export interface TransferRow {
   toOrganizationName: string
   fromLocationId?: number
   fromLocationName?: string
-  toLocationId: number
-  toLocationName: string
+  toLocationId?: number
+  toLocationName?: string
   fromResponsibleUserId?: number
   fromResponsibleName?: string
   toResponsibleUserId?: number
@@ -108,6 +108,8 @@ export interface BarcodeRow {
   equipmentId: number
   equipmentCode: string
   equipmentName: string
+  organizationId: number
+  organizationName: string
   accessToken: string
   barcodeType: 'QR' | 'CODE128'
   active: boolean
@@ -156,9 +158,15 @@ export interface EquipmentQuery {
   currentStatusCode?: string
   lifecycleStage?: string
   status?: number
+  tableFilters?: string
+  sortBy?: string
+  sortDirection?: 'asc' | 'desc'
   page?: number
   pageSize?: number
 }
+
+export type EquipmentStatusSummary = Record<string, number>
+
 
 export interface PublicEquipmentView {
   accessToken: string
@@ -204,8 +212,10 @@ export const equipmentApi = {
     http.put(`/equipment/${id}/current-status`, data),
   statusHistory: (id: number) =>
     getData<StatusHistoryRow[]>(`/equipment/${id}/status-history`),
+  statusSummary: (params: Pick<EquipmentQuery, 'keyword' | 'organizationId' | 'tableFilters'>) =>
+    getData<EquipmentStatusSummary>('/equipment/status-summary', params),
 
-  barcodes: (params?: { equipmentId?: number; activeOnly?: boolean }) =>
+  barcodes: (params?: { equipmentId?: number; organizationId?: number; activeOnly?: boolean }) =>
     getData<BarcodeRow[]>('/equipment/barcodes', params),
   generateBarcode: (id: number, data: object) =>
     http.post(`/equipment/${id}/barcode`, data),
@@ -249,13 +259,13 @@ export const equipmentApi = {
   },
   downloadTemplate: async () => {
     const response = await http.get<Blob>('/equipment/import-template', { responseType: 'blob' })
-    downloadBlob(response.data, 'LeanTPM-equipment-import-template.xlsx')
+    downloadBlob(response.data, '设备台账导入模板.xlsx')
   },
   exportWorkbook: async (params: EquipmentQuery) => {
     const response = await http.get<Blob>('/equipment/export', {
       params,
       responseType: 'blob',
     })
-    downloadBlob(response.data, 'LeanTPM-equipment-ledger.xlsx')
+    downloadBlob(response.data, '设备台账.xlsx')
   },
 }

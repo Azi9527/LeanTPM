@@ -31,9 +31,12 @@ watch(() => branding.logoUrl, () => { failed.value = false })
 
 <style scoped>
 .brand-logo {
+  box-sizing: border-box;
   display: inline-flex;
   overflow: hidden;
   align-items: center;
+  vertical-align: middle;
+  line-height: 0;
   flex: 0 0 auto;
   width: min(100%, calc(var(--brand-logo-height) * 3.08));
   height: var(--brand-logo-height);

@@ -9,6 +9,7 @@ import { initializeMobileRuntime } from './mobile/runtime'
 import { initializeHttpStorage } from './utils/http'
 import { consumeNotificationLaunchRoute } from './mobile/localAlerts'
 import { initializeBranding } from './branding/branding'
+import { installSmartTable } from './components/table/install-smart-table'
 import './assets/styles/main.scss'
 
 function renderStartupFailure(error: unknown) {
@@ -39,6 +40,7 @@ async function bootstrap() {
     app.use(createPinia())
     app.use(router)
     app.use(ElementPlus, { size: 'default' })
+    installSmartTable(app)
     app.mount('#app')
     await router.isReady()
     const launchRoute = await consumeNotificationLaunchRoute()

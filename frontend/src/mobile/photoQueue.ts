@@ -16,8 +16,8 @@ export interface QueuedPhoto {
   taskItemId: number
   kind: QueuedAttachmentKind
   createdAt: string
-  original: SerializedFile
-  watermarked: SerializedFile
+  original?: SerializedFile
+  watermarked?: SerializedFile
   metadata: PhotoEvidenceMetadata
 }
 
@@ -38,8 +38,8 @@ export async function enqueuePhoto(
     taskItemId: capture.metadata.taskItemId,
     kind,
     createdAt: new Date().toISOString(),
-    original: await serialize(capture.originalFile),
-    watermarked: await serialize(capture.watermarkedFile),
+    original: capture.originalFile ? await serialize(capture.originalFile) : undefined,
+    watermarked: capture.watermarkedFile ? await serialize(capture.watermarkedFile) : undefined,
     metadata: capture.metadata,
   }
   await vaultSet(key(id), JSON.stringify(queued))
@@ -68,8 +68,8 @@ export async function countQueuedPhotos(): Promise<number> {
 
 export function restoreQueuedCapture(row: QueuedPhoto): CapturedPhotoEvidence {
   return {
-    originalFile: deserialize(row.original),
-    watermarkedFile: deserialize(row.watermarked),
+    originalFile: row.original ? deserialize(row.original) : undefined,
+    watermarkedFile: row.watermarked ? deserialize(row.watermarked) : undefined,
     metadata: row.metadata,
   }
 }

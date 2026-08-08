@@ -14,7 +14,7 @@ const selected = ref<AttachmentRow | null>(null)
 const fileInput = ref<HTMLInputElement>()
 const rows = ref<AttachmentRow[]>([])
 const total = ref(0)
-const query = reactive({ keyword: '', page: 1, pageSize: 20 })
+const query = reactive({ keyword: '', page: 1, pageSize: 100 })
 const relationForm = reactive({
   businessType: 'EQUIPMENT',
   businessId: undefined as number | undefined,

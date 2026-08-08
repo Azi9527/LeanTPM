@@ -42,6 +42,39 @@ export interface OrganizationNode {
   status: number
 }
 
+export interface PersonnelOrganizationRow {
+  id: number
+  parentId: number
+  organizationCode: string
+  organizationName: string
+  organizationType: string
+  managerUserId?: number
+  managerName?: string
+  managerUserIds: number[]
+  managerNames?: string
+  status: number
+  version: number
+  memberUserIds: number[]
+}
+
+export interface PersonnelUserRow {
+  id: number
+  username: string
+  realName: string
+  employeeNo?: string
+  organizationId?: number
+  organizationName?: string
+  status: number
+  roleCodes: string[]
+  teamIds: number[]
+  primaryTeamId?: number
+}
+
+export interface PersonnelOrganizationSnapshot {
+  organizations: PersonnelOrganizationRow[]
+  users: PersonnelUserRow[]
+}
+
 export interface DataScopeDefinition {
   id: number
   scopeCode: string
@@ -150,6 +183,17 @@ export interface ParameterRow {
   version: number
 }
 
+export interface PhotoWatermarkSettings {
+  watermarkEnabled: boolean
+  saveOriginal: boolean
+  saveWatermarked: boolean
+  template: string
+  position: 'TOP' | 'BOTTOM'
+  backgroundOpacity: number
+  fontColor: string
+  backgroundColor: string
+}
+
 export interface NumberRuleRow {
   id: number
   ruleCode: string
@@ -243,9 +287,21 @@ export const systemApi = {
     http.put(`/system/roles/${id}/data-scope`, data),
 
   organizations: () => getData<OrganizationNode[]>('/system/organizations/tree'),
+  personnelOrganization: () =>
+    getData<PersonnelOrganizationSnapshot>('/system/personnel-organization'),
+  updateOrganizationManager: (id: number, data: { managerUserIds: number[]; version: number }) =>
+    http.put(`/system/personnel-organization/organizations/${id}/manager`, data),
+  updateOrganizationMembers: (id: number, userIds: number[]) =>
+    http.put(`/system/personnel-organization/organizations/${id}/members`, { userIds }),
+  updateTeamRelationships: (
+    id: number,
+    data: { managerUserIds: number[]; userIds: number[]; version: number },
+  ) => http.put(`/system/personnel-organization/organizations/${id}/team-relationships`, data),
   dataScopes: () => getData<DataScopeDefinition[]>('/system/data-scopes'),
 
   menus: () => getData<MenuItem[]>('/system/menus/tree'),
+  updateMenuStatus: (id: number, enabled: boolean) =>
+    http.patch<ApiResponse<{ affectedCount: number }>>(`/system/menus/${id}/status`, { enabled }),
 
   dictionaries: () => getData<DictionaryType[]>('/system/dictionaries'),
   createDictionary: (data: object) => http.post('/system/dictionaries', data),
@@ -288,6 +344,10 @@ export const systemApi = {
   updateParameter: (id: number, data: object) => http.put(`/system/parameters/${id}`, data),
   deleteParameter: (id: number) => http.delete(`/system/parameters/${id}`),
   updateBranding: (data: BrandingSettings) => http.put('/system/branding', data),
+  photoWatermarkSettings: () =>
+    getData<PhotoWatermarkSettings>('/system/photo-watermark-settings'),
+  updatePhotoWatermarkSettings: (data: PhotoWatermarkSettings) =>
+    http.put('/system/photo-watermark-settings', data),
 
   numberRules: (params?: { keyword?: string }) =>
     getData<NumberRuleRow[]>('/system/number-rules', params),

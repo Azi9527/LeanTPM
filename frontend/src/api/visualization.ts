@@ -12,6 +12,8 @@ export interface CoreMetrics {
   offline: number
   inspection: number
   other: number
+  idle: number
+  scrapped: number
 }
 
 export interface StatusMetric {
@@ -32,6 +34,8 @@ export interface OrganizationMetric {
   faultCount: number
   stoppedCount: number
   offlineCount: number
+  idleCount: number
+  scrappedCount: number
 }
 
 export interface LiveEquipment {
@@ -78,6 +82,26 @@ export interface ReliabilityMetrics {
   runTimeHours?: number
 }
 
+export interface InspectionRegistrationMetrics {
+  registered: number
+  quickRegistered: number
+  equipmentCovered: number
+  abnormalRegistered: number
+}
+
+export interface RecentInspectionRegistration {
+  taskId: number
+  taskCode: string
+  equipmentCode: string
+  equipmentName: string
+  schemeName: string
+  organizationName: string
+  sourceType: 'PLAN' | 'MANUAL' | 'BACKFILL' | 'QUICK_ENTRY'
+  executorName: string
+  completedTime: string
+  abnormalCount: number
+}
+
 export interface DashboardResult {
   generatedAt: string
   startDate: string
@@ -93,6 +117,8 @@ export interface DashboardResult {
   maintenance: WorkflowMetrics
   workflowTrend: WorkflowTrend[]
   reliability: ReliabilityMetrics
+  inspectionRegistration: InspectionRegistrationMetrics
+  recentInspectionRegistrations: RecentInspectionRegistration[]
   oee: AnalysisResult
 }
 

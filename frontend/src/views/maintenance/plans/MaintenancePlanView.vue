@@ -58,7 +58,7 @@ async function load() {
       keyword: keyword.value || undefined,
       planStatus: status.value,
       page: page.value,
-      pageSize: 20,
+      pageSize: 100,
     })
     rows.value = result.records
     total.value = result.total

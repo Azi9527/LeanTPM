@@ -15,7 +15,7 @@ const query = reactive({
   resourceType: '',
   keyword: '',
   page: 1,
-  pageSize: 20,
+  pageSize: 100,
 })
 
 const resourceOptions = [
@@ -31,7 +31,27 @@ const operationLabels: Record<string, string> = {
   DELETE: '删除',
   BIND: '绑定',
   UNBIND: '解绑',
+  ENABLE: '启用',
+  DISABLE: '停用',
+  PUBLISH: '发布',
+  RESTORE: '恢复',
 }
+
+const resourceLabels: Record<string, string> = {
+  SYSTEM_PARAMETER: '系统参数', NUMBER_RULE: '编号规则', ATTACHMENT_RELATION: '附件关系',
+  INSPECTION_ITEM: '点检项目', INSPECTION_SCHEME: '点检方案', INSPECTION_PLAN: '点检计划',
+  INSPECTION_TASK: '点检任务', EQUIPMENT: '设备台账', USER: '用户', ORGANIZATION: '组织', LOCATION: '物理位置',
+}
+
+const fieldLabels: Record<string, string> = {
+  status: '状态', enabled: '是否启用', description: '说明', name: '名称', code: '编码',
+  schemeName: '方案名称', schemeCode: '方案编码', itemName: '项目名称', itemCode: '项目编码',
+  taskStatus: '任务状态', dueTime: '截止时间', assigneeUserId: '执行人', organizationId: '所属组织',
+  updatedTime: '更新时间', updatedBy: '更新人', version: '数据版本', deleted: '删除标记',
+}
+
+const resourceLabel = (value: string) => resourceLabels[value] || value
+const fieldLabel = (value: string) => fieldLabels[value] || value
 
 onMounted(load)
 
@@ -87,7 +107,7 @@ function prettyJson(value?: string) {
 
 const detailTitle = computed(
   () => selected.value
-    ? `${selected.value.resourceType} #${selected.value.resourceId}`
+    ? `${resourceLabel(selected.value.resourceType)} #${selected.value.resourceId}`
     : '变更详情',
 )
 </script>
@@ -146,7 +166,7 @@ const detailTitle = computed(
       </div>
       <el-table v-loading="loading" :data="rows" row-key="id">
         <el-table-column prop="resourceType" label="资源类型" min-width="170">
-          <template #default="{ row }"><span class="mono">{{ row.resourceType }}</span></template>
+          <template #default="{ row }">{{ resourceLabel(row.resourceType) }}</template>
         </el-table-column>
         <el-table-column prop="resourceId" label="资源 ID" min-width="110" />
         <el-table-column label="操作" width="90">
@@ -163,7 +183,7 @@ const detailTitle = computed(
               size="small"
               effect="plain"
             >
-              {{ field }}
+              {{ fieldLabel(field) }}
             </el-tag>
             <span v-if="parseChangedFields(row.changedFields).length === 0" class="muted">无字段</span>
           </template>

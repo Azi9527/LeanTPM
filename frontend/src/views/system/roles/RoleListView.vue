@@ -5,6 +5,7 @@ import { Plus } from '@element-plus/icons-vue'
 import { systemApi, type OrganizationNode, type RoleRow } from '@/api/system'
 import { useAuthStore } from '@/stores/auth'
 import { errorMessage } from '@/utils/http'
+import { permissionCodeLabel } from '@/utils/permission-labels'
 import type { MenuItem } from '@/types/api'
 
 interface MenuTree extends MenuItem {
@@ -195,7 +196,10 @@ function scopeLabel(value: string) {
           <el-scrollbar height="390px">
             <el-tree ref="treeRef" :data="menuTree" node-key="id" show-checkbox default-expand-all :props="{ label: 'menuName', children: 'children' }">
               <template #default="{ data }">
-                <span class="tree-node"><span>{{ data.menuName }}</span><small v-if="data.permissionCode">{{ data.permissionCode }}</small></span>
+                <span class="tree-node">
+                  <span>{{ data.menuName }}</span>
+                  <small v-if="data.permissionCode" :title="data.permissionCode">{{ permissionCodeLabel(data.permissionCode) }}</small>
+                </span>
               </template>
             </el-tree>
           </el-scrollbar>

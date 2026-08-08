@@ -7,6 +7,7 @@ import { masterDataApi, type EquipmentCategoryRow, type ReferenceUser } from '@/
 import { useAuthStore } from '@/stores/auth'
 import { errorMessage } from '@/utils/http'
 import InspectionImportDialog from '@/components/inspection/InspectionImportDialog.vue'
+import { applySmartTableQuery, type SmartTableServerQuery } from '@/components/table/smart-table-context'
 
 const auth = useAuthStore()
 const loading = ref(false)
@@ -25,6 +26,11 @@ const equipment = ref<EquipmentRow[]>([])
 const categories = ref<EquipmentCategoryRow[]>([])
 const users = ref<ReferenceUser[]>([])
 const calendars = ref<InspectionCalendarRow[]>([])
+const smartTableQuery = reactive({
+  tableFilters: undefined as string | undefined,
+  sortBy: undefined as string | undefined,
+  sortDirection: undefined as 'asc' | 'desc' | undefined,
+})
 
 const form = reactive({
   schemeCode: '',
@@ -38,9 +44,11 @@ const form = reactive({
   generationLeadMinutes: 60,
   workCalendarId: undefined as number | undefined,
   shiftCode: '',
-  defaultAssigneeUserId: undefined as number | undefined,
+  defaultAssigneeUserIds: [] as number[],
   defaultTeamCode: '',
   backfillAllowed: false,
+  submissionPhotoRequired: false,
+  submissionPhotoMaxCount: 9,
   effectiveDate: new Date().toISOString().slice(0, 10),
   expiryDate: '',
   itemIds: [] as number[],
@@ -75,7 +83,12 @@ onMounted(async () => {
 async function load() {
   loading.value = true
   try {
-    const result = await inspectionApi.schemes({ keyword: keyword.value || undefined, page: page.value, pageSize: 20 })
+    const result = await inspectionApi.schemes({
+      keyword: keyword.value || undefined,
+      ...smartTableQuery,
+      page: page.value,
+      pageSize: 100,
+    })
     rows.value = result.records
     total.value = result.total
   } catch (error) {
@@ -83,6 +96,12 @@ async function load() {
   } finally {
     loading.value = false
   }
+}
+
+function applyTableQuery(query: SmartTableServerQuery) {
+  applySmartTableQuery(smartTableQuery, query)
+  page.value = 1
+  void load()
 }
 
 async function loadReferences() {
@@ -117,9 +136,11 @@ function resetForm() {
     generationLeadMinutes: 60,
     workCalendarId: calendars.value.find((row) => row.defaultFlag)?.id,
     shiftCode: '',
-    defaultAssigneeUserId: undefined,
+    defaultAssigneeUserIds: [],
     defaultTeamCode: '',
     backfillAllowed: false,
+    submissionPhotoRequired: false,
+    submissionPhotoMaxCount: 9,
     effectiveDate: new Date().toISOString().slice(0, 10),
     expiryDate: '',
     itemIds: [],
@@ -151,9 +172,13 @@ async function open(row?: SchemeRow) {
         workCalendarId: value.version.workCalendarId
           ?? calendars.value.find((calendar) => calendar.defaultFlag)?.id,
         shiftCode: value.version.shiftCode || '',
-        defaultAssigneeUserId: value.version.defaultAssigneeUserId,
+        defaultAssigneeUserIds: value.version.defaultAssigneeUserIdsCsv
+          ? csvNumbers(value.version.defaultAssigneeUserIdsCsv)
+          : value.version.defaultAssigneeUserId ? [value.version.defaultAssigneeUserId] : [],
         defaultTeamCode: value.version.defaultTeamCode || '',
         backfillAllowed: value.version.backfillAllowedFlag,
+        submissionPhotoRequired: value.version.submissionPhotoRequiredFlag,
+        submissionPhotoMaxCount: value.version.submissionPhotoMaxCount ?? 9,
         effectiveDate: value.version.effectiveDate,
         expiryDate: value.version.expiryDate || '',
         itemIds: value.items.map((item) => item.inspectionItemId),
@@ -188,7 +213,8 @@ async function save() {
       weekDays: form.weekDays.join(',') || null,
       monthDays: form.monthDays.join(',') || null,
       expiryDate: form.expiryDate || null,
-      defaultAssigneeUserId: form.defaultAssigneeUserId || null,
+      defaultAssigneeUserId: form.defaultAssigneeUserIds[0] || null,
+      defaultAssigneeUserIds: form.defaultAssigneeUserIds,
       items: form.itemIds.map((inspectionItemId, index) => ({
         inspectionItemId,
         sortOrder: (index + 1) * 10,
@@ -196,10 +222,10 @@ async function save() {
       })),
       version: editing.value?.version,
     }
-    if (editing.value) await inspectionApi.createSchemeVersion(editing.value.id, payload)
-    else await inspectionApi.createScheme(payload)
+    if (editing.value) await inspectionApi.createAndPublishSchemeVersion(editing.value.id, payload)
+    else await inspectionApi.createAndPublishScheme(payload)
     dialogVisible.value = false
-    ElMessage.success(editing.value ? '方案新草稿版本已创建' : '点检方案已创建')
+    ElMessage.success(editing.value ? '方案新版本已发布' : '点检方案已创建并发布')
     await load()
   } catch (error) {
     ElMessage.error(errorMessage(error))
@@ -221,17 +247,67 @@ async function showDetail(row: SchemeRow, versionId?: number) {
   }
 }
 
-async function publish(row: SchemeRow) {
-  const value = await inspectionApi.scheme(row.id)
-  const draft = value.versionHistory.find((version) => version.versionStatus === 'DRAFT')
-  if (!draft) {
-    ElMessage.warning('当前方案没有待发布草稿版本')
-    return
-  }
-  await ElMessageBox.confirm(`发布 ${row.schemeName} V${draft.versionNumber} 并生成设备计划？`, '发布方案', { type: 'warning' })
+async function restoreVersion(row: SchemeRow, versionId: number, versionNumber: number) {
+  await ElMessageBox.confirm(
+    `以历史版本 V${versionNumber} 的配置创建并发布一个新版本？现有历史记录不会被修改。`,
+    '恢复历史版本',
+    { type: 'warning', confirmButtonText: '创建并发布' },
+  )
   try {
-    await inspectionApi.publishScheme(row.id, draft.id)
-    ElMessage.success('方案已发布，点检计划已同步')
+    const value = await inspectionApi.scheme(row.id, versionId)
+    await inspectionApi.createAndPublishSchemeVersion(row.id, {
+      schemeCode: value.scheme.schemeCode,
+      schemeName: value.scheme.schemeName,
+      inspectionType: value.scheme.inspectionType,
+      cycleType: value.version.cycleType,
+      cycleInterval: value.version.cycleInterval,
+      weekDays: value.version.weekDays || null,
+      monthDays: value.version.monthDays || null,
+      scheduledTime: value.version.scheduledTime || null,
+      generationLeadMinutes: value.version.generationLeadMinutes,
+      workCalendarId: value.version.workCalendarId,
+      shiftCode: value.version.shiftCode || null,
+      defaultAssigneeUserId: value.version.defaultAssigneeUserId || null,
+      defaultAssigneeUserIds: value.version.defaultAssigneeUserIdsCsv
+        ? csvNumbers(value.version.defaultAssigneeUserIdsCsv)
+        : value.version.defaultAssigneeUserId ? [value.version.defaultAssigneeUserId] : [],
+      defaultTeamCode: value.version.defaultTeamCode || null,
+      reviewRequired: false,
+      backfillAllowed: value.version.backfillAllowedFlag,
+      submissionPhotoRequired: value.version.submissionPhotoRequiredFlag,
+      submissionPhotoMaxCount: value.version.submissionPhotoMaxCount,
+      effectiveDate: value.version.effectiveDate,
+      expiryDate: value.version.expiryDate || null,
+      items: value.items.map((item) => ({
+        inspectionItemId: item.inspectionItemId,
+        sortOrder: item.sortOrder,
+        abnormalStop: item.abnormalStopFlag ?? null,
+      })),
+      categoryIds: value.applicability.categoryIds,
+      equipmentIds: value.applicability.equipmentIds,
+      enabled: value.scheme.status === 1,
+      description: value.scheme.description || null,
+      changeSummary: `由历史版本 V${versionNumber} 恢复`,
+      version: value.scheme.version,
+    })
+    ElMessage.success(`历史版本 V${versionNumber} 已恢复为最新发布版本`)
+    detailVisible.value = false
+    await load()
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  }
+}
+
+async function changeSchemeStatus(row: SchemeRow) {
+  const enabled = row.status !== 1
+  await ElMessageBox.confirm(
+    `${enabled ? '启用' : '停用'}方案“${row.schemeName}”？${enabled ? '' : '停用后将不再生成新任务。'}`,
+    `${enabled ? '启用' : '停用'}点检方案`,
+    { type: enabled ? 'success' : 'warning' },
+  )
+  try {
+    await inspectionApi.updateSchemeStatus(row.id, enabled, row.version)
+    ElMessage.success(enabled ? '点检方案已启用' : '点检方案已停用')
     await load()
   } catch (error) {
     ElMessage.error(errorMessage(error))
@@ -246,7 +322,7 @@ function csvNumbers(value?: string) {
 <template>
   <div class="page-shell">
     <header class="page-header">
-      <div><h1>点检方案</h1><p>方案按版本发布；已发布版本不可修改，历史任务永久保留项目快照。</p></div>
+      <div><h1>点检方案</h1><p>新增或调整后直接发布新版本；历史版本可查看并按指定版本恢复。</p></div>
       <div class="page-actions">
         <el-button v-if="auth.can('inspection:import')" @click="importVisible = true">批量导入</el-button>
         <el-button v-if="auth.can('inspection:scheme:manage')" type="primary" @click="open()">新增方案</el-button>
@@ -258,19 +334,22 @@ function csvNumbers(value?: string) {
     </section>
     <section class="surface-card table-card" v-loading="loading">
       <div class="table-toolbar"><span class="table-title">方案版本库</span><span>共 {{ total }} 个方案</span></div>
-      <el-table :data="rows" row-key="id">
+      <el-table :data="rows" row-key="id" server-query @smart-query-change="applyTableQuery">
         <el-table-column prop="schemeCode" label="方案编码" min-width="180"><template #default="{ row }"><span class="mono">{{ row.schemeCode }}</span></template></el-table-column>
         <el-table-column prop="schemeName" label="方案名称" min-width="190" />
-        <el-table-column label="类型" width="120"><template #default="{ row }">{{ typeLabels[row.inspectionType] || row.inspectionType }}</template></el-table-column>
-        <el-table-column label="当前版本" width="120"><template #default="{ row }"><el-tag :type="row.currentVersionStatus === 'PUBLISHED' ? 'success' : 'warning'">V{{ row.currentVersionNumber || '—' }} · {{ row.currentVersionStatus || '草稿' }}</el-tag></template></el-table-column>
-        <el-table-column label="周期" width="120"><template #default="{ row }">{{ cycleLabels[row.cycleType] || row.cycleType || '—' }}</template></el-table-column>
-        <el-table-column prop="itemCount" label="项目" width="80" />
-        <el-table-column prop="activePlanCount" label="有效计划" width="100" />
-        <el-table-column label="操作" width="210" fixed="right">
+        <el-table-column prop="inspectionType" label="类型" smart-filter="select" width="120"><template #default="{ row }">{{ typeLabels[row.inspectionType] || row.inspectionType }}</template></el-table-column>
+        <el-table-column prop="currentVersionStatus" label="当前版本" smart-filter="select" width="120"><template #default="{ row }"><el-tag :type="row.currentVersionStatus === 'PUBLISHED' ? 'success' : 'warning'">V{{ row.currentVersionNumber || '—' }} · {{ row.currentVersionStatus === 'PUBLISHED' ? '已发布' : '未发布' }}</el-tag></template></el-table-column>
+        <el-table-column prop="cycleType" label="周期" smart-filter="select" width="120"><template #default="{ row }">{{ cycleLabels[row.cycleType] || row.cycleType || '—' }}</template></el-table-column>
+        <el-table-column prop="itemCount" label="项目" smart-filter="number" width="80" />
+        <el-table-column prop="activePlanCount" label="有效计划" smart-filter="number" width="100" />
+        <el-table-column prop="status" label="状态" smart-filter="select" width="100">
+          <template #default="{ row }"><el-tag :type="row.status === 1 ? 'success' : 'info'">{{ row.status === 1 ? '启用' : '停用' }}</el-tag></template>
+        </el-table-column>
+        <el-table-column label="操作" smart-filter="none" width="280" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="showDetail(row)">详情</el-button>
+            <el-button link type="primary" @click="showDetail(row)">历史版本</el-button>
             <el-button v-if="auth.can('inspection:scheme:manage')" link type="primary" @click="open(row)">新版本</el-button>
-            <el-button v-if="auth.can('inspection:scheme:publish')" link type="success" @click="publish(row)">发布草稿</el-button>
+            <el-button v-if="auth.can('inspection:scheme:manage')" link :type="row.status === 1 ? 'warning' : 'success'" @click="changeSchemeStatus(row)">{{ row.status === 1 ? '停用' : '启用' }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -280,20 +359,20 @@ function csvNumbers(value?: string) {
     <el-dialog v-model="dialogVisible" :title="editing ? '创建方案新版本' : '新增点检方案'" width="min(980px, 97vw)">
       <el-form label-position="top" class="form-grid">
         <el-form-item label="方案编码"><el-input v-model="form.schemeCode" :disabled="Boolean(editing)" placeholder="留空自动编号" /></el-form-item>
-        <el-form-item label="方案名称"><el-input v-model="form.schemeName" /></el-form-item>
-        <el-form-item label="点检类型"><el-select v-model="form.inspectionType"><el-option v-for="(label, value) in typeLabels" :key="value" :label="label" :value="value" /></el-select></el-form-item>
-        <el-form-item label="周期类型"><el-select v-model="form.cycleType"><el-option v-for="(label, value) in cycleLabels" :key="value" :label="label" :value="value" /></el-select></el-form-item>
+        <el-form-item label="方案名称" required><el-input v-model="form.schemeName" /></el-form-item>
+        <el-form-item label="点检类型" required><el-select v-model="form.inspectionType"><el-option v-for="(label, value) in typeLabels" :key="value" :label="label" :value="value" /></el-select></el-form-item>
+        <el-form-item label="周期类型" required><el-select v-model="form.cycleType"><el-option v-for="(label, value) in cycleLabels" :key="value" :label="label" :value="value" /></el-select></el-form-item>
         <el-form-item label="周期间隔"><el-input-number v-model="form.cycleInterval" :min="1" /></el-form-item>
         <el-form-item label="计划时间"><el-time-picker v-model="form.scheduledTime" value-format="HH:mm:ss" /></el-form-item>
         <el-form-item label="提前生成（分钟）"><el-input-number v-model="form.generationLeadMinutes" :min="0" :max="43200" :step="30" /><div class="field-hint">默认提前 60 分钟，最大 30 天</div></el-form-item>
-        <el-form-item label="点检工作日历"><el-select v-model="form.workCalendarId" filterable><el-option v-for="calendar in calendars" :key="calendar.id" :label="calendar.defaultFlag ? `${calendar.calendarName}（默认）` : calendar.calendarName" :value="calendar.id" /></el-select></el-form-item>
+        <el-form-item label="点检工作日历" required><el-select v-model="form.workCalendarId" filterable><el-option v-for="calendar in calendars" :key="calendar.id" :label="calendar.defaultFlag ? `${calendar.calendarName}（默认）` : calendar.calendarName" :value="calendar.id" /></el-select></el-form-item>
         <el-form-item v-if="form.cycleType === 'WEEKLY'" label="执行星期" class="full"><el-checkbox-group v-model="form.weekDays"><el-checkbox v-for="day in 7" :key="day" :value="day">周{{ '一二三四五六日'[day - 1] }}</el-checkbox></el-checkbox-group></el-form-item>
         <el-form-item v-if="form.cycleType === 'MONTHLY'" label="每月日期" class="full"><el-select v-model="form.monthDays" multiple collapse-tags><el-option v-for="day in 31" :key="day" :label="`${day}日`" :value="day" /></el-select></el-form-item>
-        <el-form-item label="默认执行人"><el-select v-model="form.defaultAssigneeUserId" clearable filterable><el-option v-for="user in users" :key="user.id" :label="`${user.realName} (${user.username})`" :value="user.id" /></el-select></el-form-item>
+        <el-form-item label="默认执行人"><el-select v-model="form.defaultAssigneeUserIds" multiple clearable filterable collapse-tags collapse-tags-tooltip :max-collapse-tags="3"><el-option v-for="user in users" :key="user.id" :label="`${user.realName} (${user.username})`" :value="user.id" /></el-select><div class="field-hint">最多选择 20 人；第一位作为主执行人，任一执行人提交即完成任务。</div></el-form-item>
         <el-form-item label="默认班组"><el-input v-model="form.defaultTeamCode" /></el-form-item>
-        <el-form-item label="生效日期"><el-date-picker v-model="form.effectiveDate" type="date" value-format="YYYY-MM-DD" /></el-form-item>
+        <el-form-item label="生效日期" required><el-date-picker v-model="form.effectiveDate" type="date" value-format="YYYY-MM-DD" /></el-form-item>
         <el-form-item label="失效日期"><el-date-picker v-model="form.expiryDate" type="date" value-format="YYYY-MM-DD" clearable /></el-form-item>
-        <el-form-item label="点检项目" class="full"><el-select v-model="form.itemIds" multiple filterable collapse-tags collapse-tags-tooltip><el-option v-for="item in items" :key="item.id" :label="`${item.itemCode} · ${item.itemName}`" :value="item.id" /></el-select></el-form-item>
+        <el-form-item label="点检项目" class="full" required><el-select v-model="form.itemIds" multiple filterable collapse-tags collapse-tags-tooltip><el-option v-for="item in items" :key="item.id" :label="`${item.itemCode} · ${item.itemName}`" :value="item.id" /></el-select></el-form-item>
         <el-form-item v-if="form.itemIds.length" label="异常停机规则" class="full">
           <el-table :data="selectedItemRows()" size="small" border>
             <el-table-column prop="itemName" label="点检项目" min-width="220" />
@@ -301,12 +380,17 @@ function csvNumbers(value?: string) {
             <el-table-column label="方案覆盖" width="180"><template #default="{ row }"><el-select v-model="form.itemStopOverrides[row.id]"><el-option label="继承项目默认" :value="null" /><el-option label="异常停机" :value="true" /><el-option label="异常不停机" :value="false" /></el-select></template></el-table-column>
           </el-table>
         </el-form-item>
-        <el-form-item label="适用设备分类" class="full"><el-select v-model="form.categoryIds" multiple filterable collapse-tags><el-option v-for="category in categories" :key="category.id" :label="`${category.categoryCode} · ${category.categoryName}`" :value="category.id" /></el-select></el-form-item>
-        <el-form-item label="指定设备" class="full"><el-select v-model="form.equipmentIds" multiple filterable collapse-tags collapse-tags-tooltip><el-option v-for="row in equipment" :key="row.id" :label="`${row.equipmentCode} · ${row.equipmentName}`" :value="row.id" /></el-select></el-form-item>
+        <el-form-item label="适用设备分类" class="full"><el-select v-model="form.categoryIds" multiple filterable collapse-tags><el-option v-for="category in categories" :key="category.id" :label="`${category.categoryCode} · ${category.categoryName}`" :value="category.id" /></el-select><div class="field-hint">适用设备分类和指定设备至少填写一项。</div></el-form-item>
+        <el-form-item label="指定设备" class="full"><el-select v-model="form.equipmentIds" multiple filterable collapse-tags collapse-tags-tooltip><el-option v-for="row in equipment" :key="row.id" :label="`${row.equipmentCode} · ${row.equipmentName}`" :value="row.id" /></el-select><div class="field-hint">适用设备分类和指定设备至少填写一项。</div></el-form-item>
         <el-form-item label="执行控制" class="full"><el-checkbox v-model="form.backfillAllowed">允许补录</el-checkbox><el-checkbox v-model="form.enabled">启用方案</el-checkbox><span class="field-hint">点检结果提交后任务直接完成</span></el-form-item>
+        <el-form-item label="提交图片" class="full scheme-photo-policy">
+          <el-switch v-model="form.submissionPhotoRequired" active-text="提交时必须上传水印图片" inactive-text="图片选传" />
+          <span>整单最多</span><el-input-number v-model="form.submissionPhotoMaxCount" :min="1" :max="20" /><span>张</span>
+          <span class="field-hint">必传开启后，任务至少需要 1 张通过拍照/相册入口生成的水印图片；单个项目的拍照规则仍同时生效。</span>
+        </el-form-item>
         <el-form-item label="版本说明" class="full"><el-input v-model="form.changeSummary" type="textarea" placeholder="说明本版本调整内容" /></el-form-item>
       </el-form>
-      <template #footer><el-button @click="dialogVisible = false">取消</el-button><el-button type="primary" :loading="saving" @click="save">保存草稿</el-button></template>
+      <template #footer><el-button @click="dialogVisible = false">取消</el-button><el-button type="primary" :loading="saving" @click="save">保存并发布</el-button></template>
     </el-dialog>
 
     <el-drawer v-model="detailVisible" :title="`${detail?.scheme.schemeName || ''} · 版本详情`" size="min(820px, 96vw)">
@@ -317,14 +401,26 @@ function csvNumbers(value?: string) {
           <el-descriptions-item label="周期">{{ cycleLabels[detail.version.cycleType] }} / {{ detail.version.cycleInterval }}</el-descriptions-item>
           <el-descriptions-item label="提前生成">{{ detail.version.generationLeadMinutes }} 分钟</el-descriptions-item>
           <el-descriptions-item label="工作日历">{{ calendars.find((row) => row.id === detail?.version.workCalendarId)?.calendarName || '未指定' }}</el-descriptions-item>
-          <el-descriptions-item label="默认执行人">{{ detail.version.defaultAssigneeName || '未指定' }}</el-descriptions-item>
+          <el-descriptions-item label="默认执行人">{{ detail.version.defaultAssigneeNames || detail.version.defaultAssigneeName || '未指定' }}</el-descriptions-item>
           <el-descriptions-item label="生效">{{ detail.version.effectiveDate }} ~ {{ detail.version.expiryDate || '长期' }}</el-descriptions-item>
           <el-descriptions-item label="控制">提交即完成 / {{ detail.version.backfillAllowedFlag ? '可补录' : '不可补录' }}</el-descriptions-item>
+          <el-descriptions-item label="提交图片">{{ detail.version.submissionPhotoRequiredFlag ? '必须上传水印图片' : '图片选传' }} / 最多 {{ detail.version.submissionPhotoMaxCount }} 张</el-descriptions-item>
         </el-descriptions>
         <h3>点检项目</h3>
         <el-table :data="detail.items" size="small"><el-table-column prop="sortOrder" label="#" width="60" /><el-table-column prop="itemCode" label="编码" min-width="150" /><el-table-column prop="itemName" label="名称" min-width="150" /><el-table-column prop="resultType" label="结果类型" width="140" /></el-table>
         <h3>版本历史</h3>
-        <el-timeline><el-timeline-item v-for="version in detail.versionHistory" :key="version.id" :timestamp="version.publishedTime || version.effectiveDate"><el-button link type="primary" @click="showDetail(detail!.scheme, version.id)">V{{ version.versionNumber }} · {{ version.versionStatus }}</el-button> {{ version.changeSummary }}</el-timeline-item></el-timeline>
+        <el-timeline>
+          <el-timeline-item v-for="version in detail.versionHistory" :key="version.id" :timestamp="version.publishedTime || version.effectiveDate">
+            <el-button link type="primary" @click="showDetail(detail!.scheme, version.id)">V{{ version.versionNumber }} · {{ version.versionStatus === 'PUBLISHED' ? '已发布' : version.versionStatus === 'RETIRED' ? '历史版本' : '未发布' }}</el-button>
+            {{ version.changeSummary }}
+            <el-button
+              v-if="auth.can('inspection:scheme:manage') && version.id !== detail.scheme.currentVersionId"
+              link
+              type="warning"
+              @click="restoreVersion(detail!.scheme, version.id, version.versionNumber)"
+            >恢复此版本</el-button>
+          </el-timeline-item>
+        </el-timeline>
       </template>
     </el-drawer>
     <InspectionImportDialog v-model="importVisible" @committed="load" />
@@ -336,5 +432,6 @@ function csvNumbers(value?: string) {
 .page-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .full { grid-column: 1 / -1; }
 .field-hint { margin-top: 4px; color: var(--el-text-color-secondary); font-size: 12px; }
+.scheme-photo-policy :deep(.el-form-item__content) { align-items: center; gap: 12px; }
 @media (max-width: 700px) { .form-grid { grid-template-columns: 1fr; } .full { grid-column: auto; } }
 </style>

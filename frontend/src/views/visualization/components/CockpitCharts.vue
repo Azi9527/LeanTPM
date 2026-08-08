@@ -8,7 +8,7 @@ import type { DashboardResult } from '@/api/visualization'
 
 use([BarChart, LineChart, PieChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer])
 
-const props = defineProps<{ dashboard?: DashboardResult; mode?: 'ALL' | 'STATUS' | 'INSPECTION' | 'MAINTENANCE' | 'OEE' }>()
+const props = defineProps<{ dashboard?: DashboardResult; mode?: 'ALL' | 'STATUS' | 'INSPECTION' | 'MAINTENANCE' | 'OEE'; compact?: boolean }>()
 const statusElement = ref<HTMLDivElement>()
 const organizationElement = ref<HTMLDivElement>()
 const workflowElement = ref<HTMLDivElement>()
@@ -62,10 +62,10 @@ function render() {
       },
       yAxis: { type: 'value', axisLabel: { color: '#7693aa' }, splitLine: { lineStyle: { color: '#17324b' } } },
       series: [
+        { name: '空闲', type: 'bar', stack: 'status', data: data.organizationDistribution.map((i) => i.idleCount), itemStyle: { color: '#38bdf8' } },
         { name: '运行', type: 'bar', stack: 'status', data: data.organizationDistribution.map((i) => i.runningCount), itemStyle: { color: '#22c55e' } },
-        { name: '停机', type: 'bar', stack: 'status', data: data.organizationDistribution.map((i) => i.stoppedCount), itemStyle: { color: '#64748b' } },
-        { name: '故障', type: 'bar', stack: 'status', data: data.organizationDistribution.map((i) => i.faultCount), itemStyle: { color: '#ef4444' } },
-        { name: '离线', type: 'bar', stack: 'status', data: data.organizationDistribution.map((i) => i.offlineCount), itemStyle: { color: '#334155' } },
+        { name: '停机', type: 'bar', stack: 'status', data: data.organizationDistribution.map((i) => i.stoppedCount), itemStyle: { color: '#f59e0b' } },
+        { name: '报废', type: 'bar', stack: 'status', data: data.organizationDistribution.map((i) => i.scrappedCount), itemStyle: { color: '#475569' } },
       ],
     }, true)
   }
@@ -110,7 +110,7 @@ function resize() {
 </script>
 
 <template>
-  <div class="charts-grid" :class="{ focused: mode && mode !== 'ALL' }">
+  <div class="charts-grid" :class="{ focused: mode && !['ALL', 'STATUS'].includes(mode), compact }">
     <article v-if="!mode || mode === 'ALL' || mode === 'STATUS'" class="viz-panel">
       <header><h3>设备状态分布</h3><span>实时状态</span></header>
       <div ref="statusElement" class="chart" />
@@ -145,5 +145,7 @@ h3 { margin: 0; color: #dff4ff; font-size: 15px; }
 header span { color: #58768f; font-size: 11px; }
 .chart { height: 290px; }
 .focused .chart { height: 430px; }
+.compact .viz-panel { height: 100%; padding: 10px 12px; border: 0; border-radius: 0; background: transparent; }
+.compact .chart, .compact.focused .chart { height: 180px; }
 @media (max-width: 980px) { .charts-grid { grid-template-columns: 1fr; } }
 </style>

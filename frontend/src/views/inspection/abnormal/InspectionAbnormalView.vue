@@ -10,6 +10,7 @@ import InspectionAttachmentList from '@/components/InspectionAttachmentList.vue'
 import { masterDataApi, type ReferenceUser } from '@/api/masterData'
 import { useAuthStore } from '@/stores/auth'
 import { errorMessage } from '@/utils/http'
+import { applySmartTableQuery, type SmartTableServerQuery } from '@/components/table/smart-table-context'
 
 const auth = useAuthStore()
 const loading = ref(false)
@@ -18,6 +19,11 @@ const total = ref(0)
 const page = ref(1)
 const keyword = ref('')
 const status = ref<string>()
+const smartTableQuery = reactive({
+  tableFilters: undefined as string | undefined,
+  sortBy: undefined as string | undefined,
+  sortDirection: undefined as 'asc' | 'desc' | undefined,
+})
 const users = ref<ReferenceUser[]>([])
 const dialogVisible = ref(false)
 const detailVisible = ref(false)
@@ -56,8 +62,9 @@ async function load() {
     const result = await inspectionApi.abnormalities({
       keyword: keyword.value || undefined,
       abnormalStatus: status.value,
+      ...smartTableQuery,
       page: page.value,
-      pageSize: 20,
+      pageSize: 100,
     })
     rows.value = result.records
     total.value = result.total
@@ -66,6 +73,12 @@ async function load() {
   } finally {
     loading.value = false
   }
+}
+
+function applyTableQuery(query: SmartTableServerQuery) {
+  applySmartTableQuery(smartTableQuery, query)
+  page.value = 1
+  void load()
 }
 
 async function loadUsers() {
@@ -157,16 +170,17 @@ async function loadAttachmentContent(attachmentId: number) {
     </section>
     <section class="surface-card table-card" v-loading="loading">
       <div class="table-toolbar"><span class="table-title">异常闭环台账</span><span>共 {{ total }} 条</span></div>
-      <el-table :data="rows" row-key="id">
-        <el-table-column label="异常" min-width="230"><template #default="{ row }"><strong>{{ row.abnormalTitle }}</strong><div class="muted mono">{{ row.abnormalCode }} · {{ row.taskCode }}</div></template></el-table-column>
-        <el-table-column label="设备/项目" min-width="190"><template #default="{ row }">{{ row.equipmentName }}<div class="muted">{{ row.itemName }}</div></template></el-table-column>
+      <el-table :data="rows" row-key="id" server-query @smart-query-change="applyTableQuery">
+        <el-table-column prop="abnormalTitle" label="异常" min-width="230"><template #default="{ row }"><strong>{{ row.abnormalTitle }}</strong><div class="muted mono">{{ row.abnormalCode }} · {{ row.taskCode }}</div></template></el-table-column>
+        <el-table-column prop="equipmentName" label="设备/项目" min-width="190"><template #default="{ row }">{{ row.equipmentName }}<div class="muted">{{ row.itemName }}</div></template></el-table-column>
+        <el-table-column prop="organizationName" label="所属部门" min-width="150" />
         <el-table-column prop="abnormalDescription" label="异常现象" min-width="220" show-overflow-tooltip />
-        <el-table-column label="等级" width="85"><template #default="{ row }"><el-tag :type="severityMeta[row.severity].type">{{ severityMeta[row.severity].label }}</el-tag></template></el-table-column>
+        <el-table-column prop="severity" label="等级" smart-filter="select" width="85"><template #default="{ row }"><el-tag :type="severityMeta[row.severity].type">{{ severityMeta[row.severity].label }}</el-tag></template></el-table-column>
         <el-table-column prop="responsibleUserName" label="责任人" width="110"><template #default="{ row }">{{ row.responsibleUserName || '待分派' }}</template></el-table-column>
-        <el-table-column prop="dueTime" label="期限" min-width="170" />
-        <el-table-column label="状态" width="100"><template #default="{ row }"><el-tag :type="statusMeta[row.abnormalStatus].type">{{ statusMeta[row.abnormalStatus].label }}</el-tag></template></el-table-column>
-        <el-table-column label="停机联动" width="110"><template #default="{ row }"><el-tag v-if="row.equipmentStopRequired" :type="row.equipmentStatusChanged ? 'danger' : 'warning'">{{ row.equipmentStatusChanged ? '已停机' : '要求停机' }}</el-tag><span v-else>无需停机</span></template></el-table-column>
-        <el-table-column label="操作" width="280" fixed="right">
+        <el-table-column prop="dueTime" label="期限" smart-filter="date" min-width="170" />
+        <el-table-column prop="abnormalStatus" label="状态" smart-filter="select" width="100"><template #default="{ row }"><el-tag :type="statusMeta[row.abnormalStatus].type">{{ statusMeta[row.abnormalStatus].label }}</el-tag></template></el-table-column>
+        <el-table-column prop="equipmentStopRequired" label="停机联动" smart-filter="select" width="110"><template #default="{ row }"><el-tag v-if="row.equipmentStopRequired" :type="row.equipmentStatusChanged ? 'danger' : 'warning'">{{ row.equipmentStatusChanged ? '已停机' : '要求停机' }}</el-tag><span v-else>无需停机</span></template></el-table-column>
+        <el-table-column label="操作" smart-filter="none" width="280" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row)">查看</el-button>
             <el-button v-if="auth.can('inspection:abnormal:handle') && ['OPEN','PROCESSING'].includes(row.abnormalStatus)" link type="primary" @click="openHandle(row)">处理</el-button>
@@ -186,6 +200,7 @@ async function loadAttachmentContent(attachmentId: number) {
         <el-descriptions :column="2" border>
           <el-descriptions-item label="设备">{{ selected.equipmentName }}</el-descriptions-item>
           <el-descriptions-item label="点检项目">{{ selected.itemName || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="所属部门">{{ selected.organizationName }}</el-descriptions-item>
           <el-descriptions-item label="异常标题">{{ selected.abnormalTitle }}</el-descriptions-item>
           <el-descriptions-item label="严重程度">{{ severityMeta[selected.severity].label }}</el-descriptions-item>
           <el-descriptions-item label="异常现象" :span="2">{{ selected.abnormalDescription }}</el-descriptions-item>
@@ -220,7 +235,7 @@ async function loadAttachmentContent(attachmentId: number) {
         <el-form-item label="完成期限"><el-date-picker v-model="form.dueTime" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" /></el-form-item>
         <el-form-item label="临时措施" class="full"><el-input v-model="form.temporaryAction" type="textarea" :rows="3" /></el-form-item>
         <el-form-item label="最终处理结果" class="full"><el-input v-model="form.finalResult" type="textarea" :rows="3" /></el-form-item>
-        <el-form-item label="建议设备状态"><el-select v-model="form.requestedEquipmentStatus" clearable><el-option label="空闲" value="IDLE" /><el-option label="运行" value="RUNNING" /><el-option label="保养" value="MAINTENANCE" /><el-option label="点检" value="INSPECTION" /><el-option label="故障" value="FAULT" /><el-option label="维修" value="REPAIR" /><el-option label="停机" value="STOPPED" /><el-option label="离线" value="OFFLINE" /></el-select></el-form-item>
+        <el-form-item label="建议设备状态"><el-select v-model="form.requestedEquipmentStatus" clearable><el-option label="空闲" value="IDLE" /><el-option label="运行" value="RUNNING" /><el-option label="停机" value="STOPPED" /><el-option label="报废" value="SCRAPPED" /></el-select></el-form-item>
         <el-form-item label="处理状态"><el-radio-group v-model="form.targetStatus"><el-radio-button value="PROCESSING">处理中</el-radio-button><el-radio-button value="PENDING_VERIFY">提交验证</el-radio-button></el-radio-group></el-form-item>
       </el-form>
       <template #footer><el-button @click="dialogVisible = false">取消</el-button><el-button type="primary" @click="saveHandle">保存</el-button></template>

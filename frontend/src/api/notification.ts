@@ -34,6 +34,63 @@ export interface NotificationMessage {
   occurredTime: string
 }
 
+export interface NotificationBusinessItemDetail {
+  id: number
+  itemCode: string
+  itemName: string
+  itemPart?: string
+  itemContent?: string
+  itemStandard?: string
+  resultType: string
+  unit?: string
+  resultCode?: string
+  numericValue?: number
+  textValue?: string
+  selectedValue?: string
+  abnormalFlag: boolean
+  abnormalDescription?: string
+  skippedFlag: boolean
+  skipReason?: string
+  executedByName?: string
+  executedTime?: string
+}
+
+export interface NotificationBusinessDetail {
+  messageId: number
+  businessType: 'INSPECTION' | 'MAINTENANCE'
+  businessId: number
+  businessCode?: string
+  taskCode: string
+  schemeName?: string
+  equipmentCode: string
+  equipmentName: string
+  organizationName: string
+  locationName?: string
+  plannedDate: string
+  dueTime: string
+  taskStatus: string
+  sourceType: string
+  assigneeNames?: string
+  startedTime?: string
+  submittedTime?: string
+  completedTime?: string
+  items: NotificationBusinessItemDetail[]
+  attachments: NotificationBusinessAttachmentDetail[]
+}
+
+export interface NotificationBusinessAttachmentDetail {
+  id: number
+  taskResultId?: number
+  taskItemId?: number
+  itemName?: string
+  originalName: string
+  contentType?: string
+  extension?: string
+  fileSize: number
+  attachmentType: string
+  createdTime: string
+}
+
 export interface NotificationDelivery {
   id: number
   messageId: number
@@ -67,6 +124,15 @@ export const notificationApi = {
   updateRule: (id: number, data: object) => http.put(`/notifications/rules/${id}`, data),
   messages: (params: { unreadOnly?: boolean; page: number; pageSize: number }) =>
     getData<PageResult<NotificationMessage>>('/notifications/messages', params),
+  businessDetail: (id: number) =>
+    getData<NotificationBusinessDetail>(`/notifications/messages/${id}/business-detail`),
+  businessAttachmentContent: async (messageId: number, attachmentId: number) => {
+    const response = await http.get<Blob>(
+      `/notifications/messages/${messageId}/attachments/${attachmentId}/content`,
+      { responseType: 'blob' },
+    )
+    return response.data
+  },
   read: (id: number) => http.post(`/notifications/messages/${id}/read`),
   acknowledge: (id: number) => http.post(`/notifications/messages/${id}/acknowledge`),
   deliveries: (params: { status?: string; page: number; pageSize: number }) =>

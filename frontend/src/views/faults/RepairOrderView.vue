@@ -8,7 +8,7 @@ import { useAuthStore } from '@/stores/auth'
 import { errorMessage } from '@/utils/http'
 
 const route = useRoute(); const auth = useAuthStore(); const loading = ref(false); const rows = ref<RepairOrder[]>([]); const total = ref(0); const users = ref<UserRow[]>([])
-const query = reactive({ keyword: '', status: undefined as string | undefined, mineOnly: route.path.includes('my-repairs'), page: 1, pageSize: 20 })
+const query = reactive({ keyword: '', status: undefined as string | undefined, mineOnly: route.path.includes('my-repairs'), page: 1, pageSize: 100 })
 const assignVisible = ref(false); const completeVisible = ref(false); const materialVisible = ref(false); const selected = ref<RepairOrder>(); const materials = ref<RepairMaterial[]>([])
 const assignment = reactive({ primaryRepairerUserId: undefined as number | undefined, collaboratorUserIds: [] as number[] })
 const completion = reactive({ repairMeasure: '', repairConclusion: '' }); const material = reactive({ materialCode: '', materialName: '', quantity: 1, unit: '件', unitPrice: 0, remark: '' })

@@ -29,6 +29,8 @@ export interface MenuItem {
   componentPath?: string
   permissionCode?: string
   icon?: string
+  visible?: number
+  status?: number
   sortOrder: number
 }
 

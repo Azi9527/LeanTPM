@@ -26,6 +26,8 @@ export interface ItemRow {
   id: number
   itemCode: string
   itemName: string
+  organizationId?: number
+  organizationName?: string
   itemCategory: string
   inspectionPart?: string
   inspectionContent: string
@@ -91,9 +93,13 @@ export interface SchemeVersionRow {
   shiftCode?: string
   defaultAssigneeUserId?: number
   defaultAssigneeName?: string
+  defaultAssigneeUserIdsCsv?: string
+  defaultAssigneeNames?: string
   defaultTeamCode?: string
   reviewRequiredFlag: boolean
   backfillAllowedFlag: boolean
+  submissionPhotoRequiredFlag: boolean
+  submissionPhotoMaxCount: number
   effectiveDate: string
   expiryDate?: string
   publishedByName?: string
@@ -201,7 +207,7 @@ export interface TaskRow {
   equipmentName: string
   organizationId: number
   organizationName: string
-  locationId: number
+  locationId?: number
   locationName: string
   plannedDate: string
   plannedStartTime?: string
@@ -212,12 +218,15 @@ export interface TaskRow {
   teamCode?: string
   taskStatus: TaskStatus
   dispatchStatus?: DispatchStatus
-  sourceType: 'PLAN' | 'MANUAL' | 'BACKFILL'
+  sourceType: 'PLAN' | 'MANUAL' | 'BACKFILL' | 'QUICK_ENTRY'
   backfillFlag: boolean
   reviewRequiredFlag: boolean
+  submissionPhotoRequiredFlag: boolean
+  submissionPhotoMaxCount: number
   startedTime?: string
   submittedTime?: string
   completedTime?: string
+  completedByName?: string
   reviewerName?: string
   reviewComment?: string
   executionRemark?: string
@@ -314,6 +323,8 @@ export interface AbnormalRow {
   equipmentId: number
   equipmentCode: string
   equipmentName: string
+  organizationId: number
+  organizationName: string
   taskItemId?: number
   itemName?: string
   abnormalTitle: string
@@ -365,6 +376,7 @@ export interface GenerationResult {
 export interface TaskQuery {
   keyword?: string
   taskStatus?: TaskStatus
+  statusGroup?: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED'
   dispatchStatus?: DispatchStatus
   plannedDate?: string
   timeField?: 'PLANNED_DATE' | 'STARTED_TIME' | 'SUBMITTED_TIME' | 'COMPLETED_TIME'
@@ -378,6 +390,9 @@ export interface TaskQuery {
   abnormalOnly?: boolean
   abnormalSeverity?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
   mineOnly?: boolean
+  tableFilters?: string
+  sortBy?: string
+  sortDirection?: 'asc' | 'desc'
   page?: number
   pageSize?: number
 }
@@ -444,7 +459,7 @@ export const inspectionApi = {
     const url = URL.createObjectURL(response.data)
     const anchor = document.createElement('a')
     anchor.href = url
-    anchor.download = 'LeanTPM-点检批量导入模板.xlsx'
+    anchor.download = '点检数据导入模板.xlsx'
     anchor.click()
     URL.revokeObjectURL(url)
   },
@@ -483,6 +498,13 @@ export const inspectionApi = {
   createScheme: (data: object) => http.post('/inspection/schemes', data),
   createSchemeVersion: (id: number, data: object) =>
     http.post(`/inspection/schemes/${id}/versions`, data),
+  createAndPublishScheme: (data: object) => http.post('/inspection/schemes/publish', data),
+  createAndPublishSchemeVersion: (id: number, data: object) =>
+    http.post(`/inspection/schemes/${id}/versions/publish`, data),
+  applicableEquipmentIds: (id: number) =>
+    getData<number[]>(`/inspection/schemes/${id}/applicable-equipment-ids`),
+  updateSchemeStatus: (id: number, enabled: boolean, version: number) =>
+    http.put(`/inspection/schemes/${id}/status`, { enabled, version }),
   publishScheme: (id: number, versionId: number) =>
     http.post(`/inspection/schemes/${id}/versions/${versionId}/publish`),
 
@@ -509,6 +531,8 @@ export const inspectionApi = {
   },
   updatePlanStatus: (id: number, data: object) =>
     http.put(`/inspection/plans/${id}/status`, data),
+  deletePlan: (id: number, version: number) =>
+    http.delete(`/inspection/plans/${id}`, { params: { version } }),
   generateTasks: async () => {
     const response = await http.post<ApiResponse<GenerationResult>>('/inspection/plans/generate')
     return response.data.data
@@ -524,7 +548,7 @@ export const inspectionApi = {
     const url = URL.createObjectURL(response.data)
     const anchor = document.createElement('a')
     anchor.href = url
-    anchor.download = 'LeanTPM-点检结果.xlsx'
+    anchor.download = '点检结果.xlsx'
     anchor.click()
     URL.revokeObjectURL(url)
   },
@@ -576,6 +600,8 @@ export const inspectionApi = {
     }),
   closeTask: (id: number, targetStatus: 'CANCELLED' | 'VOIDED', data: object) =>
     http.post(`/inspection/tasks/${id}/close`, data, { params: { targetStatus } }),
+  deleteTask: (id: number, version: number) =>
+    http.delete(`/inspection/tasks/${id}`, { params: { version } }),
 
   abnormalities: (params: object) =>
     getData<PageResult<AbnormalRow>>('/inspection/abnormalities', params),
@@ -592,5 +618,6 @@ export const inspectionApi = {
     http.put(`/inspection/abnormalities/${id}`, data),
   verifyAbnormal: (id: number, data: object) =>
     http.post(`/inspection/abnormalities/${id}/verify`, data),
-  statistics: () => getData<Statistics>('/inspection/statistics'),
+  statistics: (params?: { startDate?: string; endDate?: string; organizationId?: number }) =>
+    getData<Statistics>('/inspection/statistics', params),
 }

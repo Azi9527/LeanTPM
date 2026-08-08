@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { captcha as fetchCaptcha, type CaptchaChallenge } from '@/api/auth'
@@ -13,6 +13,12 @@ import {
 } from '@/utils/rememberedCredentials'
 import BrandLogo from '@/components/branding/BrandLogo.vue'
 import { useBranding } from '@/branding/branding'
+import {
+  appReleaseApi,
+  appReleaseAssetUrl,
+  appReleaseQrCodeUrl,
+  type AndroidAppRelease,
+} from '@/api/appRelease'
 
 const route = useRoute()
 const router = useRouter()
@@ -24,7 +30,11 @@ const loading = ref(false)
 const captchaLoading = ref(false)
 const remember = ref(true)
 const challenge = ref<CaptchaChallenge>({ enabled: true })
+const appRelease = ref<AndroidAppRelease>()
+const appDownloadOpen = ref(false)
 const form = reactive({ username: '', password: '', captchaCode: '' })
+const appDownloadUrl = computed(() => appReleaseAssetUrl(appRelease.value?.downloadUrl))
+const appQrCodeUrl = computed(() => appReleaseQrCodeUrl(appRelease.value?.qrCodeUrl))
 const rules: FormRules = {
   username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
@@ -51,6 +61,20 @@ async function loadCaptcha() {
   } finally {
     captchaLoading.value = false
   }
+}
+
+async function loadAppRelease() {
+  if (nativeContainer) return
+  try {
+    const release = await appReleaseApi.publicCurrent()
+    appRelease.value = release.available ? release : undefined
+  } catch {
+    appRelease.value = undefined
+  }
+}
+
+function toggleAppDownload() {
+  appDownloadOpen.value = !appDownloadOpen.value
 }
 
 async function submit() {
@@ -111,7 +135,7 @@ onMounted(async () => {
     form.password = saved.password
     remember.value = true
   }
-  await loadCaptcha()
+  await Promise.all([loadCaptcha(), loadAppRelease()])
 })
 </script>
 
@@ -200,6 +224,32 @@ onMounted(async () => {
           </el-button>
         </el-form>
         <p class="login-help">首次登录后需修改初始密码。如无法登录，请联系系统管理员。</p>
+        <div v-if="appRelease" class="app-download">
+          <button
+            type="button"
+            class="app-download-toggle"
+            :aria-expanded="appDownloadOpen"
+            @click="toggleAppDownload"
+            @keyup.enter.space.prevent="toggleAppDownload"
+          >
+            <span><el-icon><Iphone /></el-icon>下载 Android APP</span>
+            <span class="version">V{{ appRelease.versionName }}</span>
+            <el-icon class="arrow" :class="{ open: appDownloadOpen }"><ArrowDown /></el-icon>
+          </button>
+          <transition name="download-panel">
+            <div v-if="appDownloadOpen" class="app-download-panel">
+              <img :src="appQrCodeUrl" alt="Android APP 下载二维码" />
+              <div>
+                <strong>扫码下载 Android APP</strong>
+                <small>版本 {{ appRelease.versionName }}（{{ appRelease.versionCode }}）</small>
+                <p v-if="appRelease.releaseNotes">{{ appRelease.releaseNotes }}</p>
+                <a :href="appDownloadUrl" download>
+                  <el-icon><Download /></el-icon>直接下载安装包
+                </a>
+              </div>
+            </div>
+          </transition>
+        </div>
         <el-button v-if="nativeContainer" text @click="router.push('/mobile/setup')">
           <el-icon><Connection /></el-icon>配置企业服务地址
         </el-button>
@@ -430,6 +480,99 @@ h2 {
   line-height: 1.7;
   text-align: center;
 }
+
+.app-download {
+  margin-top: 14px;
+  border: 1px solid var(--tpm-border);
+  border-radius: 9px;
+  background: #fff;
+}
+
+.app-download-toggle {
+  display: grid;
+  align-items: center;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 9px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 0;
+  color: #29434f;
+  background: transparent;
+  cursor: pointer;
+  font-weight: 650;
+  text-align: left;
+
+  > span:first-child {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .version {
+    color: var(--tpm-primary);
+    font-size: 11px;
+  }
+
+  .arrow {
+    color: var(--tpm-text-secondary);
+    transition: transform .2s ease;
+
+    &.open { transform: rotate(180deg); }
+  }
+}
+
+.app-download-panel {
+  display: grid;
+  grid-template-columns: 118px minmax(0, 1fr);
+  gap: 15px;
+  margin: 0 14px;
+  padding: 14px 0;
+  border-top: 1px solid var(--tpm-border);
+
+  img {
+    box-sizing: border-box;
+    width: 118px;
+    height: 118px;
+    padding: 4px;
+    border: 1px solid var(--tpm-border);
+    border-radius: 7px;
+  }
+
+  > div {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  strong { color: #183440; font-size: 14px; }
+  small { margin-top: 4px; color: var(--tpm-text-secondary); }
+  p {
+    display: -webkit-box;
+    overflow: hidden;
+    margin: 7px 0;
+    color: var(--tpm-text-secondary);
+    font-size: 11px;
+    line-height: 1.45;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+  a {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--tpm-primary);
+    font-size: 12px;
+    font-weight: 650;
+    text-decoration: none;
+  }
+}
+
+.download-panel-enter-active,
+.download-panel-leave-active { transition: opacity .18s ease, transform .18s ease; }
+.download-panel-enter-from,
+.download-panel-leave-to { opacity: 0; transform: translateY(-5px); }
 
 .mobile-brand {
   display: none;

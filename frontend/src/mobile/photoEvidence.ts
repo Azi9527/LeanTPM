@@ -5,22 +5,20 @@ import type { CapturedPhotoEvidence } from './device'
 export async function uploadPhotoEvidence(
   capture: CapturedPhotoEvidence,
 ): Promise<{ attachmentId: number, evidence: PhotoEvidence }> {
-  const original = await upload(
-    capture.originalFile,
-    'MOBILE_PHOTO_ORIGINAL',
-    capture.metadata.taskId,
-  )
-  const watermarked = await upload(
-    capture.watermarkedFile,
-    `MOBILE_${capture.metadata.workflowType}_WATERMARK`,
-    capture.metadata.taskId,
-  )
+  const original = capture.originalFile ? await upload(
+    capture.originalFile, 'MOBILE_PHOTO_ORIGINAL', capture.metadata.taskId,
+  ) : undefined
+  const watermarked = capture.watermarkedFile ? await upload(
+    capture.watermarkedFile, `MOBILE_${capture.metadata.workflowType}_WATERMARK`, capture.metadata.taskId,
+  ) : undefined
+  const retained = watermarked ?? original
+  if (!retained) throw new Error('没有可上传的现场照片')
   const evidence = await mobileApi.registerPhotoEvidence({
     ...capture.metadata,
-    originalAttachmentId: original.id,
-    watermarkedAttachmentId: watermarked.id,
-  }, evidenceKey(capture, watermarked.id))
-  return { attachmentId: watermarked.id, evidence }
+    originalAttachmentId: original?.id,
+    watermarkedAttachmentId: watermarked?.id,
+  }, evidenceKey(capture, retained.id))
+  return { attachmentId: retained.id, evidence }
 }
 
 async function upload(file: File, businessType: string, businessId: number) {

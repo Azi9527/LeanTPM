@@ -1,17 +1,34 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { equipmentApi, type EquipmentRow, type StatusHistoryRow } from '@/api/equipment'
+import { equipmentApi, type EquipmentRow, type EquipmentStatusSummary, type StatusHistoryRow } from '@/api/equipment'
+import { masterDataApi, type OrganizationRow } from '@/api/masterData'
 import { useAuthStore } from '@/stores/auth'
 import { errorMessage } from '@/utils/http'
+import { applySmartTableQuery, type SmartTableServerQuery } from '@/components/table/smart-table-context'
+import {
+  EQUIPMENT_STATUS_META,
+  EQUIPMENT_STATUS_TRANSITIONS,
+  equipmentStatusLabel,
+  equipmentStatusType,
+  normalizeEquipmentStatus,
+} from '@/utils/equipment-status'
 
 const auth = useAuthStore()
 const loading = ref(false)
 const rows = ref<EquipmentRow[]>([])
 const total = ref(0)
+const statusSummary = ref<EquipmentStatusSummary>({})
 const keyword = ref('')
 const statusCode = ref<string>()
+const organizationId = ref<number>()
+const organizations = ref<OrganizationRow[]>([])
 const page = ref(1)
+const smartTableQuery = reactive({
+  tableFilters: undefined as string | undefined,
+  sortBy: undefined as string | undefined,
+  sortDirection: undefined as 'asc' | 'desc' | undefined,
+})
 const dialogVisible = ref(false)
 const historyVisible = ref(false)
 const selected = ref<EquipmentRow | null>(null)
@@ -22,54 +39,55 @@ const form = reactive({
   sourceType: 'MANUAL',
 })
 
-const statusMeta: Record<string, { label: string; type: '' | 'success' | 'warning' | 'danger' | 'info' }> = {
-  NOT_ENABLED: { label: '未启用', type: 'info' },
-  IDLE: { label: '空闲', type: 'info' },
-  RUNNING: { label: '运行', type: 'success' },
-  COMMISSIONING: { label: '调试', type: '' },
-  CHANGEOVER: { label: '换型', type: 'warning' },
-  MAINTENANCE: { label: '保养', type: 'warning' },
-  INSPECTION: { label: '点检', type: '' },
-  FAULT: { label: '故障', type: 'danger' },
-  REPAIR: { label: '维修', type: 'danger' },
-  STOPPED: { label: '停机', type: 'warning' },
-  SCRAPPED: { label: '报废', type: 'info' },
-  OFFLINE: { label: '离线', type: 'info' },
-}
+const statusMeta = EQUIPMENT_STATUS_META
+const transitions = EQUIPMENT_STATUS_TRANSITIONS
+const activeOrganizations = computed(() => organizations.value.filter((row) => row.status === 1))
 
-const transitions: Record<string, string[]> = {
-  NOT_ENABLED: ['IDLE', 'COMMISSIONING', 'OFFLINE'],
-  IDLE: ['RUNNING', 'MAINTENANCE', 'INSPECTION', 'FAULT', 'STOPPED', 'OFFLINE', 'SCRAPPED'],
-  RUNNING: ['IDLE', 'CHANGEOVER', 'FAULT', 'STOPPED', 'OFFLINE'],
-  COMMISSIONING: ['IDLE', 'FAULT', 'OFFLINE'],
-  CHANGEOVER: ['RUNNING', 'IDLE', 'FAULT'],
-  MAINTENANCE: ['IDLE', 'FAULT', 'OFFLINE'],
-  INSPECTION: ['IDLE', 'FAULT', 'OFFLINE'],
-  FAULT: ['REPAIR', 'STOPPED', 'OFFLINE'],
-  REPAIR: ['IDLE', 'FAULT', 'OFFLINE'],
-  STOPPED: ['IDLE', 'MAINTENANCE', 'REPAIR', 'SCRAPPED', 'OFFLINE'],
-  OFFLINE: ['IDLE', 'COMMISSIONING'],
-  SCRAPPED: [],
-}
+onMounted(async () => {
+  await Promise.all([loadOrganizations(), load()])
+})
 
-onMounted(load)
+async function loadOrganizations() {
+  try {
+    organizations.value = await masterDataApi.organizations()
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  }
+}
 
 async function load() {
   loading.value = true
   try {
-    const result = await equipmentApi.page({
+    const commonQuery = {
       keyword: keyword.value || undefined,
-      currentStatusCode: statusCode.value,
-      page: page.value,
-      pageSize: 50,
-    })
+      organizationId: organizationId.value,
+      tableFilters: smartTableQuery.tableFilters,
+    }
+    const [result, summary] = await Promise.all([
+      equipmentApi.page({
+        ...commonQuery,
+        currentStatusCode: statusCode.value,
+        sortBy: smartTableQuery.sortBy,
+        sortDirection: smartTableQuery.sortDirection,
+        page: page.value,
+        pageSize: 50,
+      }),
+      equipmentApi.statusSummary(commonQuery),
+    ])
     rows.value = result.records
     total.value = result.total
+    statusSummary.value = summary
   } catch (error) {
     ElMessage.error(errorMessage(error))
   } finally {
     loading.value = false
   }
+}
+
+function applyTableQuery(query: SmartTableServerQuery) {
+  applySmartTableQuery(smartTableQuery, query)
+  page.value = 1
+  load()
 }
 
 function openChange(row: EquipmentRow) {
@@ -135,11 +153,25 @@ function duration(seconds?: number) {
         @click="statusCode = statusCode === code ? undefined : code; page = 1; load()"
       >
         <span>{{ meta.label }}</span>
-        <strong>{{ rows.filter((row) => row.currentStatusCode === code).length }}</strong>
+        <strong>{{ statusSummary[code] || 0 }}</strong>
       </article>
     </section>
 
     <section class="surface-card query-bar">
+      <el-select
+        v-model="organizationId"
+        clearable
+        filterable
+        placeholder="全部部门"
+        style="width: min(280px, 100%)"
+      >
+        <el-option
+          v-for="item in activeOrganizations"
+          :key="item.id"
+          :label="`${item.organizationName}（${item.organizationCode}）`"
+          :value="item.id"
+        />
+      </el-select>
       <el-input
         v-model="keyword"
         clearable
@@ -158,28 +190,29 @@ function duration(seconds?: number) {
         <span class="table-title">实时状态列表</span>
         <span class="result-count">共 {{ total }} 台</span>
       </div>
-      <el-table :data="rows" row-key="id">
+      <el-table :data="rows" row-key="id" server-query @smart-query-change="applyTableQuery">
         <el-table-column prop="equipmentCode" label="设备编码" min-width="160">
           <template #default="{ row }"><span class="mono">{{ row.equipmentCode }}</span></template>
         </el-table-column>
         <el-table-column prop="equipmentName" label="设备名称" min-width="180" />
+        <el-table-column prop="organizationName" label="所属部门" min-width="160" />
         <el-table-column prop="locationName" label="位置" min-width="140" />
-        <el-table-column label="当前状态" width="120">
+        <el-table-column prop="currentStatusCode" label="当前状态" smart-filter="select" width="120">
           <template #default="{ row }">
-            <el-tag :type="statusMeta[row.currentStatusCode]?.type">
-              {{ statusMeta[row.currentStatusCode]?.label || row.currentStatusCode }}
+            <el-tag :type="equipmentStatusType(row.currentStatusCode)">
+              {{ equipmentStatusLabel(row.currentStatusCode) }}
             </el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="statusSince" label="状态开始时间" min-width="180" />
-        <el-table-column label="持续时间" min-width="150">
+        <el-table-column prop="statusDurationSeconds" label="持续时间" smart-filter="number" min-width="150">
           <template #default="{ row }">{{ duration(row.statusDurationSeconds) }}</template>
         </el-table-column>
         <el-table-column label="操作" width="170" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="showHistory(row)">履历</el-button>
             <el-button
-              v-if="auth.can('equipment:status:update') && transitions[row.currentStatusCode]?.length"
+              v-if="auth.can('equipment:status:update') && transitions[normalizeEquipmentStatus(row.currentStatusCode)]?.length"
               link
               type="primary"
               @click="openChange(row)"
@@ -199,7 +232,7 @@ function duration(seconds?: number) {
     <el-dialog v-model="dialogVisible" title="切换设备状态" width="min(560px, 94vw)">
       <el-alert
         v-if="selected"
-        :title="`${selected.equipmentCode} · ${selected.equipmentName}：${statusMeta[selected.currentStatusCode]?.label}`"
+        :title="`${selected.equipmentCode} · ${selected.equipmentName}：${equipmentStatusLabel(selected.currentStatusCode)}`"
         type="info"
         :closable="false"
       />
@@ -207,7 +240,7 @@ function duration(seconds?: number) {
         <el-form-item label="目标状态">
           <el-select v-model="form.statusCode">
             <el-option
-              v-for="code in transitions[selected?.currentStatusCode || ''] || []"
+              v-for="code in selected ? transitions[normalizeEquipmentStatus(selected.currentStatusCode)] : []"
               :key="code"
               :label="statusMeta[code]?.label || code"
               :value="code"
@@ -230,12 +263,12 @@ function duration(seconds?: number) {
           v-for="item in history"
           :key="item.id"
           :timestamp="item.startedTime"
-          :type="statusMeta[item.toStatusCode]?.type || 'primary'"
+          :type="equipmentStatusType(item.toStatusCode)"
         >
           <div class="history-card">
             <strong>
-              {{ item.fromStatusCode ? statusMeta[item.fromStatusCode]?.label : '初始状态' }}
-              → {{ statusMeta[item.toStatusCode]?.label || item.toStatusCode }}
+              {{ item.fromStatusCode ? equipmentStatusLabel(item.fromStatusCode) : '初始状态' }}
+              → {{ equipmentStatusLabel(item.toStatusCode) }}
             </strong>
             <p>{{ item.reason || '无补充原因' }}</p>
             <small>

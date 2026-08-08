@@ -49,7 +49,7 @@ async function load() {
       keyword: keyword.value || undefined,
       abnormalStatus: status.value,
       page: page.value,
-      pageSize: 20,
+      pageSize: 100,
     })
     rows.value = result.records
     total.value = result.total
@@ -165,7 +165,7 @@ async function toRepair(row: AbnormalRow) {
         <el-form-item label="完成期限"><el-date-picker v-model="form.dueTime" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" /></el-form-item>
         <el-form-item label="临时措施" class="full"><el-input v-model="form.temporaryAction" type="textarea" :rows="3" /></el-form-item>
         <el-form-item label="最终处理结果" class="full"><el-input v-model="form.finalResult" type="textarea" :rows="3" /></el-form-item>
-        <el-form-item label="建议设备状态"><el-select v-model="form.requestedEquipmentStatus" clearable><el-option label="空闲" value="IDLE" /><el-option label="运行" value="RUNNING" /><el-option label="保养" value="MAINTENANCE" /><el-option label="维保" value="INSPECTION" /><el-option label="故障" value="FAULT" /><el-option label="维修" value="REPAIR" /><el-option label="停机" value="STOPPED" /><el-option label="离线" value="OFFLINE" /></el-select></el-form-item>
+        <el-form-item label="建议设备状态"><el-select v-model="form.requestedEquipmentStatus" clearable><el-option label="空闲" value="IDLE" /><el-option label="运行" value="RUNNING" /><el-option label="停机" value="STOPPED" /><el-option label="报废" value="SCRAPPED" /></el-select></el-form-item>
         <el-form-item label="处理状态"><el-radio-group v-model="form.targetStatus"><el-radio-button value="PROCESSING">处理中</el-radio-button><el-radio-button value="PENDING_VERIFY">提交验证</el-radio-button></el-radio-group></el-form-item>
       </el-form>
       <template #footer><el-button @click="dialogVisible = false">取消</el-button><el-button type="primary" @click="saveHandle">保存</el-button></template>

@@ -13,7 +13,7 @@ const dialogVisible = ref(false)
 const rows = ref<FaultReport[]>([])
 const equipment = ref<EquipmentRow[]>([])
 const total = ref(0)
-const query = reactive({ keyword: '', status: undefined as string | undefined, page: 1, pageSize: 20 })
+const query = reactive({ keyword: '', status: undefined as string | undefined, page: 1, pageSize: 100 })
 const form = reactive({ equipmentId: undefined as number | undefined, faultTime: '', faultTitle: '', faultDescription: '', severity: 'MEDIUM' })
 const statuses: Record<string, string> = { REPORTED: '已报修', ACCEPTED: '已受理', REJECTED: '已驳回', CONVERTED: '已转工单', CLOSED: '已关闭', CANCELLED: '已取消' }
 

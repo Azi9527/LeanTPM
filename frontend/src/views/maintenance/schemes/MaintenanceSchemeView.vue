@@ -79,7 +79,7 @@ onMounted(async () => {
 async function load() {
   loading.value = true
   try {
-    const result = await maintenanceApi.schemes({ keyword: keyword.value || undefined, page: page.value, pageSize: 20 })
+    const result = await maintenanceApi.schemes({ keyword: keyword.value || undefined, page: page.value, pageSize: 100 })
     rows.value = result.records
     total.value = result.total
   } catch (error) {
@@ -301,7 +301,7 @@ function csvNumbers(value?: string) {
         <el-form-item label="维保项目" class="full"><el-select v-model="form.itemIds" multiple filterable collapse-tags collapse-tags-tooltip><el-option v-for="item in items" :key="item.id" :label="`${item.itemCode} · ${item.itemName}`" :value="item.id" /></el-select></el-form-item>
         <el-form-item label="适用设备分类" class="full"><el-select v-model="form.categoryIds" multiple filterable collapse-tags><el-option v-for="category in categories" :key="category.id" :label="`${category.categoryCode} · ${category.categoryName}`" :value="category.id" /></el-select></el-form-item>
         <el-form-item label="指定设备" class="full"><el-select v-model="form.equipmentIds" multiple filterable collapse-tags collapse-tags-tooltip><el-option v-for="row in equipment" :key="row.id" :label="`${row.equipmentCode} · ${row.equipmentName}`" :value="row.id" /></el-select></el-form-item>
-        <el-form-item label="完成后恢复状态"><el-select v-model="form.restoreStatusCode"><el-option label="待机" value="IDLE" /><el-option label="停机" value="STOPPED" /><el-option label="故障" value="FAULT" /><el-option label="离线" value="OFFLINE" /></el-select></el-form-item>
+        <el-form-item label="完成后恢复状态"><el-select v-model="form.restoreStatusCode"><el-option label="空闲" value="IDLE" /><el-option label="运行" value="RUNNING" /><el-option label="停机" value="STOPPED" /></el-select></el-form-item>
         <el-form-item label="执行控制" class="full"><el-checkbox v-model="form.reviewRequired">提交后确认</el-checkbox><el-checkbox v-model="form.backfillAllowed">允许补录</el-checkbox><el-checkbox v-model="form.stopRequired">需要停机</el-checkbox><el-checkbox v-model="form.enabled">启用方案</el-checkbox></el-form-item>
         <el-form-item label="版本说明" class="full"><el-input v-model="form.changeSummary" type="textarea" placeholder="说明本版本调整内容" /></el-form-item>
       </el-form>

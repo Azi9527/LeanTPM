@@ -57,7 +57,11 @@ const loading = ref(false)
 const saving = ref(false)
 const uploadingItemId = ref<number>()
 const rows = ref<TaskRow[]>([])
-const activeStatus = ref<TaskStatus | ''>('')
+type TaskStatusGroup = '' | 'PENDING' | 'IN_PROGRESS' | 'COMPLETED'
+const activeStatus = ref<TaskStatusGroup>('')
+const page = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
 const detail = ref<TaskDetail | null>(null)
 const taskAttachments = ref<InspectionAttachmentRow[]>([])
 const executionVisible = ref(false)
@@ -82,6 +86,10 @@ const statusLabels: Record<TaskStatus, string> = {
 }
 const executable = computed(() => detail.value
   && ['PENDING', 'IN_PROGRESS', 'OVERDUE'].includes(detail.value.task.taskStatus))
+const displayRows = computed(() => rows.value)
+const taskPhotoCount = computed(() => Object.values(drafts)
+  .reduce((total, draft) => total + draft.attachmentIds.length, 0))
+const taskPhotoMaxCount = computed(() => detail.value?.task.submissionPhotoMaxCount ?? 9)
 
 onMounted(async () => {
   await load()
@@ -96,12 +104,18 @@ async function load() {
   loading.value = true
   try {
     const result = await inspectionApi.tasks({
-      taskStatus: activeStatus.value || undefined,
       mineOnly: true,
-      page: 1,
-      pageSize: 100,
+      statusGroup: activeStatus.value || undefined,
+      page: page.value,
+      pageSize: pageSize.value,
     })
+    if (!result.records.length && page.value > 1 && result.total > 0) {
+      page.value -= 1
+      await load()
+      return
+    }
     rows.value = result.records
+    total.value = result.total
   } catch (error) {
     ElMessage.error(errorMessage(error))
   } finally {
@@ -227,6 +241,10 @@ function scheduleLocalSave() {
 
 watch(drafts, scheduleLocalSave, { deep: true })
 watch(executionRemark, scheduleLocalSave)
+watch(activeStatus, () => {
+  page.value = 1
+  void load()
+})
 watch(executionVisible, (visible) => {
   if (!visible) void persistLocal(pendingSubmit.value)
 })
@@ -238,6 +256,14 @@ onBeforeUnmount(() => {
 
 async function save(submit: boolean) {
   if (!detail.value) return
+  if (submit && detail.value.task.submissionPhotoRequiredFlag && taskPhotoCount.value < 1) {
+    ElMessage.warning('本点检方案要求至少上传 1 张现场水印图片')
+    return
+  }
+  if (submit && taskPhotoCount.value > taskPhotoMaxCount.value) {
+    ElMessage.warning(`本任务最多允许上传 ${taskPhotoMaxCount.value} 张图片`)
+    return
+  }
   saving.value = true
   try {
     const payload = buildPayload()
@@ -282,12 +308,20 @@ async function save(submit: boolean) {
 async function upload(itemId: number, file: File) {
   const item = detail.value?.items.find((candidate) => candidate.id === itemId)
   if (!item) return
+  if (detail.value?.task.submissionPhotoRequiredFlag) {
+    ElMessage.warning('本方案要求水印图片，请使用“现场拍照”；Android APP 可从相册选择并自动补充水印')
+    return
+  }
   if (!mobile.online) {
     ElMessage.warning('当前离线，附件需恢复网络后上传；文字结果已自动保存')
     return
   }
   if (drafts[itemId].attachmentIds.length >= item.photoMaxCount) {
     ElMessage.warning(`该项目最多上传 ${item.photoMaxCount} 张照片`)
+    return
+  }
+  if (taskPhotoCount.value >= taskPhotoMaxCount.value) {
+    ElMessage.warning(`本任务最多允许上传 ${taskPhotoMaxCount.value} 张图片`)
     return
   }
   const maxSizeMb = Math.min(mobile.maxUploadMb, item.photoMaxSizeMb)
@@ -335,6 +369,13 @@ async function capture(itemId: number) {
       ElMessage.warning(`该项目最多上传 ${item.photoMaxCount} 张照片`)
       return
     }
+    if (taskPhotoCount.value >= taskPhotoMaxCount.value) {
+      ElMessage.warning(`本任务最多允许上传 ${taskPhotoMaxCount.value} 张图片`)
+      return
+    }
+    const photoPolicy = detail.value.task.submissionPhotoRequiredFlag
+      ? { ...mobile.bootstrap.photoPolicy, watermarkEnabled: true, saveWatermarked: true }
+      : mobile.bootstrap.photoPolicy
     const capture = await capturePhotoEvidence(
       `inspection-${detail.value.task.taskCode}-${itemId}`,
       Math.min(mobile.maxUploadMb, item.photoMaxSizeMb),
@@ -349,6 +390,7 @@ async function capture(itemId: number) {
         brandName: branding.shortName,
         faultLocationText: item.inspectionPart || detail.value.task.locationName || item.itemName,
         photoCompressionQuality: item.photoCompressionQuality,
+        photoPolicy,
       },
     )
     if (!mobile.online) {
@@ -361,11 +403,13 @@ async function capture(itemId: number) {
     uploadingItemId.value = itemId
     const uploaded = await uploadPhotoEvidence(capture)
     drafts[itemId].attachmentIds.push(uploaded.attachmentId)
-    localAttachmentBlobs.set(uploaded.attachmentId, capture.watermarkedFile)
+    const retainedFile = capture.watermarkedFile ?? capture.originalFile
+    if (!retainedFile) throw new Error('没有可保存的现场照片')
+    localAttachmentBlobs.set(uploaded.attachmentId, retainedFile)
     taskAttachments.value.push({
       id: uploaded.attachmentId, taskItemId: itemId,
-      originalName: capture.watermarkedFile.name, contentType: capture.watermarkedFile.type,
-      extension: 'jpeg', fileSize: capture.watermarkedFile.size,
+      originalName: retainedFile.name, contentType: retainedFile.type,
+      extension: 'jpeg', fileSize: retainedFile.size,
       attachmentType: 'RESULT_PHOTO', createdTime: new Date().toISOString(),
     })
     if (uploaded.evidence.clockSkewWarning) {
@@ -414,24 +458,33 @@ function dueClass(row: TaskRow) {
       <div><h1>我的点检</h1><p>面向现场手机与平板的任务执行入口，支持草稿、拍照、异常上报和断点续填。</p></div>
     </header>
     <section class="surface-card status-tabs">
-      <el-radio-group v-model="activeStatus" @change="load">
+      <el-radio-group v-model="activeStatus" class="task-status-group">
         <el-radio-button value="">全部</el-radio-button>
         <el-radio-button value="PENDING">待执行</el-radio-button>
         <el-radio-button value="IN_PROGRESS">执行中</el-radio-button>
-        <el-radio-button value="OVERDUE">已逾期</el-radio-button>
+        <el-radio-button value="COMPLETED">已完成</el-radio-button>
       </el-radio-group>
     </section>
 
     <section v-loading="loading" class="task-grid">
-      <article v-for="row in rows" :key="row.id" class="surface-card task-card" @click="openTask(row)">
+      <article v-for="row in displayRows" :key="row.id" class="surface-card task-card" :class="`task-${row.taskStatus.toLowerCase()}`" @click="openTask(row)">
         <div class="task-card-head"><span class="mono">{{ row.taskCode }}</span><el-tag :type="dueClass(row)">{{ statusLabels[row.taskStatus] }}</el-tag></div>
         <h3>{{ row.equipmentName }}</h3>
         <p>{{ row.schemeNameSnapshot }}</p>
         <div class="task-meta"><span>{{ row.locationName }}</span><span>截止 {{ row.dueTime.replace('T', ' ') }}</span></div>
         <el-progress :percentage="row.itemCount ? Math.round(row.completedItemCount * 100 / row.itemCount) : 0" :status="row.taskStatus === 'COMPLETED' ? 'success' : undefined" />
       </article>
-      <el-empty v-if="!loading && !rows.length" description="当前没有点检任务" />
+      <el-empty v-if="!loading && !displayRows.length" description="当前没有点检任务" />
     </section>
+    <div v-if="total > pageSize" class="task-pagination">
+      <el-pagination
+        v-model:current-page="page"
+        :page-size="pageSize"
+        :total="total"
+        layout="prev, pager, next, total"
+        @current-change="load"
+      />
+    </div>
 
     <el-drawer v-model="executionVisible" direction="rtl" size="min(720px, 100vw)" :with-header="false">
       <template v-if="detail">
@@ -439,6 +492,14 @@ function dueClass(row: TaskRow) {
           <div><span class="mono">{{ detail.task.taskCode }}</span><h2>{{ detail.task.equipmentName }}</h2><p>{{ detail.task.schemeNameSnapshot }} · 截止 {{ detail.task.dueTime }}</p></div>
           <el-button circle @click="executionVisible = false">×</el-button>
         </div>
+        <el-alert
+          :title="detail.task.submissionPhotoRequiredFlag
+            ? `提交要求：至少 1 张现场水印图片；整单 ${taskPhotoCount}/${taskPhotoMaxCount} 张`
+            : `提交图片选传；整单 ${taskPhotoCount}/${taskPhotoMaxCount} 张`"
+          :type="detail.task.submissionPhotoRequiredFlag ? 'warning' : 'info'"
+          :closable="false"
+          show-icon
+        />
         <el-alert v-if="['COMPLETED', 'PENDING_REVIEW'].includes(detail.task.taskStatus)" title="任务已完成，当前为只读结果" type="success" :closable="false" />
         <section v-for="(item, index) in detail.items" :key="item.id" class="inspection-card">
           <div class="inspection-index">{{ index + 1 }}</div>
@@ -502,8 +563,16 @@ function dueClass(row: TaskRow) {
 <style scoped>
 .mobile-shell { max-width: 1120px; margin: 0 auto; }
 .status-tabs { overflow-x: auto; }
+.task-status-group { --el-color-primary: #1c7d50; }
+.task-status-group :deep(.el-radio-button:nth-child(2).is-active .el-radio-button__inner) { background: #d99713; border-color: #d99713; box-shadow: -1px 0 0 0 #d99713; }
+.task-status-group :deep(.el-radio-button:nth-child(3).is-active .el-radio-button__inner) { background: #2878c7; border-color: #2878c7; box-shadow: -1px 0 0 0 #2878c7; }
+.task-status-group :deep(.el-radio-button:nth-child(4).is-active .el-radio-button__inner) { background: #1c7d50; border-color: #1c7d50; box-shadow: -1px 0 0 0 #1c7d50; }
 .task-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+.task-pagination { display: flex; justify-content: center; padding: 16px 0; }
 .task-card { cursor: pointer; transition: transform .15s ease, box-shadow .15s ease; }
+.task-card.task-overdue { border-left: 4px solid var(--el-color-danger); background: var(--el-color-danger-light-9); }
+.task-card.task-in_progress { border-left: 4px solid #2878c7; }
+.task-card.task-completed, .task-card.task-pending_review { border-left: 4px solid #1c7d50; }
 .task-card:hover { transform: translateY(-2px); box-shadow: var(--el-box-shadow-light); }
 .task-card-head, .task-meta, .execution-head, .result-controls, .sticky-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .task-card h3 { margin: 16px 0 6px; }

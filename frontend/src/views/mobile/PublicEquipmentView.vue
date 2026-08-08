@@ -5,6 +5,7 @@ import { equipmentApi, type PublicEquipmentView } from '@/api/equipment'
 import { errorMessage } from '@/utils/http'
 import BrandLogo from '@/components/branding/BrandLogo.vue'
 import { useBranding } from '@/branding/branding'
+import { equipmentStatusLabel, normalizeEquipmentStatus } from '@/utils/equipment-status'
 
 const route = useRoute()
 const loading = ref(true)
@@ -12,24 +13,9 @@ const error = ref('')
 const equipment = ref<PublicEquipmentView | null>(null)
 const branding = useBranding()
 
-const statusLabels: Record<string, string> = {
-  NOT_ENABLED: '未启用',
-  IDLE: '空闲',
-  RUNNING: '运行',
-  COMMISSIONING: '调试',
-  CHANGEOVER: '换型',
-  MAINTENANCE: '保养',
-  INSPECTION: '点检',
-  FAULT: '故障',
-  REPAIR: '维修',
-  STOPPED: '停机',
-  SCRAPPED: '报废',
-  OFFLINE: '离线',
-}
-
 const statusClass = computed(() => {
-  if (equipment.value?.currentStatusCode === 'RUNNING') return 'running'
-  if (['FAULT', 'REPAIR'].includes(equipment.value?.currentStatusCode || '')) return 'danger'
+  if (normalizeEquipmentStatus(equipment.value?.currentStatusCode) === 'RUNNING') return 'running'
+  if (normalizeEquipmentStatus(equipment.value?.currentStatusCode) === 'STOPPED') return 'danger'
   return 'neutral'
 })
 
@@ -76,7 +62,7 @@ async function load() {
         <span class="equipment-code">{{ equipment.equipmentCode }}</span>
         <div class="status-pill">
           <i />
-          {{ statusLabels[equipment.currentStatusCode] || equipment.currentStatusCode }}
+          {{ equipmentStatusLabel(equipment.currentStatusCode) }}
         </div>
       </section>
 

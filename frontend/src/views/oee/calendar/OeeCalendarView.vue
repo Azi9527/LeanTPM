@@ -18,13 +18,13 @@ const shiftDialog = ref(false)
 const calendarDialog = ref(false)
 const editingShiftId = ref<number>()
 const editingCalendarId = ref<number>()
-const shiftQuery = reactive({ keyword: '', status: undefined as number | undefined, page: 1, pageSize: 20 })
+const shiftQuery = reactive({ keyword: '', status: undefined as number | undefined, page: 1, pageSize: 100 })
 const calendarQuery = reactive({
   organizationId: undefined as number | undefined,
   startDate: '',
   endDate: '',
   page: 1,
-  pageSize: 20,
+  pageSize: 100,
 })
 const shiftForm = reactive({
   shiftCode: '',

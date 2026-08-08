@@ -229,11 +229,15 @@ function navigate(index: string) {
 
 .brand-copy {
   display: flex;
+  min-width: 0;
   flex-direction: column;
+  justify-content: center;
+  line-height: 1;
   white-space: nowrap;
 
   strong {
     font-size: 17px;
+    line-height: 1.15;
     letter-spacing: 0.02em;
   }
 
@@ -241,6 +245,7 @@ function navigate(index: string) {
     margin-top: 2px;
     color: rgba(255, 255, 255, .62);
     font-size: 10px;
+    line-height: 1.2;
     letter-spacing: 0.12em;
   }
 }

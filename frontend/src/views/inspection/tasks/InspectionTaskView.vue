@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { pinyin } from 'pinyin-pro'
-import { inspectionApi, type DispatchStatus, type InspectionExportJob, type SchemeRow, type TaskDetail, type TaskQuery, type TaskRow, type TaskStatus } from '@/api/inspection'
+import { inspectionApi, type DispatchStatus, type InspectionAttachmentRow, type InspectionExportJob, type SchemeRow, type TaskDetail, type TaskQuery, type TaskRow, type TaskStatus } from '@/api/inspection'
+import InspectionAttachmentList from '@/components/InspectionAttachmentList.vue'
 import { equipmentApi, type EquipmentRow } from '@/api/equipment'
 import { masterDataApi, type OrganizationRow, type ReferenceUser } from '@/api/masterData'
 import { useAuthStore } from '@/stores/auth'
 import { errorMessage } from '@/utils/http'
 import { useRoute } from 'vue-router'
+import { applySmartTableQuery, type SmartTableServerQuery } from '@/components/table/smart-table-context'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -24,12 +26,17 @@ const assignVisible = ref(false)
 const assigning = ref(false)
 const exporting = ref(false)
 const includeImages = ref(false)
+const queryExpanded = ref(false)
 const exportJobVisible = ref(false)
 const exportJob = ref<InspectionExportJob | null>(null)
 const detail = ref<TaskDetail | null>(null)
+const detailAttachments = ref<InspectionAttachmentRow[]>([])
+const detailLoading = ref(false)
 const assignTarget = ref<TaskRow | null>(null)
 const equipment = ref<EquipmentRow[]>([])
 const schemes = ref<SchemeRow[]>([])
+const applicableSchemeIds = ref<Set<number>>(new Set())
+const applicableSchemesLoading = ref(false)
 const users = ref<ReferenceUser[]>([])
 const teams = ref<OrganizationRow[]>([])
 const organizations = ref<OrganizationRow[]>([])
@@ -46,6 +53,11 @@ const filters = reactive({
   abnormalOnly: false,
   abnormalSeverity: undefined as TaskQuery['abnormalSeverity'],
 })
+const smartTableQuery = reactive<{
+  tableFilters?: string
+  sortBy?: string
+  sortDirection?: 'asc' | 'desc'
+}>({})
 
 const createForm = reactive({
   equipmentId: undefined as number | undefined,
@@ -68,6 +80,29 @@ const filteredUsers = computed(() => {
   const keyword = normalizeSearch(userKeyword.value)
   if (!keyword) return users.value
   return users.value.filter((user) => userSearchText(user).includes(keyword))
+})
+const availableCreateSchemes = computed(() =>
+  schemes.value.filter((scheme) => applicableSchemeIds.value.has(scheme.id)),
+)
+
+watch(() => createForm.equipmentId, async (equipmentId) => {
+  createForm.schemeVersionId = undefined
+  applicableSchemeIds.value = new Set()
+  if (!equipmentId) return
+  applicableSchemesLoading.value = true
+  try {
+    const matches = await Promise.all(schemes.value.map(async (scheme) => ({
+      schemeId: scheme.id,
+      equipmentIds: await inspectionApi.applicableEquipmentIds(scheme.id),
+    })))
+    applicableSchemeIds.value = new Set(
+      matches.filter((entry) => entry.equipmentIds.includes(equipmentId)).map((entry) => entry.schemeId),
+    )
+  } catch (error) {
+    ElMessage.error(errorMessage(error, '适用点检方案加载失败'))
+  } finally {
+    applicableSchemesLoading.value = false
+  }
 })
 
 const statusMeta: Record<TaskStatus, { label: string; type: '' | 'success' | 'warning' | 'danger' | 'info' }> = {
@@ -101,6 +136,11 @@ onMounted(async () => {
   const equipmentId = Number(route.query.equipmentId)
   if (Number.isInteger(equipmentId) && equipmentId > 0) filters.equipmentId = equipmentId
   await Promise.all([load(), loadReferences()])
+  if (route.query.create === 'true' && auth.can('inspection:task:create')) openCreate()
+  const taskId = Number(route.query.taskId)
+  if (Number.isSafeInteger(taskId) && taskId > 0 && auth.can('inspection:task:view')) {
+    await showDetail({ id: taskId })
+  }
 })
 
 async function load() {
@@ -131,9 +171,16 @@ function taskQuery(includePage: boolean): TaskQuery {
     schemeId: filters.schemeId,
     abnormalOnly: filters.abnormalOnly || undefined,
     abnormalSeverity: filters.abnormalSeverity,
+    ...smartTableQuery,
     page: includePage ? page.value : undefined,
     pageSize: includePage ? 20 : undefined,
   }
+}
+
+function applyTableQuery(tableQuery: SmartTableServerQuery) {
+  applySmartTableQuery(smartTableQuery, tableQuery)
+  page.value = 1
+  void load()
 }
 
 async function exportResults() {
@@ -263,12 +310,22 @@ async function createTask() {
   }
 }
 
-async function showDetail(row: TaskRow) {
+async function showDetail(row: Pick<TaskRow, 'id'>) {
+  detailVisible.value = true
+  detailLoading.value = true
+  detail.value = null
+  detailAttachments.value = []
   try {
-    detail.value = await inspectionApi.task(row.id)
-    detailVisible.value = true
+    const [taskDetail, attachments] = await Promise.all([
+      inspectionApi.task(row.id),
+      inspectionApi.taskAttachments(row.id),
+    ])
+    detail.value = taskDetail
+    detailAttachments.value = attachments
   } catch (error) {
     ElMessage.error(errorMessage(error))
+  } finally {
+    detailLoading.value = false
   }
 }
 
@@ -350,6 +407,21 @@ async function close(row: TaskRow, targetStatus: 'CANCELLED' | 'VOIDED') {
     ElMessage.error(errorMessage(error))
   }
 }
+
+async function removeTask(row: TaskRow) {
+  await ElMessageBox.confirm(
+    `删除任务“${row.taskCode}”？任务项目、结果、异常和附件关系会一并逻辑删除，删除后不再参与查询和报表。`,
+    '删除点检任务',
+    { type: 'warning', confirmButtonText: '确认删除' },
+  )
+  try {
+    await inspectionApi.deleteTask(row.id, row.version)
+    ElMessage.success('点检任务及关联数据已删除')
+    await load()
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  }
+}
 </script>
 
 <template>
@@ -358,7 +430,22 @@ async function close(row: TaskRow, targetStatus: 'CANCELLED' | 'VOIDED') {
       <div><h1>点检任务</h1><p>统一管理计划与手工任务，结果提交后直接完成，支持派工、取消、作废和全量事件追踪。</p></div>
       <el-button v-if="auth.can('inspection:task:create')" type="primary" @click="openCreate">创建任务</el-button>
     </header>
-    <section class="surface-card query-bar">
+    <section class="surface-card query-panel query-panel--collapsible">
+      <div class="query-panel-header">
+        <strong>查询条件</strong>
+        <el-button
+          class="query-panel-toggle"
+          link
+          type="primary"
+          :aria-expanded="queryExpanded"
+          aria-controls="inspection-task-filters"
+          @click="queryExpanded = !queryExpanded"
+        >
+          {{ queryExpanded ? '收起查询' : '展开查询' }}
+        </el-button>
+      </div>
+      <el-collapse-transition>
+        <div v-show="queryExpanded" id="inspection-task-filters" class="query-bar query-panel-fields">
       <el-input v-model="keyword" clearable placeholder="任务、方案、设备、执行人或班组" @keyup.enter="page = 1; load()" />
       <el-select v-model="status" clearable placeholder="任务状态"><el-option v-for="(meta, value) in statusMeta" :key="value" :label="meta.label" :value="value" /></el-select>
       <el-select v-model="dispatchStatus" clearable placeholder="派工进度">
@@ -406,17 +493,20 @@ async function close(row: TaskRow, targetStatus: 'CANCELLED' | 'VOIDED') {
         <el-checkbox v-model="includeImages">包含水印图片</el-checkbox>
         <el-button :loading="exporting" @click="exportResults">导出结果</el-button>
       </template>
+        </div>
+      </el-collapse-transition>
     </section>
     <section class="surface-card table-card" v-loading="loading">
       <div class="table-toolbar"><span class="table-title">点检任务台账</span><span>共 {{ total }} 条</span></div>
-      <el-table :data="rows" row-key="id">
-        <el-table-column label="任务" min-width="210"><template #default="{ row }"><strong class="mono">{{ row.taskCode }}</strong><div class="muted">{{ row.schemeNameSnapshot }} · V{{ row.schemeVersionNumber }}</div></template></el-table-column>
-        <el-table-column label="设备" min-width="190"><template #default="{ row }"><strong>{{ row.equipmentName }}</strong><div class="muted mono">{{ row.equipmentCode }}</div></template></el-table-column>
-        <el-table-column prop="plannedDate" label="计划日期" width="115" />
-        <el-table-column prop="dueTime" label="截止时间" min-width="175" />
+      <el-table :data="rows" row-key="id" server-query @smart-query-change="applyTableQuery">
+        <el-table-column prop="taskCode" label="任务" min-width="210"><template #default="{ row }"><strong class="mono">{{ row.taskCode }}</strong><div class="muted">{{ row.schemeNameSnapshot }} · V{{ row.schemeVersionNumber }}</div></template></el-table-column>
+        <el-table-column prop="equipmentName" label="设备" min-width="190"><template #default="{ row }"><strong>{{ row.equipmentName }}</strong><div class="muted mono">{{ row.equipmentCode }}</div></template></el-table-column>
+        <el-table-column prop="organizationName" label="所属部门" min-width="150" />
+        <el-table-column prop="plannedDate" label="计划日期" width="115" smart-filter="date" />
+        <el-table-column prop="dueTime" label="截止时间" min-width="175" smart-filter="date" />
         <el-table-column prop="assigneeName" label="执行人" min-width="150"><template #default="{ row }">{{ row.assigneeName || '未派工' }}</template></el-table-column>
-        <el-table-column label="进度" width="110"><template #default="{ row }">{{ row.completedItemCount }}/{{ row.itemCount }}<el-badge v-if="row.abnormalItemCount" :value="row.abnormalItemCount" type="danger" /></template></el-table-column>
-        <el-table-column label="派工进度" width="105">
+        <el-table-column prop="completedItemCount" label="进度" width="110" smart-filter="number"><template #default="{ row }">{{ row.completedItemCount }}/{{ row.itemCount }}<el-badge v-if="row.abnormalItemCount" :value="row.abnormalItemCount" type="danger" /></template></el-table-column>
+        <el-table-column prop="dispatchStatus" label="派工进度" width="105" smart-filter="select">
           <template #default="{ row }">
             <el-tag v-if="row.dispatchStatus" :type="dispatchStatusMeta[row.dispatchStatus as DispatchStatus].type">
               {{ dispatchStatusMeta[row.dispatchStatus as DispatchStatus].label }}
@@ -424,8 +514,8 @@ async function close(row: TaskRow, targetStatus: 'CANCELLED' | 'VOIDED') {
             <span v-else class="muted">—</span>
           </template>
         </el-table-column>
-        <el-table-column label="任务状态" width="100"><template #default="{ row }"><el-tag :type="statusMeta[row.taskStatus as TaskStatus].type">{{ statusMeta[row.taskStatus as TaskStatus].label }}</el-tag></template></el-table-column>
-        <el-table-column label="操作" width="260" fixed="right">
+        <el-table-column prop="taskStatus" label="任务状态" width="100" smart-filter="select"><template #default="{ row }"><el-tag :type="statusMeta[row.taskStatus as TaskStatus].type">{{ statusMeta[row.taskStatus as TaskStatus].label }}</el-tag></template></el-table-column>
+        <el-table-column label="操作" width="310" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="showDetail(row)">详情</el-button>
             <el-button v-if="auth.can('inspection:task:assign') && ['PENDING','IN_PROGRESS','OVERDUE'].includes(row.taskStatus)" link type="primary" @click="openAssign(row)">派工</el-button>
@@ -433,6 +523,7 @@ async function close(row: TaskRow, targetStatus: 'CANCELLED' | 'VOIDED') {
               <el-button link type="danger">关闭</el-button>
               <template #dropdown><el-dropdown-menu><el-dropdown-item @click="close(row, 'CANCELLED')">取消</el-dropdown-item><el-dropdown-item @click="close(row, 'VOIDED')">作废</el-dropdown-item></el-dropdown-menu></template>
             </el-dropdown>
+            <el-button v-if="auth.can('inspection:task:cancel')" link type="danger" @click="removeTask(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -458,11 +549,16 @@ async function close(row: TaskRow, targetStatus: 'CANCELLED' | 'VOIDED') {
 
     <el-dialog v-model="createVisible" title="创建手工点检任务" width="min(700px, 96vw)">
       <el-form label-position="top" class="form-grid">
-        <el-form-item label="设备"><el-select v-model="createForm.equipmentId" filterable><el-option v-for="row in equipment" :key="row.id" :label="`${row.equipmentCode} · ${row.equipmentName}`" :value="row.id" /></el-select></el-form-item>
-        <el-form-item label="已发布方案"><el-select v-model="createForm.schemeVersionId" filterable><el-option v-for="row in schemes" :key="row.id" :label="`${row.schemeCode} · ${row.schemeName} V${row.currentVersionNumber}`" :value="row.currentVersionId" /></el-select></el-form-item>
+        <el-form-item label="设备" required><el-select v-model="createForm.equipmentId" filterable><el-option v-for="row in equipment" :key="row.id" :label="`${row.equipmentCode} · ${row.equipmentName}`" :value="row.id" /></el-select></el-form-item>
+        <el-form-item label="已发布方案" required>
+          <el-select v-model="createForm.schemeVersionId" filterable :disabled="!createForm.equipmentId" :loading="applicableSchemesLoading">
+            <el-option v-for="row in availableCreateSchemes" :key="row.id" :label="`${row.schemeCode} · ${row.schemeName} V${row.currentVersionNumber}`" :value="row.currentVersionId" />
+          </el-select>
+          <div class="field-hint">{{ !createForm.equipmentId ? '请先选择设备' : availableCreateSchemes.length ? `仅显示适用于该设备的 ${availableCreateSchemes.length} 个方案` : '该设备暂无适用的已发布方案' }}</div>
+        </el-form-item>
         <el-form-item label="计划日期"><el-date-picker v-model="createForm.plannedDate" type="date" value-format="YYYY-MM-DD" /></el-form-item>
         <el-form-item label="计划开始"><el-date-picker v-model="createForm.plannedStartTime" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" clearable /></el-form-item>
-        <el-form-item label="截止时间"><el-date-picker v-model="createForm.dueTime" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" /></el-form-item>
+        <el-form-item label="截止时间" required><el-date-picker v-model="createForm.dueTime" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" /></el-form-item>
         <el-form-item label="执行人（可多选）">
           <el-select
             v-model="createForm.assigneeUserIds"
@@ -560,7 +656,8 @@ async function close(row: TaskRow, targetStatus: 'CANCELLED' | 'VOIDED') {
       </template>
     </el-dialog>
 
-    <el-drawer v-model="detailVisible" :title="detail?.task.taskCode" size="min(860px, 97vw)">
+    <el-drawer v-model="detailVisible" :title="detail?.task.taskCode || '点检任务详情'" size="min(900px, 97vw)">
+      <div v-loading="detailLoading" class="task-detail-body">
       <template v-if="detail">
         <el-descriptions :column="2" border>
           <el-descriptions-item label="设备">{{ detail.task.equipmentCode }} · {{ detail.task.equipmentName }}</el-descriptions-item>
@@ -570,20 +667,42 @@ async function close(row: TaskRow, targetStatus: 'CANCELLED' | 'VOIDED') {
         </el-descriptions>
         <h3>项目结果</h3>
         <el-table :data="detail.items" size="small"><el-table-column prop="itemName" label="项目" min-width="160" /><el-table-column prop="inspectionStandard" label="标准" min-width="220" /><el-table-column label="结果" min-width="170"><template #default="{ row }">{{ row.result?.numericValue ?? row.result?.textValue ?? row.result?.selectedValue ?? row.result?.resultCode ?? '未填写' }}</template></el-table-column><el-table-column label="异常" width="80"><template #default="{ row }"><el-tag v-if="row.result?.abnormalFlag" type="danger">异常</el-tag><span v-else>—</span></template></el-table-column></el-table>
+        <section class="detail-section">
+          <div class="detail-section-title">
+            <h3>现场附件</h3>
+            <el-tag v-if="detailAttachments.length" type="success" effect="plain">{{ detailAttachments.length }} 个</el-tag>
+          </div>
+          <InspectionAttachmentList
+            v-if="detailAttachments.length"
+            :attachments="detailAttachments"
+            :load-content="(id) => inspectionApi.taskAttachmentContent(detail!.task.id, id)"
+          />
+          <el-empty v-else description="本任务暂无现场附件" :image-size="70" />
+        </section>
         <h3>事件轨迹</h3>
         <el-timeline><el-timeline-item v-for="event in detail.events" :key="event.id" :timestamp="event.eventTime"><strong>{{ event.eventType }}</strong> {{ event.fromStatus }} → {{ event.toStatus }}<div class="muted">{{ event.eventRemark }} · {{ event.operatorName }}</div></el-timeline-item></el-timeline>
       </template>
+      </div>
     </el-drawer>
   </div>
 </template>
 
 <style scoped>
 .muted { color: var(--el-text-color-secondary); font-size: 12px; margin-top: 4px; }
+.query-panel { overflow: hidden; }
+.query-panel-header { display: flex; align-items: center; justify-content: space-between; min-height: 48px; padding: 0 16px; }
+.query-panel-header strong { color: var(--tpm-text); font-size: 15px; font-weight: 650; }
+.query-panel-toggle { min-height: 32px; }
+.query-panel-fields { border-top: 1px solid var(--tpm-border); }
 .form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 16px; }
 .full { grid-column: 1 / -1; }
 .assign-form { margin-top: 18px; }
 .user-option { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .user-option span, .field-hint { color: var(--el-text-color-secondary); font-size: 12px; }
 .field-hint { margin-top: 7px; line-height: 1.5; }
+.task-detail-body { min-height: 280px; }
+.detail-section { margin-top: 22px; padding: 16px; border: 1px solid var(--tpm-border); border-radius: 12px; background: var(--el-fill-color-extra-light); }
+.detail-section-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.detail-section-title h3 { margin: 0; }
 @media (max-width: 640px) { .form-grid { grid-template-columns: 1fr; } .full { grid-column: auto; } }
 </style>

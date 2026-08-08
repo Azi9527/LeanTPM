@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox, type UploadFile } from 'element-plus'
-import { systemApi, type ParameterRow } from '@/api/system'
+import { systemApi, type ParameterRow, type PhotoWatermarkSettings } from '@/api/system'
 import {
   applyBranding,
   DEFAULT_BRANDING,
@@ -21,7 +21,18 @@ const groupCode = ref('')
 const dialogVisible = ref(false)
 const editing = ref<ParameterRow | null>(null)
 const brandingSaving = ref(false)
+const watermarkSaving = ref(false)
 const brandForm = reactive<BrandingSettings>({ ...DEFAULT_BRANDING })
+const watermarkForm = reactive<PhotoWatermarkSettings>({
+  watermarkEnabled: true,
+  saveOriginal: true,
+  saveWatermarked: true,
+  template: '{brand}\n{equipmentName} ({equipmentCode})\n{taskCode} · {itemName}\n位置/部位 {location}\n{capturedAt} · 执行人 {executor}',
+  position: 'BOTTOM',
+  backgroundOpacity: 74,
+  fontColor: '#ffffff',
+  backgroundColor: '#031922',
+})
 const form = reactive({
   parameterKey: '',
   parameterName: '',
@@ -40,20 +51,55 @@ async function load() {
   loading.value = true
   loadError.value = ''
   try {
-    const [filteredRows, allRows] = await Promise.all([
+    const [filteredRows, allRows, watermarkSettings] = await Promise.all([
       systemApi.parameters({
         keyword: keyword.value || undefined,
         groupCode: groupCode.value || undefined,
       }),
       systemApi.parameters(),
+      systemApi.photoWatermarkSettings(),
     ])
     rows.value = filteredRows
     configurationRows.value = allRows
+    Object.assign(watermarkForm, watermarkSettings)
     hydrateBrandingForm()
   } catch (error) {
     loadError.value = errorMessage(error)
   } finally {
     loading.value = false
+  }
+}
+
+function handleWatermarkEnabled(enabled: boolean) {
+  if (!enabled) {
+    watermarkForm.saveWatermarked = false
+    watermarkForm.saveOriginal = true
+  }
+}
+
+async function saveWatermarkSettings() {
+  if (!watermarkForm.saveOriginal && !watermarkForm.saveWatermarked) {
+    ElMessage.warning('原图和水印图至少需要保留一种')
+    return
+  }
+  if (watermarkForm.watermarkEnabled && !watermarkForm.template.trim()) {
+    ElMessage.warning('启用水印后必须填写水印模板')
+    return
+  }
+  watermarkSaving.value = true
+  try {
+    await systemApi.updatePhotoWatermarkSettings({
+      ...watermarkForm,
+      template: watermarkForm.template.trim(),
+      fontColor: watermarkForm.fontColor.toLowerCase(),
+      backgroundColor: watermarkForm.backgroundColor.toLowerCase(),
+    })
+    ElMessage.success('现场照片与水印规则已保存，APP 下次同步后生效')
+    await load()
+  } catch (error) {
+    ElMessage.error(errorMessage(error, '水印规则保存失败'))
+  } finally {
+    watermarkSaving.value = false
   }
 }
 
@@ -269,6 +315,93 @@ async function remove(row: ParameterRow) {
       </div>
     </section>
 
+    <section class="surface-card watermark-card">
+      <div class="branding-heading">
+        <div>
+          <h2>现场照片与水印</h2>
+          <p>统一控制 APP 是否补充水印、是否保存原图和水印图，以及水印的内容与样式。</p>
+        </div>
+        <el-tag type="success" effect="plain">移动端同步生效</el-tag>
+      </div>
+      <div class="watermark-grid">
+        <div class="watermark-preview">
+          <div
+            class="watermark-preview-layer"
+            :class="watermarkForm.position === 'TOP' ? 'is-top' : 'is-bottom'"
+            :style="{
+              color: watermarkForm.fontColor,
+              background: `color-mix(in srgb, ${watermarkForm.backgroundColor} ${watermarkForm.backgroundOpacity}%, transparent)`,
+            }"
+          >
+            <div>大宝山矿业</div>
+            <div>循环泵站一号 (VIZ-PUMP-01)</div>
+            <div>DJ-20260805-00001 · 润滑油液位</div>
+            <div>位置/部位 主轴润滑油箱</div>
+            <div>2026-08-05 14:30:25 · 执行人 操作工01</div>
+          </div>
+          <span v-if="!watermarkForm.watermarkEnabled" class="watermark-disabled">当前不生成水印</span>
+        </div>
+        <el-form label-position="top" class="watermark-form">
+          <el-form-item label="是否补充水印">
+            <el-switch
+              v-model="watermarkForm.watermarkEnabled"
+              active-text="生成水印"
+              inactive-text="不生成水印"
+              @change="handleWatermarkEnabled"
+            />
+          </el-form-item>
+          <el-form-item label="图片保存策略">
+            <div class="retention-switches">
+              <el-checkbox v-model="watermarkForm.saveOriginal">保存原图</el-checkbox>
+              <el-checkbox v-model="watermarkForm.saveWatermarked" :disabled="!watermarkForm.watermarkEnabled">
+                保存水印图
+              </el-checkbox>
+            </div>
+          </el-form-item>
+          <el-form-item label="水印生成模板" class="full-row">
+            <el-input
+              v-model="watermarkForm.template"
+              type="textarea"
+              :rows="6"
+              maxlength="2000"
+              show-word-limit
+              :disabled="!watermarkForm.watermarkEnabled"
+            />
+            <div class="template-help">
+              支持：{brand} 品牌、{equipmentName} 设备名称、{equipmentCode} 设备编号、{taskCode} 任务号、
+              {itemName} 点检项、{capturedAt} 拍摄时间、{executor} 执行人、{location} 位置/部位。
+            </div>
+          </el-form-item>
+          <el-form-item label="水印位置">
+            <el-select v-model="watermarkForm.position" :disabled="!watermarkForm.watermarkEnabled">
+              <el-option label="图片底部" value="BOTTOM" />
+              <el-option label="图片顶部" value="TOP" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="背景不透明度">
+            <el-slider
+              v-model="watermarkForm.backgroundOpacity"
+              :min="0"
+              :max="100"
+              show-input
+              :disabled="!watermarkForm.watermarkEnabled"
+            />
+          </el-form-item>
+          <el-form-item label="文字颜色">
+            <div class="color-field"><el-color-picker v-model="watermarkForm.fontColor" /><el-input v-model="watermarkForm.fontColor" maxlength="7" /></div>
+          </el-form-item>
+          <el-form-item label="背景颜色">
+            <div class="color-field"><el-color-picker v-model="watermarkForm.backgroundColor" /><el-input v-model="watermarkForm.backgroundColor" maxlength="7" /></div>
+          </el-form-item>
+          <div v-if="auth.can('system:parameter:manage')" class="watermark-actions">
+            <el-button type="primary" :loading="watermarkSaving" @click="saveWatermarkSettings">
+              保存照片与水印规则
+            </el-button>
+          </div>
+        </el-form>
+      </div>
+    </section>
+
     <section class="surface-card query-bar">
       <el-input
         v-model="keyword"
@@ -415,12 +548,30 @@ async function remove(row: ParameterRow) {
 .logo-actions span { color: var(--tpm-text-secondary); font-size: 12px; }
 .color-field { display: grid; grid-template-columns: 40px 1fr; gap: 8px; width: 100%; }
 .branding-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.watermark-card { padding: 20px; }
+.watermark-grid { display: grid; grid-template-columns: minmax(280px, .8fr) minmax(520px, 1.5fr); gap: 24px; }
+.watermark-preview {
+  position: relative; overflow: hidden; min-height: 330px; border-radius: 16px;
+  background: linear-gradient(145deg, #0a4934 0%, #247d58 48%, #a8c5b5 100%);
+}
+.watermark-preview::before {
+  position: absolute; inset: 52px 60px 74px; border: 10px solid rgba(255, 255, 255, .3);
+  border-radius: 6px; content: ''; transform: perspective(400px) rotateX(8deg) rotateY(-12deg);
+}
+.watermark-preview-layer { position: absolute; right: 0; left: 0; z-index: 2; padding: 14px 18px; font-size: 13px; line-height: 1.55; }
+.watermark-preview-layer.is-top { top: 0; }
+.watermark-preview-layer.is-bottom { bottom: 0; }
+.watermark-disabled { position: absolute; top: 50%; left: 50%; z-index: 3; padding: 9px 14px; border-radius: 99px; color: #fff; background: rgba(0, 0, 0, .66); transform: translate(-50%, -50%); }
+.watermark-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
+.retention-switches { display: flex; align-items: center; min-height: 32px; gap: 20px; }
+.template-help { margin-top: 7px; color: var(--tpm-text-secondary); font-size: 12px; line-height: 1.6; }
+.watermark-actions { display: flex; justify-content: flex-end; grid-column: 1 / -1; }
 .parameter-form { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
 .full-row { grid-column: 1 / -1; }
-@media (max-width: 900px) { .branding-grid { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .branding-grid, .watermark-grid { grid-template-columns: 1fr; } }
 @media (max-width: 640px) {
-  .branding-form, .parameter-form { grid-template-columns: 1fr; }
-  .logo-field, .branding-actions, .full-row { grid-column: auto; }
+  .branding-form, .watermark-form, .parameter-form { grid-template-columns: 1fr; }
+  .logo-field, .branding-actions, .watermark-actions, .full-row { grid-column: auto; }
   .logo-actions { align-items: flex-start; flex-direction: column; }
   .branding-actions { display: grid; grid-template-columns: 1fr 1fr; }
 }

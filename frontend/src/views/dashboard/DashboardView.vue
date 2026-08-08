@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { visualizationApi, type DashboardResult } from '@/api/visualization'
+import { visualizationApi, type DashboardResult, type RecentInspectionRegistration } from '@/api/visualization'
 import { inspectionApi, type TaskRow as InspectionTask } from '@/api/inspection'
 import { maintenanceApi, type TaskRow as MaintenanceTask } from '@/api/maintenance'
 import { notificationApi, type NotificationMessage } from '@/api/notification'
@@ -48,13 +48,48 @@ const canMaintenance = computed(() =>
   auth.can('maintenance:task:view') || auth.can('maintenance:my-task:view'),
 )
 const canMessages = computed(() => auth.can('notification:message:view'))
+const quickActions = computed(() => [
+  {
+    label: '创建点检任务',
+    description: '现场临时登记或补充任务',
+    icon: '登',
+    tone: 'primary',
+    path: '/inspection/tasks',
+    query: { create: 'true' },
+    visible: auth.can('inspection:task:create'),
+  },
+  {
+    label: '点检任务台账',
+    description: '查询计划与现场登记明细',
+    icon: '检',
+    tone: 'green',
+    path: '/inspection/tasks',
+    visible: auth.can('inspection:task:view'),
+  },
+  {
+    label: '点检统计',
+    description: '查看完成、异常与趋势',
+    icon: '统',
+    tone: 'blue',
+    path: '/inspection/statistics',
+    visible: auth.can('inspection:statistics:view'),
+  },
+  {
+    label: '点检计划',
+    description: '维护计划型任务指标',
+    icon: '计',
+    tone: 'amber',
+    path: '/inspection/plans',
+    visible: auth.can('inspection:plan:view'),
+  },
+].filter((item) => item.visible))
 
 const abnormalEquipment = computed(() => {
   const core = dashboard.value?.core
-  return core ? core.fault + core.repair + core.offline : 0
+  return core ? core.stopped : 0
 })
 const normalEquipment = computed(() =>
-  Math.max((dashboard.value?.core.total ?? 0) - abnormalEquipment.value, 0),
+  (dashboard.value?.core.idle ?? 0) + (dashboard.value?.core.running ?? 0),
 )
 const equipmentHealthRate = computed(() => {
   const total = dashboard.value?.core.total ?? 0
@@ -89,7 +124,7 @@ const metrics = computed(() => [
     value: percent(equipmentHealthRate.value),
     detail: `${normalEquipment.value} 台正常 / ${dashboard.value?.core.total ?? 0} 台设备`,
     tone: 'green',
-    tip: '异常设备口径：故障、维修中和离线设备。',
+    tip: '正常设备口径：空闲与运行；停机设备单独计入异常，报废设备不计入正常。',
   },
   {
     label: '任务完成率',
@@ -178,6 +213,20 @@ function statusText(status: string) {
     PAUSED: '已暂停', PENDING_CONFIRMATION: '待确认', OVERDUE: '已逾期',
   }
   return map[status] ?? status
+}
+
+function sourceTypeText(sourceType: RecentInspectionRegistration['sourceType']) {
+  const map: Record<RecentInspectionRegistration['sourceType'], string> = {
+    PLAN: '计划任务',
+    MANUAL: '手工任务',
+    BACKFILL: '补录任务',
+    QUICK_ENTRY: '扫码直检',
+  }
+  return map[sourceType] ?? '现场登记'
+}
+
+function openRegistration(item: RecentInspectionRegistration) {
+  void router.push({ path: '/inspection/tasks', query: { taskId: item.taskId } })
 }
 
 function toTodo(task: InspectionTask | MaintenanceTask, type: TodoItem['type']): TodoItem {
@@ -289,6 +338,76 @@ onMounted(loadDashboard)
       </el-tooltip>
     </section>
 
+    <section class="operation-grid">
+      <article class="surface-card registration-card">
+        <div class="section-heading compact-heading">
+          <div><span>FIELD REGISTRATION</span><h2>现场点检登记</h2></div>
+          <el-button v-if="auth.can('inspection:statistics:view')" link type="primary" @click="router.push('/inspection/statistics')">查看统计</el-button>
+        </div>
+        <p class="section-note">按实际完成时间统计，与计划任务完成率分别核算。</p>
+        <div class="registration-metrics">
+          <button type="button" @click="router.push('/inspection/tasks')">
+            <strong>{{ dashboard?.inspectionRegistration?.registered ?? 0 }}</strong><span>登记完成</span>
+          </button>
+          <button type="button" @click="router.push('/inspection/tasks')">
+            <strong>{{ dashboard?.inspectionRegistration?.quickRegistered ?? 0 }}</strong><span>扫码直检</span>
+          </button>
+          <button type="button" @click="router.push('/equipment/ledger')">
+            <strong>{{ dashboard?.inspectionRegistration?.equipmentCovered ?? 0 }}</strong><span>覆盖设备</span>
+          </button>
+          <button class="danger" type="button" @click="router.push('/inspection/abnormal')">
+            <strong>{{ dashboard?.inspectionRegistration?.abnormalRegistered ?? 0 }}</strong><span>异常登记</span>
+          </button>
+        </div>
+      </article>
+
+      <article class="surface-card recent-card">
+        <div class="section-heading compact-heading">
+          <div><span>LATEST RECORDS</span><h2>最近点检登记</h2></div>
+          <el-button v-if="auth.can('inspection:task:view')" link type="primary" @click="router.push('/inspection/tasks')">全部记录</el-button>
+        </div>
+        <div v-if="dashboard?.recentInspectionRegistrations?.length" class="registration-list">
+          <button
+            v-for="item in dashboard.recentInspectionRegistrations"
+            :key="item.taskId"
+            type="button"
+            @click="openRegistration(item)"
+          >
+            <span class="registration-main">
+              <strong>{{ item.equipmentName }}（{{ item.equipmentCode }}）</strong>
+              <small>{{ item.taskCode }} · {{ item.schemeName }}</small>
+            </span>
+            <span class="registration-meta">
+              <el-tag size="small" :type="item.sourceType === 'QUICK_ENTRY' ? 'success' : 'info'">{{ sourceTypeText(item.sourceType) }}</el-tag>
+              <small>{{ item.executorName }} · {{ readableTime(item.completedTime) }}</small>
+            </span>
+            <el-tag v-if="item.abnormalCount" size="small" type="danger">{{ item.abnormalCount }} 项异常</el-tag>
+            <span v-else class="normal-result">正常</span>
+          </button>
+        </div>
+        <el-empty v-else description="所选日期暂无点检登记" :image-size="58" />
+      </article>
+
+      <article class="surface-card quick-card">
+        <div class="section-heading compact-heading">
+          <div><span>QUICK ACCESS</span><h2>常用入口</h2></div>
+        </div>
+        <div v-if="quickActions.length" class="quick-actions">
+          <button
+            v-for="item in quickActions"
+            :key="item.label"
+            type="button"
+            :class="item.tone"
+            @click="router.push({ path: item.path, query: item.query })"
+          >
+            <i>{{ item.icon }}</i>
+            <span><strong>{{ item.label }}</strong><small>{{ item.description }}</small></span>
+          </button>
+        </div>
+        <el-empty v-else description="暂无可用快捷入口" :image-size="55" />
+      </article>
+    </section>
+
     <section class="dashboard-grid">
       <article class="surface-card todo-card">
         <div class="section-heading">
@@ -314,7 +433,9 @@ onMounted(loadDashboard)
           <el-button v-if="canMessages" link type="primary" @click="router.push('/notifications')">全部消息</el-button>
         </div>
         <div class="exception-summary">
-          <div><strong>{{ abnormalEquipment }}</strong><span>异常设备</span></div>
+          <router-link to="/equipment/statuses" class="exception-summary-link" aria-label="查看异常设备明细">
+            <strong>{{ abnormalEquipment }}</strong><span>异常设备</span>
+          </router-link>
           <div><strong>{{ (dashboard?.inspection.overdue ?? 0) + (dashboard?.maintenance.overdue ?? 0) }}</strong><span>逾期任务</span></div>
           <div><strong>{{ dashboard?.inspection.abnormal ?? 0 }}</strong><span>点检异常</span></div>
         </div>
@@ -401,6 +522,49 @@ onMounted(loadDashboard)
   &.red { border-top-color: #c4000a; strong { color: #a90912; } }
 }
 
+.operation-grid {
+  display: grid;
+  grid-template-columns: minmax(250px, .8fr) minmax(480px, 1.5fr) minmax(250px, .8fr);
+  gap: 16px;
+}
+.registration-card, .recent-card, .quick-card { min-height: 275px; padding: 20px; }
+.compact-heading { margin-bottom: 8px; }
+.section-note { margin: 0 0 15px; color: var(--tpm-text-secondary); font-size: 11px; }
+.registration-metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.registration-metrics button {
+  display: grid; gap: 5px; padding: 17px 12px; border: 1px solid #e5ece8; border-radius: 10px;
+  color: #263b31; background: linear-gradient(145deg, #f8fcfa, #fff); cursor: pointer; text-align: left;
+  strong { color: #137647; font-size: 25px; line-height: 1; }
+  span { color: #74827b; font-size: 11px; }
+  &:hover { border-color: #7db997; box-shadow: 0 7px 18px rgb(19 118 71 / 9%); transform: translateY(-1px); }
+  &.danger strong { color: #b31c25; }
+}
+.registration-list { display: grid; gap: 7px; }
+.registration-list > button {
+  display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(180px, .9fr) auto; gap: 12px; align-items: center;
+  width: 100%; padding: 9px 11px; border: 1px solid #e6ebe8; border-radius: 9px; background: #fff; cursor: pointer; text-align: left;
+  &:hover { border-color: #82bd9b; background: #f7fbf9; }
+}
+.registration-main, .registration-meta { display: grid; gap: 3px; min-width: 0; }
+.registration-main strong, .registration-main small, .registration-meta small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.registration-main strong { color: #23352d; font-size: 12px; }
+.registration-main small, .registration-meta small { color: #87928c; font-size: 9px; }
+.registration-meta { justify-items: start; }
+.normal-result { color: #1c7d50; font-size: 11px; font-weight: 700; }
+.quick-actions { display: grid; gap: 9px; }
+.quick-actions > button {
+  display: flex; align-items: center; gap: 10px; padding: 11px; border: 1px solid #e6ebe8; border-radius: 10px;
+  background: #fff; cursor: pointer; text-align: left;
+  i { display: grid; flex: 0 0 34px; place-items: center; width: 34px; height: 34px; border-radius: 9px; color: #fff; background: #1c7d50; font-style: normal; font-weight: 750; }
+  span { display: grid; gap: 3px; min-width: 0; }
+  strong { color: #24362e; font-size: 12px; }
+  small { color: #87928c; font-size: 9px; }
+  &:hover { border-color: #8cc4a5; background: #f6fbf8; }
+  &.blue i { background: #3685b5; }
+  &.amber i { background: #bd811e; }
+  &.primary i { background: #b31c25; }
+}
+
 .dashboard-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(360px, .9fr); gap: 16px; }
 .todo-card, .message-card, .status-card { padding: 21px; }
 
@@ -422,7 +586,9 @@ onMounted(loadDashboard)
 .todo-copy { display: grid; flex: 1; gap: 3px; min-width: 0; strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; } small { color: #849089; font-size: 11px; } }
 
 .exception-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
-.exception-summary div { padding: 11px 8px; border-radius: 8px; text-align: center; background: #f6f8f7; strong { display: block; color: #b31c25; font-size: 21px; } span { color: #78837d; font-size: 11px; } }
+.exception-summary > :is(div, a) { padding: 11px 8px; border-radius: 8px; text-align: center; background: #f6f8f7; strong { display: block; color: #b31c25; font-size: 21px; } span { color: #78837d; font-size: 11px; } }
+.exception-summary-link { color: inherit; text-decoration: none; cursor: pointer; transition: border-color .18s ease, background .18s ease, transform .18s ease; border: 1px solid transparent; }
+.exception-summary-link:hover, .exception-summary-link:focus-visible { border-color: #79b992; background: #f0f9f4; transform: translateY(-1px); outline: none; }
 .message-list button { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 9px; align-items: center; padding: 9px 10px; }
 .message-list button > span:nth-child(2) { display: grid; gap: 2px; min-width: 0; strong, small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } strong { font-size: 12px; } small { color: #849089; font-size: 10px; } }
 .message-list time { color: #9aa39e; font-size: 9px; }
@@ -434,6 +600,9 @@ onMounted(loadDashboard)
 
 @media (max-width: 1200px) {
   .metric-grid { grid-template-columns: repeat(2, 1fr); }
+  .operation-grid { grid-template-columns: 1fr 1.4fr; }
+  .quick-card { grid-column: 1 / -1; min-height: auto; }
+  .quick-actions { grid-template-columns: repeat(4, 1fr); }
   .dashboard-grid { grid-template-columns: 1fr; }
   .status-list { grid-template-columns: repeat(3, 1fr); }
 }
@@ -441,6 +610,11 @@ onMounted(loadDashboard)
   .dashboard-header { align-items: flex-start; flex-direction: column; gap: 16px; }
   .header-actions { width: 100%; grid-template-columns: 1fr; small { grid-column: 1; text-align: left; } }
   .metric-grid { grid-template-columns: 1fr; }
+  .operation-grid { grid-template-columns: 1fr; }
+  .quick-card { grid-column: auto; }
+  .quick-actions { grid-template-columns: 1fr; }
+  .registration-list > button { grid-template-columns: 1fr auto; }
+  .registration-meta { grid-column: 1; }
   .status-list { grid-template-columns: repeat(2, 1fr); }
 }
 </style>
