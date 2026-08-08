@@ -86,15 +86,15 @@ mvn test
 
 接口错误码、幂等约束和调用示例见 `docs/05-API错误码与幂等说明.md`。
 
-前端默认地址为 `http://localhost:5173`，后端接口为 `http://localhost:8080/api/v1`，接口文档为 `http://localhost:8080/swagger-ui.html`。
+前端默认地址为 `http://localhost:15173`，后端接口为 `http://localhost:18080/api/v1`，接口文档为 `http://localhost:18080/swagger-ui.html`。本地端口固定使用这两个值；上线时可通过 `LEANTPM_SERVER_PORT` 与 `VITE_BACKEND_URL` 覆盖。
 
 Redis 不可用时，健康检查会显示异常，登录及受保护接口返回 `503 REDIS_UNAVAILABLE`，系统不会回退到不可撤销的无状态令牌。
 
-如果 8080 已被其他程序占用，可同时设置：
+上线部署需要修改后端端口时，可同时设置：
 
 ```powershell
-$env:LEANTPM_SERVER_PORT = '18080'
-$env:VITE_BACKEND_URL = 'http://127.0.0.1:18080'
+$env:LEANTPM_SERVER_PORT = '上线后端端口'
+$env:VITE_BACKEND_URL = 'http://127.0.0.1:上线后端端口'
 ```
 
 首次启动时，只有设置 `LEANTPM_BOOTSTRAP_ADMIN_PASSWORD` 才会初始化 `admin` 管理员；该用户会被标记为首次登录必须修改密码。生产环境不得使用示例密码。

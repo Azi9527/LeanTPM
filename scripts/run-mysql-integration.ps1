@@ -4,7 +4,8 @@ param(
     [string]$MySqlUser = 'root',
     [string]$MySqlPassword = 'root',
     [string]$TestPattern = '*MySqlIntegrationTest',
-    [string]$MavenExecutable = $env:LEANTPM_MAVEN_EXECUTABLE
+    [string]$MavenExecutable = $env:LEANTPM_MAVEN_EXECUTABLE,
+    [string]$BuildDirectory = 'target-codex'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -35,7 +36,7 @@ try {
     $env:LEANTPM_TEST_DB_USERNAME = $MySqlUser
     $env:LEANTPM_TEST_DB_PASSWORD = $MySqlPassword
 
-    & $MavenExecutable '-Dleantpm.build.directory=target-codex' `
+    & $MavenExecutable "-Dleantpm.build.directory=$BuildDirectory" `
         "-Dtest=$TestPattern" test `
         -f (Join-Path $backendRoot 'pom.xml')
     if ($LASTEXITCODE -ne 0) {
