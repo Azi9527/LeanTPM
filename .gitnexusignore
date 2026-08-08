@@ -1,0 +1,66 @@
+# GitNexus source-only index policy.
+# Exclude every top-level entry by default, then explicitly allow source,
+# tests, build descriptors, deployment scripts, and Markdown documentation.
+/*
+
+# Repository guidance and essential root configuration.
+!/README.md
+!/AGENTS.md
+!/CLAUDE.md
+!/.env.example
+
+# Backend source, tests, resources, migrations, and build descriptor.
+!/backend/
+/backend/*
+!/backend/pom.xml
+!/backend/src/
+
+# Web source and build/type configuration. The generated Android WebView
+# project under frontend/android/ intentionally remains excluded.
+!/frontend/
+/frontend/*
+!/frontend/src/
+!/frontend/package.json
+!/frontend/package-lock.json
+!/frontend/index.html
+!/frontend/capacitor.config.ts
+!/frontend/vite.config.ts
+!/frontend/tsconfig.json
+!/frontend/tsconfig.app.json
+!/frontend/tsconfig.node.json
+
+# Cross-platform application source and tests. Static images, design exports,
+# unpackage output, APKs, and other generated artifacts remain excluded.
+!/LeanTPM-APP/
+/LeanTPM-APP/*
+!/LeanTPM-APP/api/
+!/LeanTPM-APP/components/
+!/LeanTPM-APP/constants/
+!/LeanTPM-APP/pages/
+!/LeanTPM-APP/platform/
+!/LeanTPM-APP/scripts/
+!/LeanTPM-APP/services/
+!/LeanTPM-APP/stores/
+!/LeanTPM-APP/tests/
+!/LeanTPM-APP/utils/
+!/LeanTPM-APP/App.vue
+!/LeanTPM-APP/index.html
+!/LeanTPM-APP/main.js
+!/LeanTPM-APP/manifest.json
+!/LeanTPM-APP/package.json
+!/LeanTPM-APP/pages.json
+!/LeanTPM-APP/uni.promisify.adaptor.js
+!/LeanTPM-APP/uni.scss
+
+# Necessary project documentation only; binary office attachments stay out.
+!/docs/
+/docs/*
+!/docs/*.md
+!/docs/ai/
+/docs/ai/*
+!/docs/ai/*.md
+
+# Deployment configuration and operational/database scripts are maintained
+# source inputs and remain available to code-understanding queries.
+!/deploy/
+!/scripts/
