@@ -3,7 +3,7 @@ package com.leantpm.system;
 import com.leantpm.common.exception.BusinessException;
 import com.leantpm.security.CurrentUser;
 import com.leantpm.security.datascope.DataPermissionService;
-import com.leantpm.security.session.RedisAuthSessionService;
+import com.leantpm.security.session.AuthSessionService;
 import com.leantpm.system.dto.SystemDtos;
 import com.leantpm.system.mapper.SystemMapper;
 import com.leantpm.system.service.SystemService;
@@ -31,7 +31,7 @@ class SystemServiceMenuStatusTest {
     @Mock private SystemMapper mapper;
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private DataPermissionService dataPermissionService;
-    @Mock private RedisAuthSessionService sessionService;
+    @Mock private AuthSessionService sessionService;
 
     private SystemService service;
 
@@ -59,6 +59,8 @@ class SystemServiceMenuStatusTest {
         ));
         when(mapper.updateMenuStatuses(1L, List.of(10L, 11L, 12L), false, 1L))
                 .thenReturn(3);
+        when(mapper.findUserIdsByMenuIds(1L, List.of(10L, 11L, 12L)))
+                .thenReturn(List.of(1L, 77L));
 
         assertThat(service.updateMenuStatus(
                 10L, new SystemDtos.MenuStatusRequest(false)
@@ -71,6 +73,9 @@ class SystemServiceMenuStatusTest {
                 org.mockito.ArgumentMatchers.eq(false), org.mockito.ArgumentMatchers.eq(1L)
         );
         assertThat(ids.getValue()).containsExactly(10L, 11L, 12L);
+        verify(mapper).bumpAuthEpochForUsers(1L, List.of(1L, 77L), 1L);
+        verify(sessionService).revokeAllUserSessions(1L, 1L);
+        verify(sessionService).revokeAllUserSessions(1L, 77L);
     }
 
     @Test

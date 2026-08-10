@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-09T23:17:44+08:00",
+  "sourceCommit": "2185536ea9da0a323b27f53dcf849b818ea19069",
+  "workingTree": "dirty-candidate",
+  "result": "NOT_RELEASEABLE",
+  "offlineGates": {
+    "nodeContracts": {
+      "result": "PASS",
+      "tests": 82,
+      "passed": 82,
+      "failed": 0,
+      "breakdown": {
+        "releasePlatform": 71,
+        "noRedis": 6,
+        "authE2eStaticContract": 1,
+        "pcContracts": 4
+      },
+      "releasePlatformTap": "../../2026-08-08-release-platform/release-platform-tests-current.tap",
+      "releasePlatformTapSha256": "0e07506a3ee745aefcc5ff6b38db58c8ec3c6394d9549a7f1ff365f070cb3049",
+      "aggregateTap": "offline-contracts-current.tap",
+      "aggregateTapSha256": "a2161e1fd4798457eadecc8eb409c4b42efe292a8834c890ea5c8f6cb4400346"
+    },
+    "backendMaven": {
+      "result": "PASS_WITH_ENVIRONMENT_SKIPS",
+      "tests": 144,
+      "executed": 84,
+      "passed": 84,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 60,
+      "skipReason": "LEANTPM_TEST_DB_URL intentionally absent; no isolated MySQL write authorization"
+    },
+    "leanTpmApp": {
+      "result": "PASS",
+      "tests": 26,
+      "passed": 26,
+      "failed": 0,
+      "formalHBuilderBuildExecuted": false
+    },
+    "powerShellAst": {
+      "result": "PASS",
+      "files": 63,
+      "parseErrors": 0
+    },
+    "pcWeb": {
+      "typecheck": "PASS",
+      "build": "PASS_WITH_EXISTING_CHUNK_SIZE_WARNINGS"
+    },
+    "gitNexus": {
+      "result": "CURRENT_WITH_UNTRACKED_SYMBOL_LIMITATION",
+      "indexedCommit": "2185536ea9da0a323b27f53dcf849b818ea19069",
+      "analyzeResult": "PASS: 8009 nodes, 20011 edges, 432 clusters, 300 flows",
+      "forceAnalyzeUsed": false,
+      "detectChanges": "78 files, 156 indexed symbols, 12 affected processes, HIGH",
+      "limitation": "new untracked PowerShell release-platform and ops-control-plane symbols are not fully represented in the graph; L4 scope is governed by source review and behavior tests"
+    }
+  },
+  "newFailureAssets": {
+    "isolatedDatabaseGroups": "migration and module suites execute against distinct allowlisted databases",
+    "cleanup": "all attempted database creates are registered before CREATE; unknown CREATE outcomes are dropped, every cleanup is attempted, and any DROP failure makes the runner fail",
+    "customPattern": "migration fixture cannot be combined with module tests",
+    "flywayChecksum": "tampered schema history must fail validation before the original checksum is restored",
+    "migrationInterruption": "non-transactional DDL failure is detected, repaired from a known state, and forward completion is repeatable",
+    "dDriveHostLayout": "host bootstrap and production-root policy bind D:\\LeanTPM\\App plus D:\\LeanTPM\\Runtime; actual host volume, ACL and final-path verification remain environment-gated",
+    "hostBootstrapDiscovery": "read-only discovery emits only INPUT_REQUIRED, distinguishes LIVE from PLAN_ONLY_FIXTURE, redacts raw host and volume identities, preserves D:\\LeanTPM\\data as external MySQL state, rejects duplicate properties at every JSON object scope, and performs no initialization",
+    "hostBootstrapInitializationContracts": "non-executable validators bind a fixed external authority, LIVE discovery, absent App/Runtime roots, preserved MySQL data, candidate policy and toolchain hashes, distinct requester/approver identities, a separate external Caddy adoption, and a receipt that remains productionReady=false; fixed authority CMS, nonce reservation and filesystem mutation remain deliberately unimplemented and fail closed",
+    "legacyInventory": "read-only inventory preserves D:\\LeanTPM\\data as external MySQL state and blocks non-empty legacy current/shared/package paths before first install",
+    "legacyImportPlan": "non-executable INPUT_REQUIRED draft binds a current inventory, caller-bound backup receipt bytes, per-path confirmations and quarantine mappings; independent validation rejects forged READY and root-escaping targets",
+    "externalCaddy": "host-bound contract pins the exact Caddy SCM command line, config, process/listener ownership and fail-closed firewall scope; behavior harnesses verify guarded ingress recovery, exact runtime ACL propagation, handle-level directory identity, quiescent pre/post process-owner checks and post-scan PID freshness; live Windows evidence remains required"
+  },
+  "notExecuted": [
+    "isolated MySQL V48-to-V50 migration and module integration suites",
+    "no-Redis backend startup, liveness and readiness",
+    "PC and Android authentication E2E",
+    "backup, restore and fault-injection drill",
+    "Windows Service installation or control",
+    "cloud server mutation or deployment",
+    "formal signed Android package build"
+  ],
+  "authorization": {
+    "databaseWrite": false,
+    "windowsServiceMutation": false,
+    "cloudMutation": false,
+    "pushOrPullRequest": false
+  }
+}

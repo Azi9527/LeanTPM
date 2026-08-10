@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "productVersion": "1.0.1",
+  "databaseSchemaVersion": 50,
+  "combinations": [
+    {
+      "backend": "1.0.1",
+      "web": "1.0.1",
+      "appVersionCodeRange": { "minimum": 101, "maximum": 101 },
+      "databaseSchema": 50,
+      "status": "CANDIDATE_UNVERIFIED",
+      "notes": "Synthetic TEST package; no environment acceptance evidence."
+    }
+  ],
+  "unknownCombinationPolicy": "BLOCKED"
+}

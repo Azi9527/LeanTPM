@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import * as authApi from '@/api/auth'
-import { clearTokens, hasToken, storeTokens } from '@/utils/http'
+import { clearTokens, hasToken, isAuthenticationFailure, storeTokens } from '@/utils/http'
 import type { UserProfile } from '@/types/api'
 import { updateRememberedPassword } from '@/utils/rememberedCredentials'
 
@@ -17,10 +17,8 @@ export const useAuthStore = defineStore('auth', () => {
   async function signIn(
     username: string,
     password: string,
-    captchaId?: string,
-    captchaCode?: string,
   ): Promise<UserProfile> {
-    const result = await authApi.login(username, password, captchaId, captchaCode)
+    const result = await authApi.login(username, password)
     await storeTokens(result.tokens)
     user.value = result.user
     initialized.value = true
@@ -35,10 +33,13 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       user.value = await authApi.currentUser()
       return user.value
-    } catch {
-      await clearTokens()
-      user.value = null
-      return null
+    } catch (error) {
+      if (isAuthenticationFailure(error)) {
+        await clearTokens()
+        user.value = null
+        return null
+      }
+      throw error
     } finally {
       initialized.value = true
     }

@@ -22,7 +22,11 @@ assert.equal(
 assert.equal(android?.packagename, 'com.leantpm.mobile')
 assert.equal(android?.minSdkVersion, 29)
 assert.equal(android?.targetSdkVersion, 36)
+assert.equal(android?.usesCleartextTraffic, true, 'Android APP must allow the approved HTTP deployment endpoint')
 assert.ok(manifest['app-plus']?.distribute?.icons?.android?.xxxhdpi, 'Android icon configuration is required')
+
+const setupPage = fs.readFileSync(path.join(root, 'pages/setup/index.vue'), 'utf8')
+assert.match(setupPage, /当前正式云服务可使用 HTTP/, 'Server setup copy must match the approved HTTP deployment mode')
 
 const forbiddenPermissions = [
 	'ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION', 'READ_PHONE_STATE',

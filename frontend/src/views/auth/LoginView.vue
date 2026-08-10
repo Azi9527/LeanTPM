@@ -2,7 +2,6 @@
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
-import { captcha as fetchCaptcha, type CaptchaChallenge } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 import { errorMessage } from '@/utils/http'
 import { nativeContainer } from '@/mobile/secureVault'
@@ -27,40 +26,15 @@ const branding = useBranding()
 const formRef = ref<FormInstance>()
 const loginBoxRef = ref<HTMLElement>()
 const loading = ref(false)
-const captchaLoading = ref(false)
 const remember = ref(true)
-const challenge = ref<CaptchaChallenge>({ enabled: true })
 const appRelease = ref<AndroidAppRelease>()
 const appDownloadOpen = ref(false)
-const form = reactive({ username: '', password: '', captchaCode: '' })
+const form = reactive({ username: '', password: '' })
 const appDownloadUrl = computed(() => appReleaseAssetUrl(appRelease.value?.downloadUrl))
 const appQrCodeUrl = computed(() => appReleaseQrCodeUrl(appRelease.value?.qrCodeUrl))
 const rules: FormRules = {
   username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
-  captchaCode: [{
-    validator: (_rule, value, callback) => {
-      if (challenge.value.enabled && !String(value || '').trim()) {
-        callback(new Error('请输入验证码'))
-        return
-      }
-      callback()
-    },
-    trigger: 'blur',
-  }],
-}
-
-async function loadCaptcha() {
-  captchaLoading.value = true
-  try {
-    challenge.value = await fetchCaptcha()
-    form.captchaCode = ''
-  } catch (error) {
-    challenge.value = { enabled: true }
-    ElMessage.error(errorMessage(error, '验证码加载失败'))
-  } finally {
-    captchaLoading.value = false
-  }
 }
 
 async function loadAppRelease() {
@@ -85,12 +59,7 @@ async function submit() {
   if (!valid) return
   loading.value = true
   try {
-    await auth.signIn(
-      form.username.trim(),
-      form.password,
-      challenge.value.captchaId,
-      form.captchaCode.trim(),
-    )
+    await auth.signIn(form.username.trim(), form.password)
     if (remember.value) {
       await saveRememberedCredentials(form.username, form.password)
     } else {
@@ -102,9 +71,6 @@ async function submit() {
     await router.replace(redirect)
   } catch (error) {
     ElMessage.error(errorMessage(error, '登录失败'))
-    if (challenge.value.enabled) {
-      await loadCaptcha()
-    }
   } finally {
     loading.value = false
   }
@@ -135,7 +101,7 @@ onMounted(async () => {
     form.password = saved.password
     remember.value = true
   }
-  await Promise.all([loadCaptcha(), loadAppRelease()])
+  await loadAppRelease()
 })
 </script>
 
@@ -184,30 +150,6 @@ onMounted(async () => {
               <template #prefix><el-icon><Lock /></el-icon></template>
             </el-input>
           </el-form-item>
-          <el-form-item v-if="challenge.enabled" label="验证码" prop="captchaCode">
-            <div class="captcha-row">
-              <el-input
-                v-model="form.captchaCode"
-                size="large"
-                maxlength="4"
-                placeholder="请输入验证码"
-                autocomplete="off"
-                @keyup.enter="submit"
-              >
-                <template #prefix><el-icon><Key /></el-icon></template>
-              </el-input>
-              <button
-                class="captcha-image"
-                type="button"
-                :disabled="captchaLoading"
-                title="点击刷新验证码"
-                @click="loadCaptcha"
-              >
-                <img v-if="challenge.imageDataUrl" :src="challenge.imageDataUrl" alt="验证码，点击刷新" />
-                <span v-else>刷新</span>
-              </button>
-            </div>
-          </el-form-item>
           <div class="login-options">
             <el-checkbox v-model="remember">记住账号和密码</el-checkbox>
             <span>连续失败 5 次将临时锁定</span>
@@ -217,7 +159,6 @@ onMounted(async () => {
             type="primary"
             size="large"
             :loading="loading"
-            :disabled="challenge.enabled && !challenge.captchaId"
             @click="submit"
           >
             进入系统
@@ -435,36 +376,6 @@ h2 {
   font-size: 11px;
 }
 
-.captcha-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 160px;
-  gap: 10px;
-  width: 100%;
-}
-
-.captcha-image {
-  overflow: hidden;
-  height: 40px;
-  padding: 0;
-  border: 1px solid #d8e1e6;
-  border-radius: 7px;
-  color: var(--tpm-primary);
-  background: #eef5f7;
-  cursor: pointer;
-
-  &:disabled {
-    cursor: wait;
-    opacity: 0.65;
-  }
-
-  img {
-    display: block;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-}
-
 .login-button {
   width: 100%;
   min-height: 48px;
@@ -624,8 +535,5 @@ footer {
     font-size: 28px;
   }
 
-  .captcha-row {
-    grid-template-columns: minmax(0, 1fr) 132px;
-  }
 }
 </style>

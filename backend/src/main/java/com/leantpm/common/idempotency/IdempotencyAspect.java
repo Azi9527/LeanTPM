@@ -3,6 +3,7 @@ package com.leantpm.common.idempotency;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leantpm.common.exception.BusinessException;
+import com.leantpm.security.CurrentUser;
 import com.leantpm.security.SecurityUtils;
 import jakarta.servlet.ServletRequest;
 import jakarta.servlet.ServletResponse;
@@ -12,9 +13,8 @@ import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.springframework.core.annotation.Order;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
@@ -23,54 +23,28 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.InputStream;
 import java.lang.reflect.Method;
 import java.security.MessageDigest;
-import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
 @Aspect
 @Component
 @Order(300)
 public class IdempotencyAspect {
-    private static final String PREFIX = "leantpm:idempotency:";
     private static final Pattern KEY_PATTERN = Pattern.compile("^[A-Za-z0-9:_-]{8,128}$");
-    private static final DefaultRedisScript<String> ACQUIRE_SCRIPT = stringScript("""
-            local existing = redis.call('GET', KEYS[1])
-            if existing then
-                return existing
-            end
-            redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
-            return ''
-            """);
-    private static final DefaultRedisScript<Long> COMPLETE_SCRIPT = longScript("""
-            if redis.call('GET', KEYS[1]) ~= ARGV[1] then
-                return 0
-            end
-            redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3])
-            return 1
-            """);
-    private static final DefaultRedisScript<Long> RELEASE_SCRIPT = longScript("""
-            if redis.call('GET', KEYS[1]) == ARGV[1] then
-                return redis.call('DEL', KEYS[1])
-            end
-            return 0
-            """);
-
-    private final StringRedisTemplate redisTemplate;
+    private final IdempotencyStore store;
     private final ObjectMapper objectMapper;
     private final IdempotencyProperties properties;
 
     public IdempotencyAspect(
-            StringRedisTemplate redisTemplate,
+            IdempotencyStore store,
             ObjectMapper objectMapper,
             IdempotencyProperties properties
     ) {
-        this.redisTemplate = redisTemplate;
+        this.store = store;
         this.objectMapper = objectMapper;
         this.properties = properties;
     }
@@ -94,83 +68,134 @@ public class IdempotencyAspect {
             );
         }
 
-        long tenantId = SecurityUtils.currentUser().tenantId();
-        String redisKey = PREFIX + tenantId + ":" + sha256(idempotencyKey);
+        CurrentUser currentUser = SecurityUtils.currentUser();
+        long tenantId = currentUser.tenantId();
+        String keyHash = sha256(currentUser.userId() + ":" + idempotencyKey);
         String fingerprint = fingerprint(request, joinPoint.getArgs());
-        String token = UUID.randomUUID().toString();
-        String processingValue = "P|" + fingerprint + "|" + token;
-        String existing = redis(() -> redisTemplate.execute(
-                ACQUIRE_SCRIPT,
-                List.of(redisKey),
-                processingValue,
-                Integer.toString(properties.getProcessingSeconds())
+        String ownerToken = UUID.randomUUID().toString();
+        IdempotencyStore.AcquireResult acquired = database(() -> store.acquire(
+                tenantId,
+                keyHash,
+                fingerprint,
+                ownerToken,
+                properties.getProcessingSeconds(),
+                properties.getCompletedHours()
         ));
 
-        if (existing != null && !existing.isEmpty()) {
-            return existingResult(existing, fingerprint, joinPoint);
-        }
-
-        try {
-            Object result = joinPoint.proceed();
-            String payload = Base64.getUrlEncoder().withoutPadding()
-                    .encodeToString(objectMapper.writeValueAsBytes(result));
-            String completedValue = "C|" + fingerprint + "|" + payload;
-            Long completed = redis(() -> redisTemplate.execute(
-                    COMPLETE_SCRIPT,
-                    List.of(redisKey),
-                    processingValue,
-                    completedValue,
-                    Long.toString(Duration.ofHours(properties.getCompletedHours()).toSeconds())
-            ));
-            if (completed == null || completed != 1L) {
-                throw new BusinessException(
-                        "IDEMPOTENCY_STATE_LOST",
-                        "幂等状态已失效，请查询业务结果后重试",
-                        HttpStatus.CONFLICT
-                );
+        switch (acquired.outcome()) {
+            case COMPLETED -> {
+                return completedResult(acquired, joinPoint);
             }
-            return result;
-        } catch (Throwable failure) {
-            redis(() -> redisTemplate.execute(
-                    RELEASE_SCRIPT,
-                    List.of(redisKey),
-                    processingValue
-            ));
-            throw failure;
-        }
-    }
-
-    private Object existingResult(
-            String existing,
-            String fingerprint,
-            ProceedingJoinPoint joinPoint
-    ) throws Exception {
-        String[] parts = existing.split("\\|", 3);
-        if (parts.length < 3 || !fingerprint.equals(parts[1])) {
-            throw new BusinessException(
+            case CONFLICT -> throw new BusinessException(
                     "IDEMPOTENCY_KEY_CONFLICT",
                     "同一 Idempotency-Key 不能用于不同请求",
                     HttpStatus.CONFLICT
             );
-        }
-        if ("P".equals(parts[0])) {
-            throw new BusinessException(
+            case IN_PROGRESS -> throw new BusinessException(
                     "REQUEST_IN_PROGRESS",
                     "相同请求正在处理中",
                     HttpStatus.CONFLICT
             );
+            case UNKNOWN -> throw new BusinessException(
+                    "IDEMPOTENCY_RESULT_UNKNOWN",
+                    "请求结果无法安全确认，请先查询业务结果",
+                    HttpStatus.CONFLICT
+            );
+            case ACQUIRED -> {
+                // Continue below. The acquisition transaction has already committed.
+            }
         }
-        if (!"C".equals(parts[0])) {
+
+        Object result;
+        try {
+            result = joinPoint.proceed();
+        } catch (Throwable failure) {
+            markUnknownOrThrow(
+                    tenantId,
+                    keyHash,
+                    ownerToken,
+                    acquired.fencingToken(),
+                    failure
+            );
+            throw failure;
+        }
+
+        byte[] payload;
+        try {
+            payload = objectMapper.writeValueAsBytes(result);
+        } catch (Exception exception) {
+            markUnknownOrThrow(
+                    tenantId,
+                    keyHash,
+                    ownerToken,
+                    acquired.fencingToken(),
+                    exception
+            );
+            throw new BusinessException(
+                    "IDEMPOTENCY_RESPONSE_SERIALIZATION_FAILED",
+                    "业务已执行，但响应无法安全保存，请先查询业务结果",
+                    HttpStatus.CONFLICT
+            );
+        }
+        if (payload.length > properties.getMaxResponseBytes()) {
+            markUnknownOrThrow(
+                    tenantId,
+                    keyHash,
+                    ownerToken,
+                    acquired.fencingToken(),
+                    null
+            );
+            throw new BusinessException(
+                    "IDEMPOTENCY_RESPONSE_TOO_LARGE",
+                    "业务已执行，但响应超过幂等存储上限，请先查询业务结果",
+                    HttpStatus.CONFLICT
+            );
+        }
+
+        boolean completed = database(() -> store.complete(
+                tenantId,
+                keyHash,
+                ownerToken,
+                acquired.fencingToken(),
+                HttpStatus.OK.value(),
+                MediaType.APPLICATION_JSON_VALUE,
+                payload,
+                properties.getCompletedHours()
+        ));
+        if (!completed) {
+            markUnknownOrThrow(
+                    tenantId,
+                    keyHash,
+                    ownerToken,
+                    acquired.fencingToken(),
+                    null
+            );
+            throw new BusinessException(
+                    "IDEMPOTENCY_STATE_LOST",
+                    "业务已执行，但幂等状态无法确认，请先查询业务结果",
+                    HttpStatus.CONFLICT
+            );
+        }
+        return result;
+    }
+
+    private Object completedResult(
+            IdempotencyStore.AcquireResult completed,
+            ProceedingJoinPoint joinPoint
+    ) throws Exception {
+        if (!Integer.valueOf(HttpStatus.OK.value()).equals(completed.responseStatus())
+                || !MediaType.APPLICATION_JSON_VALUE.equals(completed.responseContentType())
+                || completed.responsePayload() == null) {
             throw new BusinessException(
                     "IDEMPOTENCY_STATE_INVALID",
-                    "幂等状态无效",
+                    "幂等响应状态无效，请联系管理员核验业务结果",
                     HttpStatus.CONFLICT
             );
         }
         Method method = ((MethodSignature) joinPoint.getSignature()).getMethod();
         JavaType returnType = objectMapper.getTypeFactory()
                 .constructType(method.getGenericReturnType());
-        return objectMapper.readValue(Base64.getUrlDecoder().decode(parts[2]), returnType);
+        return objectMapper.readValue(completed.responsePayload(), returnType);
     }
 
     private String fingerprint(HttpServletRequest request, Object[] args) {
@@ -248,31 +273,56 @@ public class IdempotencyAspect {
         }
     }
 
-    private <T> T redis(Supplier<T> operation) {
+    private void markUnknownOrThrow(
+            long tenantId,
+            String keyHash,
+            String ownerToken,
+            long fencingToken,
+            Throwable originalFailure
+    ) {
+        boolean marked;
+        try {
+            marked = database(() -> store.markUnknown(
+                    tenantId,
+                    keyHash,
+                    ownerToken,
+                    fencingToken
+            ));
+        } catch (BusinessException stateFailure) {
+            if (originalFailure != null) {
+                stateFailure.addSuppressed(originalFailure);
+            }
+            throw stateFailure;
+        }
+        if (!marked) {
+            BusinessException stateFailure = new BusinessException(
+                    "IDEMPOTENCY_STATE_LOST",
+                    "幂等状态无法转入待核验，请立即查询业务结果",
+                    HttpStatus.CONFLICT
+            );
+            if (originalFailure != null) {
+                stateFailure.addSuppressed(originalFailure);
+            }
+            throw stateFailure;
+        }
+    }
+
+    private <T> T database(DatabaseOperation<T> operation) {
         try {
             return operation.get();
         } catch (BusinessException exception) {
             throw exception;
         } catch (RuntimeException exception) {
             throw new BusinessException(
-                    "REDIS_UNAVAILABLE",
-                    "幂等服务暂不可用，请稍后重试",
+                    "IDEMPOTENCY_UNAVAILABLE",
+                    "幂等状态数据库暂不可用，请稍后重试",
                     HttpStatus.SERVICE_UNAVAILABLE
             );
         }
     }
 
-    private static DefaultRedisScript<String> stringScript(String source) {
-        DefaultRedisScript<String> script = new DefaultRedisScript<>();
-        script.setScriptText(source);
-        script.setResultType(String.class);
-        return script;
-    }
-
-    private static DefaultRedisScript<Long> longScript(String source) {
-        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
-        script.setScriptText(source);
-        script.setResultType(Long.class);
-        return script;
+    @FunctionalInterface
+    private interface DatabaseOperation<T> {
+        T get();
     }
 }

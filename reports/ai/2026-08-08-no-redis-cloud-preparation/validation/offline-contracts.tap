@@ -1,0 +1,394 @@
+TAP version 13
+# Subtest: refresh infrastructure failures preserve tokens for a later retry
+ok 1 - refresh infrastructure failures preserve tokens for a later retry
+  ---
+  duration_ms: 0.5186
+  type: 'test'
+  ...
+# Subtest: profile bootstrap keeps tokens on transient persistent-auth outages
+ok 2 - profile bootstrap keeps tokens on transient persistent-auth outages
+  ---
+  duration_ms: 0.1261
+  type: 'test'
+  ...
+# Subtest: web login contract contains only username and password
+ok 3 - web login contract contains only username and password
+  ---
+  duration_ms: 2.486
+  type: 'test'
+  ...
+# Subtest: web server setup performs a strict live public branding probe
+ok 4 - web server setup performs a strict live public branding probe
+  ---
+  duration_ms: 0.7511
+  type: 'test'
+  ...
+# Subtest: isolated auth E2E exercises refresh replay, restart persistence and removed captcha route
+ok 5 - isolated auth E2E exercises refresh replay, restart persistence and removed captcha route
+  ---
+  duration_ms: 0.5917
+  type: 'test'
+  ...
+# Subtest: backend runtime has no Redis dependency, client, health, environment, or error contract
+ok 6 - backend runtime has no Redis dependency, client, health, environment, or error contract
+  ---
+  duration_ms: 39.4426
+  type: 'test'
+  ...
+# Subtest: captcha handler, DTO, login fields, UI, API, and active tests are absent
+ok 7 - captcha handler, DTO, login fields, UI, API, and active tests are absent
+  ---
+  duration_ms: 53.533
+  type: 'test'
+  ...
+# Subtest: PC and APP runtime and tests contain no Redis contract
+ok 8 - PC and APP runtime and tests contain no Redis contract
+  ---
+  duration_ms: 57.1422
+  type: 'test'
+  ...
+# Subtest: Windows and release assets contain no Redis or captcha config, Secret, health, or E2E contract
+ok 9 - Windows and release assets contain no Redis or captcha config, Secret, health, or E2E contract
+  ---
+  duration_ms: 12.5964
+  type: 'test'
+  ...
+# Subtest: only the immutable V2 migration retains the historical captcha seed
+ok 10 - only the immutable V2 migration retains the historical captcha seed
+  ---
+  duration_ms: 6.0018
+  type: 'test'
+  ...
+# Subtest: active operational documentation contains no Redis or captcha requirement
+ok 11 - active operational documentation contains no Redis or captcha requirement
+  ---
+  duration_ms: 4.9351
+  type: 'test'
+  ...
+# Subtest: accepts the canonical version only when every component and schema agrees
+ok 12 - accepts the canonical version only when every component and schema agrees
+  ---
+  duration_ms: 334.2067
+  type: 'test'
+  ...
+# Subtest: rejects an unsigned manifest unless the caller explicitly allows a test manifest
+ok 13 - rejects an unsigned manifest unless the caller explicitly allows a test manifest
+  ---
+  duration_ms: 917.9336
+  type: 'test'
+  ...
+# Subtest: rejects a tampered artifact and an unexpected package file
+ok 14 - rejects a tampered artifact and an unexpected package file
+  ---
+  duration_ms: 1967.5696
+  type: 'test'
+  ...
+# Subtest: keeps the APP profile fallback aligned with the canonical version code
+ok 15 - keeps the APP profile fallback aligned with the canonical version code
+  ---
+  duration_ms: 0.3675
+  type: 'test'
+  ...
+# Subtest: verifies restored databases using the actual core table names
+ok 16 - verifies restored databases using the actual core table names
+  ---
+  duration_ms: 0.2656
+  type: 'test'
+  ...
+# Subtest: resolves the D drive host layout only as a non-executable PlanOnly contract
+ok 17 - resolves the D drive host layout only as a non-executable PlanOnly contract
+  ---
+  duration_ms: 7999.6786
+  type: 'test'
+  ...
+# Subtest: rejects manifest paths that can escape the package root
+ok 18 - rejects manifest paths that can escape the package root
+  ---
+  duration_ms: 347.5609
+  type: 'test'
+  ...
+# Subtest: builds byte-for-byte deterministic release bundles and verifies the archive
+ok 19 - builds byte-for-byte deterministic release bundles and verifies the archive
+  ---
+  duration_ms: 2239.8934
+  type: 'test'
+  ...
+# Subtest: defines production-safe Flyway and health probe contracts
+ok 20 - defines production-safe Flyway and health probe contracts
+  ---
+  duration_ms: 0.9752
+  type: 'test'
+  ...
+# Subtest: keeps database passwords out of process arguments and requires an isolated-write confirmation
+ok 21 - keeps database passwords out of process arguments and requires an isolated-write confirmation
+  ---
+  duration_ms: 0.598
+  type: 'test'
+  ...
+# Subtest: produces a side-effect-free Windows Service installation plan for a pinned wrapper
+ok 22 - produces a side-effect-free Windows Service installation plan for a pinned wrapper
+  ---
+  duration_ms: 630.2691
+  type: 'test'
+  ...
+# Subtest: builds backup, deployment and rollback plans without touching a database or service
+ok 23 - builds backup, deployment and rollback plans without touching a database or service
+  ---
+  duration_ms: 2220.5692
+  type: 'test'
+  ...
+# Subtest: validates every deployment audit hash before accepting the append-only chain
+ok 24 - validates every deployment audit hash before accepting the append-only chain
+  ---
+  duration_ms: 609.5741
+  type: 'test'
+  ...
+# Subtest: generates a canonical manifest from payload bytes instead of hand-maintained hashes
+ok 25 - generates a canonical manifest from payload bytes instead of hand-maintained hashes
+  ---
+  duration_ms: 501.9705
+  type: 'test'
+  ...
+# Subtest: plans a fixed Windows Service action and refuses arbitrary service identifiers
+ok 26 - plans a fixed Windows Service action and refuses arbitrary service identifiers
+  ---
+  duration_ms: 264.3404
+  type: 'test'
+  ...
+# Subtest: plans restore only into a different isolated target after backup integrity verification
+ok 27 - plans restore only into a different isolated target after backup integrity verification
+  ---
+  duration_ms: 605.5492
+  type: 'test'
+  ...
+# Subtest: generates a contiguous checksum-locked migration catalog for an explicit upgrade range
+ok 28 - generates a contiguous checksum-locked migration catalog for an explicit upgrade range
+  ---
+  duration_ms: 1085.1415
+  type: 'test'
+  ...
+# Subtest: rejects a self-consistent artifact hash when the migration catalog contradicts the manifest
+ok 29 - rejects a self-consistent artifact hash when the migration catalog contradicts the manifest
+  ---
+  duration_ms: 436.4144
+  type: 'test'
+  ...
+# Subtest: records a clean trusted Git baseline and rejects a dirty source tree
+ok 30 - records a clean trusted Git baseline and rejects a dirty source tree
+  ---
+  duration_ms: 969.858
+  type: 'test'
+  ...
+# Subtest: enforces the complete manifest contract and rejects unlisted ZIP root entries
+ok 31 - enforces the complete manifest contract and rejects unlisted ZIP root entries
+  ---
+  duration_ms: 1880.8362
+  type: 'test'
+  ...
+# Subtest: switches the Windows Web current junction only between contained immutable releases
+ok 32 - switches the Windows Web current junction only between contained immutable releases
+  ---
+  duration_ms: 715.9402
+  type: 'test'
+  ...
+# Subtest: binds production approvals to the exact immutable plan bytes that are executed
+ok 33 - binds production approvals to the exact immutable plan bytes that are executed
+  ---
+  duration_ms: 0.5937
+  type: 'test'
+  ...
+# Subtest: binds production approval to package identity, expiry, current state and safe compensation
+ok 34 - binds production approval to package identity, expiry, current state and safe compensation
+  ---
+  duration_ms: 0.8432
+  type: 'test'
+  ...
+# Subtest: recovers stale lock files safely and isolates every compensation failure
+ok 35 - recovers stale lock files safely and isolates every compensation failure
+  ---
+  duration_ms: 0.706
+  type: 'test'
+  ...
+# Subtest: preflights target volumes and rejects an unexpected backend port owner before stop
+ok 36 - preflights target volumes and rejects an unexpected backend port owner before stop
+  ---
+  duration_ms: 0.3502
+  type: 'test'
+  ...
+# Subtest: switches an approved immutable runtime configuration with every release pointer
+ok 37 - switches an approved immutable runtime configuration with every release pointer
+  ---
+  duration_ms: 1765.87
+  type: 'test'
+  ...
+# Subtest: returns the audited result for an exact successful retry and treats schemaTo as a no-op
+ok 38 - returns the audited result for an exact successful retry and treats schemaTo as a no-op
+  ---
+  duration_ms: 0.4774
+  type: 'test'
+  ...
+# Subtest: executes only reviewed migration bytes and reports runtime storage readiness
+ok 39 - executes only reviewed migration bytes and reports runtime storage readiness
+  ---
+  duration_ms: 0.4379
+  type: 'test'
+  ...
+# Subtest: keeps service and restore trust anchors host-owned and all database passwords off argv
+ok 40 - keeps service and restore trust anchors host-owned and all database passwords off argv
+  ---
+  duration_ms: 0.915
+  type: 'test'
+  ...
+# Subtest: revalidates mutable release state under the global lock before any service mutation
+ok 41 - revalidates mutable release state under the global lock before any service mutation
+  ---
+  duration_ms: 0.3266
+  type: 'test'
+  ...
+# Subtest: binds production approvals to the host identity and exact rollback target
+ok 42 - binds production approvals to the host identity and exact rollback target
+  ---
+  duration_ms: 0.5935
+  type: 'test'
+  ...
+# Subtest: requires MySQL identity verification and does not claim application recovery before E2E
+ok 43 - requires MySQL identity verification and does not claim application recovery before E2E
+  ---
+  duration_ms: 0.4837
+  type: 'test'
+  ...
+# Subtest: runs migration upgrade fixtures in a database isolated from module integration tests
+ok 44 - runs migration upgrade fixtures in a database isolated from module integration tests
+  ---
+  duration_ms: 333.489
+  type: 'test'
+  ...
+# Subtest: rejects a custom MySQL test pattern that mixes migration and module tests
+ok 45 - rejects a custom MySQL test pattern that mixes migration and module tests
+  ---
+  duration_ms: 301.1371
+  type: 'test'
+  ...
+# Subtest: fails loudly and attempts every cleanup when an isolated database drop fails
+ok 46 - fails loudly and attempts every cleanup when an isolated database drop fails
+  ---
+  duration_ms: 380.5103
+  type: 'test'
+  ...
+# Subtest: cleans a database whose create outcome is unknown after the server may have committed
+ok 47 - cleans a database whose create outcome is unknown after the server may have committed
+  ---
+  duration_ms: 353.7744
+  type: 'test'
+  ...
+# Subtest: proves Flyway checksum tampering fails closed and interrupted migration recovery is repeatable
+ok 48 - proves Flyway checksum tampering fails closed and interrupted migration recovery is repeatable
+  ---
+  duration_ms: 0.3521
+  type: 'test'
+  ...
+# Subtest: requires signed two-person approval for production restore and service uninstall
+ok 49 - requires signed two-person approval for production restore and service uninstall
+  ---
+  duration_ms: 0.3969
+  type: 'test'
+  ...
+# Subtest: holds verified backup files read-only through restore consumption
+ok 50 - holds verified backup files read-only through restore consumption
+  ---
+  duration_ms: 0.176
+  type: 'test'
+  ...
+# Subtest: emits a machine-readable aggregate release gate result
+ok 51 - emits a machine-readable aggregate release gate result
+  ---
+  duration_ms: 0.2226
+  type: 'test'
+  ...
+# Subtest: requires signed stage-one environment evidence before declaring RELEASEABLE
+ok 52 - requires signed stage-one environment evidence before declaring RELEASEABLE
+  ---
+  duration_ms: 970.5428
+  type: 'test'
+  ...
+# Subtest: binds the backed-up effective configuration to the actual runtime environment
+ok 53 - binds the backed-up effective configuration to the actual runtime environment
+  ---
+  duration_ms: 0.4564
+  type: 'test'
+  ...
+# Subtest: bootstraps only an empty host and empty schema through a dedicated first-install ceremony
+ok 54 - bootstraps only an empty host and empty schema through a dedicated first-install ceremony
+  ---
+  duration_ms: 0.7335
+  type: 'test'
+  ...
+# Subtest: reconciles recovery only by an approved exact forward completion
+ok 55 - reconciles recovery only by an approved exact forward completion
+  ---
+  duration_ms: 0.5837
+  type: 'test'
+  ...
+# Subtest: classifies every historical migration before building a first-install catalog
+ok 56 - classifies every historical migration before building a first-install catalog
+  ---
+  duration_ms: 3420.675
+  type: 'test'
+  ...
+# Subtest: pins and plans an HTTPS proxy service under an identity isolated from Backend secrets
+ok 57 - pins and plans an HTTPS proxy service under an identity isolated from Backend secrets
+  ---
+  duration_ms: 344.846
+  type: 'test'
+  ...
+# Subtest: derives production policy from canonical roots and binds recovery to the original database
+ok 58 - derives production policy from canonical roots and binds recovery to the original database
+  ---
+  duration_ms: 1.4307
+  type: 'test'
+  ...
+# Subtest: revalidates the fixed Backend service supply chain and fails loudly on compensation errors
+ok 59 - revalidates the fixed Backend service supply chain and fails loudly on compensation errors
+  ---
+  duration_ms: 0.5116
+  type: 'test'
+  ...
+# Subtest: fails closed on ambiguous service stop and protects Backend secrets and proxy TLS state
+ok 60 - fails closed on ambiguous service stop and protects Backend secrets and proxy TLS state
+  ---
+  duration_ms: 1.0193
+  type: 'test'
+  ...
+# Subtest: isolates public traffic when recovery compensation cannot stop the running backend
+ok 61 - isolates public traffic when recovery compensation cannot stop the running backend
+  ---
+  duration_ms: 0.7388
+  type: 'test'
+  ...
+# Subtest: normalizes every promoted release ACL and revalidates bytes before migration
+ok 62 - normalizes every promoted release ACL and revalidates bytes before migration
+  ---
+  duration_ms: 0.3227
+  type: 'test'
+  ...
+# Subtest: requires full RX and treats DeleteChild as write access in service ACL gates
+ok 63 - requires full RX and treats DeleteChild as write access in service ACL gates
+  ---
+  duration_ms: 162.8039
+  type: 'test'
+  ...
+# Subtest: installs the proxy disabled and removes an owned registration on final gate failure
+ok 64 - installs the proxy disabled and removes an owned registration on final gate failure
+  ---
+  duration_ms: 0.7002
+  type: 'test'
+  ...
+1..64
+# tests 64
+# suites 0
+# pass 64
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 31864.665

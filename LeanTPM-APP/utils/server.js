@@ -7,9 +7,10 @@ import {
 
 export const API_BASE_URL_KEY = STORAGE_KEYS.serverBaseUrl
 
-export const DEFAULT_SERVER_URL = 'http://192.168.31.91:18080'
+export const DEFAULT_SERVER_URL = 'http://8.163.66.164'
 
 export const SERVER_PRESETS = Object.freeze([
+	{ label: '正式版云服务', url: DEFAULT_SERVER_URL },
 	{ label: '测试云服务', url: 'https://851xn5pikw00.guyubao.com' },
 	{ label: '测试内网服务', url: 'http://192.168.31.91:18080' }
 ])
@@ -55,7 +56,7 @@ export async function testServerConnection(baseUrl) {
 	let response
 	try {
 		response = await sendRequest({
-			url: `${normalizeServerBaseUrl(baseUrl)}/auth/captcha`,
+			url: `${normalizeServerBaseUrl(baseUrl)}/public/branding`,
 			method: 'GET',
 			timeout: 10000
 		})
@@ -68,6 +69,9 @@ export async function testServerConnection(baseUrl) {
 	}
 	if (response.statusCode !== 200 || !response.data || response.data.code !== 'OK') {
 		throw new Error(response.data?.message || `服务器返回状态 ${response.statusCode}`)
+	}
+	if (!response.data.data?.systemName?.trim() || !response.data.data.shortName?.trim()) {
+		throw new Error('服务器品牌配置响应无效')
 	}
 	return response.data.data
 }

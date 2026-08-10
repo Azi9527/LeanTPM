@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leantpm.example/schemas/host-bootstrap-initialization-receipt.schema.json",
+  "title": "LeanTPM HostBootstrap initialization receipt before external ingress adoption",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "operation",
+    "initializationId",
+    "status",
+    "productionReady",
+    "externalCaddyAdopted",
+    "mysqlDataTouched",
+    "planSha256",
+    "authoritySha256",
+    "nonce",
+    "environmentId",
+    "hostId",
+    "volumeIdentity",
+    "bootstrapVolumeIdentity",
+    "startedAtUtc",
+    "completedAtUtc",
+    "requesterCertificateThumbprint",
+    "approverCertificateThumbprint",
+    "executorScriptSha256",
+    "stateJournalSha256",
+    "roots",
+    "artifacts",
+    "createdObjects",
+    "preservedMySqlData",
+    "legacy",
+    "verification",
+    "nextRequiredCeremonies"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "operation": { "const": "HOST_BOOTSTRAP_INITIALIZE" },
+    "initializationId": { "$ref": "#/$defs/id" },
+    "status": {
+      "enum": [
+        "BOOTSTRAP_COMMITTED_ADOPTION_REQUIRED",
+        "BOOTSTRAP_COMMITTED_LEGACY_IMPORT_AND_ADOPTION_REQUIRED"
+      ]
+    },
+    "productionReady": { "const": false },
+    "externalCaddyAdopted": { "const": false },
+    "mysqlDataTouched": { "const": false },
+    "planSha256": { "$ref": "#/$defs/sha256" },
+    "authoritySha256": { "$ref": "#/$defs/sha256" },
+    "nonce": { "$ref": "#/$defs/id" },
+    "environmentId": { "$ref": "#/$defs/id" },
+    "hostId": { "$ref": "#/$defs/sha256" },
+    "volumeIdentity": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "bootstrapVolumeIdentity": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "startedAtUtc": { "type": "string", "format": "date-time" },
+    "completedAtUtc": { "type": "string", "format": "date-time" },
+    "requesterCertificateThumbprint": { "$ref": "#/$defs/thumbprint" },
+    "approverCertificateThumbprint": { "$ref": "#/$defs/thumbprint" },
+    "executorScriptSha256": { "$ref": "#/$defs/sha256" },
+    "stateJournalSha256": { "$ref": "#/$defs/sha256" },
+    "roots": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bootstrapRoot",
+        "bootstrapStateRoot",
+        "installRoot",
+        "dataRoot",
+        "preservedMySqlDataRoot"
+      ],
+      "properties": {
+        "bootstrapRoot": { "const": "C:\\ProgramData\\LeanTPM-bootstrap" },
+        "bootstrapStateRoot": { "const": "C:\\ProgramData\\LeanTPM-bootstrap-state" },
+        "installRoot": { "const": "D:\\LeanTPM\\App" },
+        "dataRoot": { "const": "D:\\LeanTPM\\Runtime" },
+        "preservedMySqlDataRoot": { "const": "D:\\LeanTPM\\data" }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hostLayoutSha256",
+        "releaseTrustSha256",
+        "externalCaddyBindingSha256",
+        "externalFirewallSha256",
+        "backupProtectionSha256",
+        "toolchainLockSha256"
+      ],
+      "properties": {
+        "hostLayoutSha256": { "$ref": "#/$defs/sha256" },
+        "releaseTrustSha256": { "$ref": "#/$defs/sha256" },
+        "externalCaddyBindingSha256": { "$ref": "#/$defs/sha256" },
+        "externalFirewallSha256": { "$ref": "#/$defs/sha256" },
+        "backupProtectionSha256": { "$ref": "#/$defs/sha256" },
+        "toolchainLockSha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "createdObjects": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "finalPath",
+          "volumeIdentity",
+          "fileId",
+          "aclSha256",
+          "objectKind",
+          "contentSha256"
+        ],
+        "properties": {
+          "path": { "type": "string", "minLength": 3 },
+          "finalPath": { "type": "string", "minLength": 3 },
+          "volumeIdentity": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+          "fileId": { "type": "string", "pattern": "^[A-Fa-f0-9]{32}$" },
+          "aclSha256": { "$ref": "#/$defs/sha256" },
+          "objectKind": { "enum": ["DIRECTORY", "FILE"] },
+          "contentSha256": { "$ref": "#/$defs/sha256" }
+        }
+      }
+    },
+    "preservedMySqlData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "beforeIdentitySha256", "afterIdentitySha256", "unchanged"],
+      "properties": {
+        "path": { "const": "D:\\LeanTPM\\data" },
+        "beforeIdentitySha256": { "$ref": "#/$defs/sha256" },
+        "afterIdentitySha256": { "$ref": "#/$defs/sha256" },
+        "unchanged": { "const": true }
+      }
+    },
+    "legacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inventorySha256", "status", "importRequired"],
+      "properties": {
+        "inventorySha256": { "$ref": "#/$defs/sha256" },
+        "status": { "enum": ["PASS", "IMPORT_REQUIRED"] },
+        "importRequired": { "type": "boolean" }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hostBootstrapReportSha256"],
+      "properties": {
+        "hostBootstrapReportSha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "nextRequiredCeremonies": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": { "enum": ["LEGACY_IMPORT", "EXTERNAL_CADDY_ADOPTION"] }
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$" },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "thumbprint": { "type": "string", "pattern": "^[A-Fa-f0-9]{40,128}$" }
+  }
+}

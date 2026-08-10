@@ -13,6 +13,20 @@ $compiler = Join-Path $compilerDir 'node_modules\.bin\uni.cmd'
 if (-not (Test-Path -LiteralPath $compiler)) {
     throw "HBuilderX uni-app compiler not found: $compiler. Set LEANTPM_HBUILDERX_ROOT."
 }
+$repositoryRoot = (Resolve-Path (Join-Path $projectDir '..')).Path
+$toolchain = Get-Content -LiteralPath (Join-Path $repositoryRoot 'release\toolchain-lock.json') `
+    -Encoding utf8 -Raw | ConvertFrom-Json
+$compilerPackage = Get-Content -LiteralPath (Join-Path $compilerDir 'package.json') `
+    -Encoding utf8 -Raw | ConvertFrom-Json
+if ([string]$toolchain.hbuilderX.compilerVersion -cne [string]$compilerPackage.version -or
+        [string]$toolchain.hbuilderX.compilerDigest -notmatch '^[0-9a-f]{64}$') {
+    throw 'HBuilderX compiler version or digest is not pinned in release/toolchain-lock.json'
+}
+$compilerEvidence = & (Join-Path $repositoryRoot 'scripts\Get-LeanTpmDirectoryDigest.ps1') `
+    -DirectoryPath $compilerDir -OutputFormat Json | ConvertFrom-Json
+if ([string]$compilerEvidence.digest -cne [string]$toolchain.hbuilderX.compilerDigest) {
+    throw 'HBuilderX compiler directory differs from the approved toolchain digest'
+}
 
 $env:UNI_INPUT_DIR = $projectDir
 $env:UNI_OUTPUT_DIR = Join-Path $projectDir "unpackage\dist\build\$Platform"

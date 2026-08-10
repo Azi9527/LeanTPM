@@ -9,8 +9,10 @@ globalThis.uni = {
 }
 
 const {
+	DEFAULT_SERVER_URL,
 	SERVER_PRESETS,
 	getServerBaseUrl,
+	getServerDisplayUrl,
 	normalizeServerBaseUrl,
 	saveServerBaseUrl,
 	testServerConnection
@@ -50,14 +52,17 @@ test('explains equipment scan failures with actionable business reasons', () => 
 	)
 })
 
-test('provides cloud and intranet server presets while retaining manual URL support', () => {
+test('defaults to the production cloud while retaining test presets and manual URL support', () => {
 	assert.deepEqual(SERVER_PRESETS, [
+		{ label: '正式版云服务', url: 'http://8.163.66.164' },
 		{ label: '测试云服务', url: 'https://851xn5pikw00.guyubao.com' },
 		{ label: '测试内网服务', url: 'http://192.168.31.91:18080' }
 	])
+	assert.equal(DEFAULT_SERVER_URL, SERVER_PRESETS[0].url)
+	assert.equal(getServerDisplayUrl(), SERVER_PRESETS[0].url)
 	assert.equal(
 		normalizeServerBaseUrl(SERVER_PRESETS[0].url),
-		'https://851xn5pikw00.guyubao.com/api/v1'
+		'http://8.163.66.164/api/v1'
 	)
 })
 
@@ -65,6 +70,7 @@ test('persists the exact API base URL used by subsequent login requests', () => 
 	const saved = saveServerBaseUrl('http://192.168.31.91:18080')
 	assert.equal(saved, 'http://192.168.31.91:18080/api/v1')
 	assert.equal(getServerBaseUrl(), saved)
+	assert.equal(getServerDisplayUrl(), 'http://192.168.31.91:18080')
 })
 
 test('reports WeChat request-domain failures clearly', async () => {
@@ -74,6 +80,45 @@ test('reports WeChat request-domain failures clearly', async () => {
 		await assert.rejects(
 			testServerConnection('https://tpm.example.com'),
 			/request 合法域名/
+		)
+	} finally {
+		globalThis.uni.request = previousRequest
+	}
+})
+
+test('probes the live public branding contract when testing a server', async () => {
+	const previousRequest = globalThis.uni.request
+	let requestOptions
+	globalThis.uni.request = (options) => {
+		requestOptions = options
+		options.success({
+			statusCode: 200,
+			data: {
+				code: 'OK',
+				data: { systemName: 'LeanTPM', shortName: 'LeanTPM' }
+			}
+		})
+	}
+	try {
+		const branding = await testServerConnection('http://8.163.66.164')
+		assert.equal(requestOptions.url, 'http://8.163.66.164/api/v1/public/branding')
+		assert.equal(requestOptions.method, 'GET')
+		assert.equal(branding.shortName, 'LeanTPM')
+	} finally {
+		globalThis.uni.request = previousRequest
+	}
+})
+
+test('rejects an empty public branding response instead of accepting a fallback', async () => {
+	const previousRequest = globalThis.uni.request
+	globalThis.uni.request = ({ success }) => success({
+		statusCode: 200,
+		data: { code: 'OK', data: null }
+	})
+	try {
+		await assert.rejects(
+			testServerConnection('https://tpm.example.com'),
+			/品牌配置/
 		)
 	} finally {
 		globalThis.uni.request = previousRequest

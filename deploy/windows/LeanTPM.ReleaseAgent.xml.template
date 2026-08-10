@@ -1,0 +1,24 @@
+<service>
+  <id>LeanTPM.ReleaseAgent</id>
+  <name>LeanTPM Release Agent</name>
+  <description>LeanTPM fixed signed deployment command executor. No shell, SQL, URL, service-name or target-path input is accepted.</description>
+  <executable>%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe</executable>
+  <arguments>-NoProfile -NonInteractive -ExecutionPolicy AllSigned -File "@SERVICE_ROOT@\Start-LeanTpmReleaseAgentService.ps1" -InstallRoot "@INSTALL_ROOT@" -DataRoot "@DATA_ROOT@" -ExpectedToolkitLockSha256 "@TOOLKIT_LOCK_SHA256@" -AgentId "@AGENT_ID@" -AgentVersion "@AGENT_VERSION@"</arguments>
+  <workingdirectory>@DATA_ROOT@\release-agent</workingdirectory>
+  <startmode>Manual</startmode>
+  <stoptimeout>60sec</stoptimeout>
+  <logpath>@DATA_ROOT@\release-agent\logs</logpath>
+  <onfailure action="restart" delay="10 sec" />
+  <onfailure action="restart" delay="30 sec" />
+  <resetfailure>1 hour</resetfailure>
+  <log mode="roll-by-size-time">
+    <sizeThreshold>10485760</sizeThreshold>
+    <pattern>yyyyMMdd</pattern>
+    <autoRollAtTime>00:00:00</autoRollAtTime>
+    <zipOlderThanNumDays>7</zipOlderThanNumDays>
+  </log>
+  <env name="LEANTPM_RELEASE_AGENT_MODE" value="ExecuteSignedDeployment" />
+  <serviceaccount>
+    <username>@RELEASE_AGENT_SERVICE_ACCOUNT@</username>
+  </serviceaccount>
+</service>

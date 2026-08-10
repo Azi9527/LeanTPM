@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>LeanTPM 运维控制台</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">LeanTPM Release Operations</p>
+        <h1>LeanTPM 运维控制台</h1>
+        <p class="lede">上传签名发布包，核对绑定计划，再由受限本机 Agent 接管。</p>
+      </div>
+      <div class="status-badges">
+        <div id="healthBadge" class="badge neutral">正在检查服务</div>
+        <div id="agentBadge" class="badge neutral">受限 Agent 未连接</div>
+      </div>
+    </header>
+
+    <section class="panel compact" aria-labelledby="authTitle">
+      <div>
+        <p class="step">01</p>
+        <h2 id="authTitle">独立运维身份</h2>
+        <p>令牌只保存在当前页面内存，刷新或关闭页面即清除。</p>
+      </div>
+      <form id="authForm" class="inline-form">
+        <label for="token">Bearer Token</label>
+        <input id="token" name="token" type="password" autocomplete="off" required>
+        <button type="submit">使用此身份</button>
+      </form>
+      <p id="authState" class="status" role="status">尚未认证</p>
+    </section>
+
+    <section class="grid">
+      <article class="panel" aria-labelledby="uploadTitle">
+        <p class="step">02</p>
+        <h2 id="uploadTitle">上传部署授权包</h2>
+        <p>选择一个已包含发布包、绑定计划和双人签名的 ZIP；服务端自动完成固定校验。</p>
+        <form id="uploadForm">
+          <label for="deploymentBundle">部署授权包</label>
+          <input id="deploymentBundle" name="bundle" type="file" accept=".zip,application/zip" required>
+          <button type="submit">上传并自动校验</button>
+        </form>
+      </article>
+
+      <article class="panel" aria-labelledby="planTitle">
+        <p class="step">03</p>
+        <h2 id="planTitle">最终确认</h2>
+        <p id="selectedRelease">先上传或从记录中选择一个版本。</p>
+        <button id="planButton" type="button" disabled>生成绑定计划</button>
+        <dl id="planDetails" class="details" hidden></dl>
+        <form id="confirmForm" hidden>
+          <label for="reason">确认理由</label>
+          <textarea id="reason" name="reason" minlength="3" maxlength="500" required></textarea>
+          <button type="submit">确认并进入发布队列</button>
+        </form>
+      </article>
+    </section>
+
+    <section class="panel" aria-labelledby="historyTitle">
+      <div class="section-heading">
+        <div>
+          <p class="step">04</p>
+          <h2 id="historyTitle">发布记录</h2>
+        </div>
+        <button id="refreshButton" type="button">刷新</button>
+      </div>
+      <div id="releaseList" class="release-list">
+        <p class="empty">认证后可读取持久化发布记录。</p>
+      </div>
+    </section>
+
+    <section class="panel audit-panel" aria-labelledby="auditTitle">
+      <div class="section-heading">
+        <div>
+          <p class="step">05</p>
+          <h2 id="auditTitle">审计时间线</h2>
+        </div>
+        <button id="auditRefreshButton" type="button">刷新审计</button>
+      </div>
+      <p>仅展示发布状态、操作类型和哈希链摘要，不返回服务器物理路径或凭据。</p>
+      <ol id="auditList" class="audit-list">
+        <li class="empty">认证后可读取耐久审计时间线。</li>
+      </ol>
+    </section>
+
+    <aside class="notice">
+      当前控制面只接受固定发布动作，不提供终端、SQL、任意路径或任意服务名。
+      “QUEUED”表示已形成耐久作业；“服务器已复核，尚未部署”表示 Agent 已复核包字节，生产执行仍须满足签名发布仪式。
+    </aside>
+    <p id="message" class="message" role="alert" aria-live="polite"></p>
+  </main>
+  <script src="/app.js" defer></script>
+</body>
+</html>

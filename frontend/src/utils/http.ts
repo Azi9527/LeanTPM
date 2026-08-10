@@ -65,6 +65,12 @@ export function hasToken(): boolean {
   return Boolean(token())
 }
 
+export function isAuthenticationFailure(error: unknown): boolean {
+  if (!axios.isAxiosError<ApiResponse<unknown>>(error)) return false
+  const status = error.response?.status
+  return status === 401 || status === 403
+}
+
 export function serverBaseUrl(): string {
   return apiBaseUrlCache
 }
@@ -139,9 +145,14 @@ http.interceptors.response.use(
         const tokens = await refreshing
         original.headers.Authorization = `Bearer ${tokens.accessToken}`
         return http(original)
-      } catch {
-        await clearTokens()
-        window.location.assign('/login')
+      } catch (refreshError) {
+        const refreshAuthenticationFailed = axios.isAxiosError(refreshError)
+          && refreshError.response?.status === 401
+        if (refreshAuthenticationFailed) {
+          await clearTokens()
+          window.location.assign('/login')
+        }
+        throw refreshError
       }
     }
     return Promise.reject(error)

@@ -1,0 +1,29 @@
+# Example only. Do not start production with placeholder digests.
+# Store the completed file under an Administrators/SYSTEM protected path.
+server:
+  address: 127.0.0.1
+  port: 18090
+
+leantpm:
+  ops:
+    data-root: 'D:\LeanTPM\Runtime\ops-control-plane'
+    maximum-upload-bytes: 536870912
+    required-approvals: 2
+    powershell-executable: 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'
+    verifier-script: 'D:\LeanTPM\App\ops-control-plane\scripts\Test-ReleasePackage.ps1'
+    verifier-script-sha256: 'REPLACE_WITH_64_HEX_SHA256'
+    bundle-verifier-script: 'D:\LeanTPM\App\ops-control-plane\scripts\Test-LeanTpmDeploymentBundle.ps1'
+    bundle-verifier-script-sha256: 'REPLACE_WITH_64_HEX_SHA256'
+    deployment-bundle-schema-sha256: 'REPLACE_WITH_64_HEX_SHA256'
+    approval-verifier-script-sha256: 'REPLACE_WITH_64_HEX_SHA256'
+    release-trust-config-path: 'D:\LeanTPM\Runtime\config\release-trust.json'
+    trusted-certificate-thumbprint: 'REPLACE_WITH_40_HEX_THUMBPRINT'
+    verifier-timeout: 2m
+    verifier-maximum-output-bytes: 262144
+    agent-heartbeat-maximum-age: 30s
+    host-layout-path: 'C:\ProgramData\LeanTPM-bootstrap\host-layout.json'
+    host-layout-sha256: 'REPLACE_WITH_64_HEX_SHA256'
+    current-release-pointer: 'D:\LeanTPM\Runtime\pointers\current-release.json'
+    operator-token-sha256:
+      release_requester: 'REPLACE_WITH_64_HEX_SHA256'
+      release_approver: 'REPLACE_WITH_DIFFERENT_64_HEX_SHA256'

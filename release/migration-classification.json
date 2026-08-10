@@ -1,0 +1,505 @@
+{
+  "schemaVersion": 1,
+  "entries": [
+    {
+      "version": 1,
+      "phase": "EXPAND",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v1"
+    },
+    {
+      "version": 2,
+      "phase": "EXPAND",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v2"
+    },
+    {
+      "version": 3,
+      "phase": "MIGRATE",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v3"
+    },
+    {
+      "version": 4,
+      "phase": "MIGRATE",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v4"
+    },
+    {
+      "version": 5,
+      "phase": "EXPAND",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v5"
+    },
+    {
+      "version": 6,
+      "phase": "EXPAND",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v6"
+    },
+    {
+      "version": 7,
+      "phase": "EXPAND",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v7"
+    },
+    {
+      "version": 8,
+      "phase": "EXPAND",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v8"
+    },
+    {
+      "version": 9,
+      "phase": "EXPAND",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v9"
+    },
+    {
+      "version": 10,
+      "phase": "EXPAND",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v10"
+    },
+    {
+      "version": 11,
+      "phase": "EXPAND",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v11"
+    },
+    {
+      "version": 12,
+      "phase": "EXPAND",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v12"
+    },
+    {
+      "version": 13,
+      "phase": "MIGRATE",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v13"
+    },
+    {
+      "version": 14,
+      "phase": "EXPAND",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v14"
+    },
+    {
+      "version": 15,
+      "phase": "CONTRACT",
+      "backwardCompatible": false,
+      "requiresDowntime": true,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v15"
+    },
+    {
+      "version": 16,
+      "phase": "MIGRATE",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v16"
+    },
+    {
+      "version": 17,
+      "phase": "MIGRATE",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v17"
+    },
+    {
+      "version": 18,
+      "phase": "EXPAND",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v18"
+    },
+    {
+      "version": 19,
+      "phase": "EXPAND",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v19"
+    },
+    {
+      "version": 20,
+      "phase": "EXPAND",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v20"
+    },
+    {
+      "version": 21,
+      "phase": "EXPAND",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v21"
+    },
+    {
+      "version": 22,
+      "phase": "EXPAND",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v22"
+    },
+    {
+      "version": 23,
+      "phase": "MIGRATE",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v23"
+    },
+    {
+      "version": 24,
+      "phase": "MIGRATE",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v24"
+    },
+    {
+      "version": 25,
+      "phase": "EXPAND",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v25"
+    },
+    {
+      "version": 26,
+      "phase": "EXPAND",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v26"
+    },
+    {
+      "version": 27,
+      "phase": "EXPAND",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v27"
+    },
+    {
+      "version": 28,
+      "phase": "EXPAND",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v28"
+    },
+    {
+      "version": 29,
+      "phase": "EXPAND",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v29"
+    },
+    {
+      "version": 30,
+      "phase": "EXPAND",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v30"
+    },
+    {
+      "version": 31,
+      "phase": "CONTRACT",
+      "backwardCompatible": false,
+      "requiresDowntime": true,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v31"
+    },
+    {
+      "version": 32,
+      "phase": "MIGRATE",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v32"
+    },
+    {
+      "version": 33,
+      "phase": "CONTRACT",
+      "backwardCompatible": false,
+      "requiresDowntime": true,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v33"
+    },
+    {
+      "version": 34,
+      "phase": "MIGRATE",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v34"
+    },
+    {
+      "version": 35,
+      "phase": "EXPAND",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v35"
+    },
+    {
+      "version": 36,
+      "phase": "CONTRACT",
+      "backwardCompatible": false,
+      "requiresDowntime": true,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v36"
+    },
+    {
+      "version": 37,
+      "phase": "MIGRATE",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v37"
+    },
+    {
+      "version": 38,
+      "phase": "CONTRACT",
+      "backwardCompatible": false,
+      "requiresDowntime": true,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v38"
+    },
+    {
+      "version": 39,
+      "phase": "CONTRACT",
+      "backwardCompatible": false,
+      "requiresDowntime": true,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v39"
+    },
+    {
+      "version": 40,
+      "phase": "EXPAND",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v40"
+    },
+    {
+      "version": 41,
+      "phase": "EXPAND",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v41"
+    },
+    {
+      "version": 42,
+      "phase": "CONTRACT",
+      "backwardCompatible": false,
+      "requiresDowntime": true,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v42"
+    },
+    {
+      "version": 43,
+      "phase": "CONTRACT",
+      "backwardCompatible": false,
+      "requiresDowntime": true,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v43"
+    },
+    {
+      "version": 44,
+      "phase": "EXPAND",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v44"
+    },
+    {
+      "version": 45,
+      "phase": "MIGRATE",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v45"
+    },
+    {
+      "version": 46,
+      "phase": "EXPAND",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v46"
+    },
+    {
+      "version": 47,
+      "phase": "EXPAND",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v47"
+    },
+    {
+      "version": 48,
+      "phase": "MIGRATE",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T07:30:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v48"
+    },
+    {
+      "version": 49,
+      "phase": "EXPAND",
+      "backwardCompatible": true,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T09:55:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v49"
+    },
+    {
+      "version": 50,
+      "phase": "CONTRACT",
+      "backwardCompatible": false,
+      "requiresDowntime": false,
+      "reviewStatus": "APPROVED",
+      "reviewedBy": "codex-static-review",
+      "approvedAtUtc": "2026-08-08T10:10:00Z",
+      "evidence": "reports/ai/2026-08-08-release-platform/migration-classification-review.md#v50"
+    }
+  ]
+}

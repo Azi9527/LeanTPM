@@ -58,12 +58,7 @@ export function rememberCredentials(username, password, remember) {
 export async function signIn(credentials, remember = true) {
 	state.loading = true
 	try {
-		const result = await authApi.login(
-			credentials.username,
-			credentials.password,
-			credentials.captchaId,
-			credentials.captchaCode
-		)
+		const result = await authApi.login(credentials.username, credentials.password)
 		storeTokens(result.tokens)
 		state.user = result.user
 		state.initialized = true

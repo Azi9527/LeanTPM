@@ -33,8 +33,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
                 "spring.datasource.url=${LEANTPM_TEST_DB_URL}",
                 "spring.datasource.username=${LEANTPM_TEST_DB_USERNAME:root}",
                 "spring.datasource.password=${LEANTPM_TEST_DB_PASSWORD:}",
-                "spring.data.redis.repositories.enabled=false",
-                "management.health.redis.enabled=false",
                 "leantpm.security.jwt-secret=integration-test-secret-at-least-32-characters",
                 "leantpm.bootstrap.admin-password="
         }

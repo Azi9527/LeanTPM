@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leantpm.example/schemas/host-layout.schema.json",
+  "title": "LeanTPM Windows production host layout",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "readiness",
+    "environmentKind",
+    "environmentId",
+    "hostId",
+    "installRoot",
+    "dataRoot",
+    "volumeIdentity",
+    "proxy"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "readiness": { "enum": ["INPUT_REQUIRED", "READY"] },
+    "environmentKind": { "const": "PRODUCTION" },
+    "environmentId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$"
+    },
+    "hostId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{2,255}$"
+    },
+    "installRoot": {
+      "type": "string",
+      "pattern": "^[A-Za-z]:\\\\[^.].*$"
+    },
+    "dataRoot": {
+      "type": "string",
+      "pattern": "^[A-Za-z]:\\\\[^.].*$"
+    },
+    "volumeIdentity": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:{}-]{7,255}$"
+    },
+    "proxy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "serviceId"],
+      "properties": {
+        "mode": { "enum": ["EXTERNAL_EXISTING", "MANAGED_LEANTPM_PROXY"] },
+        "serviceId": { "enum": ["caddy", "LeanTPM.Proxy"] },
+        "bindingPolicyPath": { "type": "string", "pattern": "^[A-Za-z]:\\\\" },
+        "bindingPolicySha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "mode": { "const": "EXTERNAL_EXISTING" },
+            "serviceId": { "const": "caddy" }
+          },
+          "required": ["bindingPolicyPath", "bindingPolicySha256"]
+        },
+        {
+          "properties": {
+            "mode": { "const": "MANAGED_LEANTPM_PROXY" },
+            "serviceId": { "const": "LeanTPM.Proxy" }
+          },
+          "not": {
+            "anyOf": [
+              { "required": ["bindingPolicyPath"] },
+              { "required": ["bindingPolicySha256"] }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

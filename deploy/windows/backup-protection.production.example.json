@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "encryptionAtRest": "BITLOCKER_OR_ENTERPRISE_STORAGE",
+  "storageIsolation": true,
+  "offHostCopyRequired": true,
+  "retentionDays": 30,
+  "manifestSignerCertificateThumbprint": "REPLACE_WITH_APPROVED_LOCAL_MACHINE_CERTIFICATE_THUMBPRINT",
+  "notes": "Replace this example with a host-owned attestation for the approved encrypted backup volume and off-host copy job."
+}

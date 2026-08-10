@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leantpm.example/schemas/host-bootstrap-initialization-journal-event.schema.json",
+  "title": "LeanTPM HostBootstrap initialization durable journal event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "timestampUtc",
+    "operation",
+    "initializationId",
+    "state",
+    "nonce",
+    "planSha256",
+    "authoritySha256",
+    "previousHash",
+    "hash"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "timestampUtc": { "type": "string", "format": "date-time" },
+    "operation": { "const": "HOST_BOOTSTRAP_INITIALIZE" },
+    "initializationId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$"
+    },
+    "state": {
+      "enum": [
+        "INITIALIZATION_STARTED",
+        "AUTHORITY_VERIFIED",
+        "APPROVAL_RESERVED",
+        "MUTATION_STARTED",
+        "ROOTS_STAGED",
+        "ROOTS_COMMITTED",
+        "BOOTSTRAP_POLICY_COMMITTED",
+        "HOST_BOOTSTRAP_VERIFIED",
+        "BOOTSTRAP_COMMITTED_ADOPTION_REQUIRED",
+        "INITIALIZATION_RECOVERY_REQUIRED"
+      ]
+    },
+    "nonce": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$"
+    },
+    "planSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "authoritySha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "previousHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

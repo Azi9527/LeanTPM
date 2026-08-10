@@ -3,10 +3,15 @@ param(
     [int]$MySqlPort = 3306,
     [string]$MySqlUser = 'root',
     [string]$MySqlPassword = '',
+    [string]$MySqlSslCaPath = $env:LEANTPM_MYSQL_SSL_CA_PATH,
     [string]$Database = 'leantpm'
 )
 
 $ErrorActionPreference = 'Stop'
+$resolvedSslCa = (Resolve-Path -LiteralPath $MySqlSslCaPath -ErrorAction Stop).Path
+if (-not (Test-Path -LiteralPath $resolvedSslCa -PathType Leaf)) {
+    throw 'MySqlSslCaPath must identify the host-owned MySQL CA certificate'
+}
 $expected = @(
     'equipment.uk_equipment_code',
     'equipment.idx_equipment_organization',
@@ -42,6 +47,8 @@ try {
         "--host=$MySqlHost" `
         "--port=$MySqlPort" `
         "--user=$MySqlUser" `
+        '--ssl-mode=VERIFY_IDENTITY' `
+        "--ssl-ca=$resolvedSslCa" `
         '--batch' `
         '--skip-column-names' `
         -e $sql

@@ -1,0 +1,159 @@
+:root {
+  font-family: Inter, "Segoe UI", "Microsoft YaHei", sans-serif;
+  color: #17241f;
+  background: #eef2ef;
+  font-synthesis: none;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 85% 5%, rgba(41, 128, 94, 0.18), transparent 30rem),
+    #eef2ef;
+}
+
+button, input, textarea { font: inherit; }
+
+.shell {
+  width: min(1120px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 48px 0 64px;
+}
+
+.hero, .section-heading, .inline-form {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.hero { margin-bottom: 28px; }
+
+.eyebrow, .step {
+  margin: 0 0 8px;
+  color: #1c7d50;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+h1, h2 { margin: 0; letter-spacing: -0.03em; }
+h1 { font-size: clamp(34px, 6vw, 60px); }
+h2 { font-size: 24px; }
+p { line-height: 1.65; color: #58645f; }
+.lede { max-width: 620px; margin-bottom: 0; }
+
+.panel {
+  padding: 28px;
+  border: 1px solid rgba(23, 36, 31, 0.09);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 16px 50px rgba(29, 58, 45, 0.08);
+}
+
+.compact { margin-bottom: 20px; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+
+form { display: grid; gap: 12px; margin-top: 20px; }
+.inline-form { display: grid; grid-template-columns: minmax(220px, 1fr) auto; }
+.inline-form label { grid-column: 1 / -1; }
+
+label { font-weight: 700; }
+input, textarea {
+  width: 100%;
+  border: 1px solid #c8d2cd;
+  border-radius: 12px;
+  padding: 12px 14px;
+  color: #17241f;
+  background: #fff;
+}
+textarea { min-height: 92px; resize: vertical; }
+
+button {
+  border: 0;
+  border-radius: 12px;
+  padding: 12px 18px;
+  color: #fff;
+  background: #176a45;
+  font-weight: 750;
+  cursor: pointer;
+}
+button:hover { background: #0f5938; }
+button:disabled { cursor: not-allowed; opacity: 0.45; }
+
+.badge {
+  border-radius: 999px;
+  padding: 9px 14px;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.badge.ok { color: #075a35; background: #d9f4e6; }
+.badge.warning { color: #765900; background: #fff0bd; }
+.badge.neutral { color: #5c655f; background: #e1e6e3; }
+.status-badges { display: grid; justify-items: end; gap: 8px; }
+.status { margin-bottom: 0; font-weight: 700; }
+
+.details {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 8px 16px;
+  overflow-wrap: anywhere;
+}
+.details dt { color: #68746e; }
+.details dd { margin: 0; font-family: ui-monospace, Consolas, monospace; }
+
+.release-list { display: grid; gap: 12px; margin-top: 18px; }
+.release-card {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px 18px;
+  padding: 18px;
+  border-radius: 15px;
+  background: #f5f8f6;
+}
+.release-card h3, .release-card p { margin: 0; }
+.release-card button { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+.mono { font-family: ui-monospace, Consolas, monospace; overflow-wrap: anywhere; }
+.empty { margin: 0; }
+
+.audit-panel { margin-top: 20px; }
+.audit-list {
+  display: grid;
+  gap: 10px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.audit-event {
+  display: grid;
+  grid-template-columns: minmax(80px, max-content) 1fr;
+  gap: 6px 18px;
+  padding: 16px 18px;
+  border-left: 4px solid #1c7d50;
+  border-radius: 12px;
+  background: #f5f8f6;
+}
+.audit-event strong { color: #17241f; }
+.audit-event .mono { grid-column: 1 / -1; margin: 0; color: #68746e; }
+
+.notice, .message {
+  margin-top: 20px;
+  padding: 16px 18px;
+  border-radius: 14px;
+}
+.notice { color: #66531a; background: #fff2c7; line-height: 1.6; }
+.message { min-height: 24px; color: #8a241d; background: transparent; }
+.message.ok { color: #075a35; background: #d9f4e6; }
+
+@media (max-width: 760px) {
+  .shell { width: min(100% - 20px, 680px); padding-top: 24px; }
+  .hero, .section-heading { align-items: flex-start; }
+  .hero, .inline-form, .grid { display: grid; grid-template-columns: 1fr; }
+  .release-card { grid-template-columns: 1fr; }
+  .release-card button { grid-column: 1; grid-row: auto; }
+}

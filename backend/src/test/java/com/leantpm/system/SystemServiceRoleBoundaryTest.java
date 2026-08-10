@@ -4,7 +4,7 @@ import com.leantpm.common.exception.BusinessException;
 import com.leantpm.security.CurrentUser;
 import com.leantpm.security.datascope.DataPermission;
 import com.leantpm.security.datascope.DataPermissionService;
-import com.leantpm.security.session.RedisAuthSessionService;
+import com.leantpm.security.session.AuthSessionService;
 import com.leantpm.system.dto.SystemDtos;
 import com.leantpm.system.mapper.SystemMapper;
 import com.leantpm.system.service.SystemService;
@@ -36,7 +36,7 @@ class SystemServiceRoleBoundaryTest {
     @Mock
     private DataPermissionService dataPermissionService;
     @Mock
-    private RedisAuthSessionService sessionService;
+    private AuthSessionService sessionService;
 
     private SystemService service;
 
@@ -98,6 +98,22 @@ class SystemServiceRoleBoundaryTest {
         service.updateUserStatus(77L, new SystemDtos.StatusRequest(false, 3));
 
         verify(sessionService).revokeAllUserSessions(1L, 77L);
+    }
+
+    @Test
+    void changingRoleClaimsBumpsAffectedUsersAndRevokesTheirSessions() {
+        var request = new SystemDtos.SaveRoleRequest(
+                "OPERATOR", "Operator", "SELF", true, 3, null,
+                List.of(11L), List.of(), 2
+        );
+        when(mapper.findUserIdsByRole(1L, 3L)).thenReturn(List.of(77L, 78L));
+        when(mapper.updateRole(1L, 3L, request, 51L)).thenReturn(1);
+
+        service.updateRole(3L, request);
+
+        verify(mapper).bumpAuthEpochForRole(1L, 3L, 51L);
+        verify(sessionService).revokeAllUserSessions(1L, 77L);
+        verify(sessionService).revokeAllUserSessions(1L, 78L);
     }
 
     private SystemDtos.RoleRow role(long id, String code, String name, String scope) {

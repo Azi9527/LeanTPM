@@ -1,0 +1,27 @@
+spring:
+  application:
+    name: leantpm-ops-control-plane
+  main:
+    banner-mode: "off"
+  servlet:
+    multipart:
+      max-file-size: 512MB
+      max-request-size: 513MB
+
+server:
+  address: 127.0.0.1
+  port: 18090
+  shutdown: graceful
+  error:
+    include-message: never
+    include-binding-errors: never
+    include-stacktrace: never
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never

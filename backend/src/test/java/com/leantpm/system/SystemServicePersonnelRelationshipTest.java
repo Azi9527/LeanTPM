@@ -4,7 +4,7 @@ import com.leantpm.common.exception.BusinessException;
 import com.leantpm.security.CurrentUser;
 import com.leantpm.security.datascope.DataPermission;
 import com.leantpm.security.datascope.DataPermissionService;
-import com.leantpm.security.session.RedisAuthSessionService;
+import com.leantpm.security.session.AuthSessionService;
 import com.leantpm.system.dto.SystemDtos;
 import com.leantpm.system.mapper.SystemMapper;
 import com.leantpm.system.service.SystemService;
@@ -34,7 +34,7 @@ class SystemServicePersonnelRelationshipTest {
     @Mock
     private DataPermissionService dataPermissionService;
     @Mock
-    private RedisAuthSessionService sessionService;
+    private AuthSessionService sessionService;
 
     private SystemService service;
 

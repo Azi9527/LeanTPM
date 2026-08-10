@@ -28,12 +28,12 @@ Idempotency-Key: web-550e8400-e29b-41d4-a716-446655440000
 约束：
 
 - 键长度为 8～128 位，仅允许字母、数字、冒号、下划线和连字符。
-- 第一次请求通过 Redis 原子占位后执行。
+- 第一次请求通过 MySQL 唯一键、租约和 fencing token 原子占位后执行。
 - 相同键、相同请求完成后再次提交，返回第一次的完整响应，不再次执行业务写入。
 - 相同键、不同请求返回 `409 IDEMPOTENCY_KEY_CONFLICT`。
 - 相同请求尚在处理时返回 `409 REQUEST_IN_PROGRESS`。
-- 业务执行失败会释放占位，允许修正后重试。
-- Redis 不可用时返回 `503 REDIS_UNAVAILABLE`，不绕过幂等保护执行写入。
+- 业务执行抛错或完成状态无法可靠持久化时，占位转为 `UNKNOWN`；系统禁止自动删除或重试，必须先依据业务证据完成受审计的人工对账归并。
+- 持久幂等状态不可用时返回 `503 IDEMPOTENCY_UNAVAILABLE`，不绕过保护执行写入。
 - 前端自动为写请求生成键；401 刷新令牌后的自动重试会保留原键。
 
 示例：
@@ -58,32 +58,31 @@ curl -X POST http://localhost:8080/api/v1/system/parameters \
 | HTTP | code | 含义 |
 |---:|---|---|
 | 400 | `VALIDATION_ERROR` | 请求字段校验失败 |
-| 400 | `CAPTCHA_INVALID` | 验证码缺失、错误、过期或已使用 |
 | 400 | `IDEMPOTENCY_KEY_REQUIRED` | 幂等写接口未提供键 |
 | 400 | `IDEMPOTENCY_KEY_INVALID` | 幂等键格式不正确 |
 | 401 | `INVALID_TOKEN` | JWT 无效或类型错误 |
+| 401 | `LOGIN_FAILED` | 用户名、密码、账号状态或临时锁定均以相同外部合同拒绝，避免账号枚举 |
 | 401 | `TOKEN_REVOKED` | 会话已退出或被强制下线 |
-| 401 | `TOKEN_SESSION_INVALID` | Redis 会话不存在或过期 |
+| 401 | `TOKEN_SESSION_INVALID` | 持久会话不存在或过期 |
 | 403 | `FORBIDDEN` | 缺少功能权限 |
 | 403 | `DATA_SCOPE_DENIED` | 目标资源不在数据范围内 |
 | 409 | `OPTIMISTIC_LOCK_CONFLICT` | 数据版本已变化 |
 | 409 | `IDEMPOTENCY_KEY_CONFLICT` | 同一幂等键用于不同请求 |
 | 409 | `REQUEST_IN_PROGRESS` | 相同请求仍在处理中 |
-| 429 | `LOGIN_TEMPORARILY_LOCKED` | 登录失败次数过多 |
+| 409 | `IDEMPOTENCY_RESULT_UNKNOWN` | 原请求结果不确定，必须先人工对账，禁止自动重试 |
 | 500 | `INTERNAL_ERROR` | 未处理的服务端异常 |
-| 503 | `REDIS_UNAVAILABLE` | 必要的 Redis 服务不可用 |
+| 503 | `AUTH_STATE_UNAVAILABLE` | 持久认证状态不可用，认证操作拒绝执行 |
+| 503 | `IDEMPOTENCY_UNAVAILABLE` | 持久幂等状态不可用，写操作拒绝执行 |
 
 具体业务错误码会在统一响应的 `code` 和 `message` 中返回，调用方不得仅依赖中文消息判断分支。
 
 ## 4. M0 新增接口
 
-### 登录验证码
+### 登录安全状态
 
-- `GET /api/v1/auth/captcha`：公开接口，返回当前开关状态和可选挑战。
-- 开关关闭时返回 `{"enabled": false}`。
-- 开关开启时返回 `captchaId`、SVG `imageDataUrl` 和 `expiresAt`。
-- `POST /api/v1/auth/login` 在原账号密码外接收可选字段 `captchaId`、`captchaCode`；服务端开关开启时两者必填。
-- 挑战有效期为 5 分钟且只能校验一次，前端登录失败后应获取新挑战。
+- `POST /api/v1/auth/login` 仅接收账号和密码。
+- 连续失败计数与锁定截止时间持久化保存；进程重启不会清除锁定。
+- 注销、改密、强制下线与刷新令牌重放会持久撤销会话，旧令牌不得恢复有效。
 
 ### 数据变更日志
 

@@ -75,6 +75,7 @@ public class JwtTokenService {
                 .claim("tid", user.tenantId())
                 .claim("name", user.realName())
                 .claim("sid", sessionId)
+                .claim("uv", user.authEpoch())
                 .claim("mustChangePassword", user.mustChangePassword())
                 .claim("roles", user.roles())
                 .claim("permissions", user.permissions())
@@ -107,8 +108,17 @@ public class JwtTokenService {
                 Boolean.TRUE.equals(claims.get("mustChangePassword", Boolean.class)),
                 stringSet(claims.get("roles")),
                 stringSet(claims.get("permissions")),
+                requiredLongClaim(claims, "uv"),
                 claims.get("sid", String.class)
         );
+    }
+
+    private long requiredLongClaim(Claims claims, String name) {
+        Number value = claims.get(name, Number.class);
+        if (value == null) {
+            throw new BusinessException("INVALID_TOKEN", "Token is missing a security version", HttpStatus.UNAUTHORIZED);
+        }
+        return value.longValue();
     }
 
     private Set<String> stringSet(Object value) {

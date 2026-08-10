@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "serverAddress": "127.0.0.1",
+  "serverPort": 18080,
+  "database": {
+    "url": "jdbc:mysql://mysql.internal:3306/leantpm?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&sslMode=VERIFY_IDENTITY",
+    "username": "leantpm_app"
+  },
+  "uploadDir": "D:\\LeanTPM\\Runtime\\data\\uploads",
+  "corsAllowedOrigins": [
+    "https://tpm.example.com"
+  ],
+  "releaseVersion": "1.0.1",
+  "databaseSchemaVersion": 50
+}

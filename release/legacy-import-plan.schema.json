@@ -1,0 +1,177 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leantpm.example/schemas/legacy-import-plan.schema.json",
+  "title": "LeanTPM legacy layout import plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "status",
+    "planOnly",
+    "executable",
+    "trustSource",
+    "approvalReadiness",
+    "hostFilesystemVerified",
+    "quarantineFilesystemVerified",
+    "confirmationComplete",
+    "planId",
+    "legacyRoot",
+    "installRoot",
+    "dataRoot",
+    "quarantineRoot",
+    "sourceInventory",
+    "backupReceipt",
+    "preservedExternalPaths",
+    "entries",
+    "constraints",
+    "planSha256"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "status": { "const": "INPUT_REQUIRED" },
+    "planOnly": { "const": true },
+    "executable": { "const": false },
+    "trustSource": { "const": "CALLER_BOUND_PLAN_ONLY" },
+    "approvalReadiness": {
+      "const": "TRUSTED_BACKUP_HOST_BINDING_AND_EXECUTOR_REQUIRED"
+    },
+    "hostFilesystemVerified": { "const": false },
+    "quarantineFilesystemVerified": { "const": false },
+    "confirmationComplete": { "type": "boolean" },
+    "planId": {
+      "type": "string",
+      "pattern": "^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\\.|$))(?!.*\\.$)[a-z0-9][a-z0-9._-]{2,127}$"
+    },
+    "legacyRoot": { "type": "string", "minLength": 3 },
+    "installRoot": { "type": "string", "minLength": 3 },
+    "dataRoot": { "type": "string", "minLength": 3 },
+    "quarantineRoot": { "type": "string", "minLength": 3 },
+    "sourceInventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "status", "blockingCount"],
+      "properties": {
+        "path": { "type": "string", "minLength": 3 },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "status": { "const": "IMPORT_REQUIRED" },
+        "blockingCount": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "backupReceipt": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "sha256",
+            "backupId",
+            "status",
+            "receiptBound",
+            "cryptographicallyVerified",
+            "recoverabilityVerified"
+          ],
+          "properties": {
+            "path": { "type": "string", "minLength": 3 },
+            "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "backupId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{2,127}$" },
+            "status": { "const": "VALID" },
+            "receiptBound": { "const": true },
+            "cryptographicallyVerified": { "const": false },
+            "recoverabilityVerified": { "const": false }
+          }
+        }
+      ]
+    },
+    "preservedExternalPaths": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["relativePath", "path", "action"],
+        "properties": {
+          "relativePath": { "const": "data" },
+          "path": { "type": "string", "minLength": 3 },
+          "action": { "const": "PRESERVE_EXTERNAL" }
+        }
+      }
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "relativePath",
+          "sourcePath",
+          "targetPath",
+          "action",
+          "confirmed",
+          "targetMustBeAbsentOrEmpty",
+          "sourceDigest"
+        ],
+        "properties": {
+          "relativePath": {
+            "enum": [
+              "packages",
+              "releases",
+              "current\\backend",
+              "current\\frontend",
+              "shared\\config",
+              "shared\\uploads",
+              "backups",
+              "logs",
+              "tools",
+              "temp"
+            ]
+          },
+          "sourcePath": { "type": "string", "minLength": 3 },
+          "targetPath": { "type": "string", "minLength": 3 },
+          "action": { "const": "COPY_TO_QUARANTINE" },
+          "confirmed": { "type": "boolean" },
+          "targetMustBeAbsentOrEmpty": { "const": true },
+          "sourceDigest": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["algorithm", "sha256", "fileCount", "totalBytes"],
+            "properties": {
+              "algorithm": { "const": "LEANTPM-DIRECTORY-SHA256-V1" },
+              "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+              "fileCount": { "type": "integer", "minimum": 0 },
+              "totalBytes": { "type": "integer", "minimum": 0 }
+            }
+          }
+        }
+      }
+    },
+    "constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "copyOnly",
+        "deleteSource",
+        "overwriteTarget",
+        "followReparsePoints",
+        "preserveMySqlData",
+        "executionRequiresHostBootstrap",
+        "executionRequiresSignedApproval",
+        "executionRequiresSourceRevalidation"
+      ],
+      "properties": {
+        "copyOnly": { "const": true },
+        "deleteSource": { "const": false },
+        "overwriteTarget": { "const": false },
+        "followReparsePoints": { "const": false },
+        "preserveMySqlData": { "const": true },
+        "executionRequiresHostBootstrap": { "const": true },
+        "executionRequiresSignedApproval": { "const": true },
+        "executionRequiresSourceRevalidation": { "const": true }
+      }
+    },
+    "planSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

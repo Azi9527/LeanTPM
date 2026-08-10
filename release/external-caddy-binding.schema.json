@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leantpm.example/schemas/external-caddy-binding.schema.json",
+  "title": "LeanTPM adopted Caddy binding policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "readiness",
+    "serviceId",
+    "exclusiveIngress",
+    "serviceImagePath",
+    "serviceImageSha256",
+    "serviceCommandLineSha256",
+    "serviceEnvironmentSha256",
+    "serviceAccount",
+    "serviceAccountSid",
+    "startMode",
+    "scmSddlSha256",
+    "configPath",
+    "configSha256",
+    "publicHost",
+    "webRoot",
+    "backendUpstream",
+    "listenPorts",
+    "tlsDataRoot",
+    "logRoot",
+    "adminEndpoint",
+    "firewallRuleGroup",
+    "firewallPolicySha256"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "readiness": { "enum": ["INPUT_REQUIRED", "READY"] },
+    "serviceId": { "const": "caddy" },
+    "exclusiveIngress": { "const": true },
+    "serviceImagePath": { "type": "string", "pattern": "^[A-Za-z]:\\\\" },
+    "serviceImageSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "serviceCommandLineSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "serviceEnvironmentSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "serviceAccount": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+\\\\[A-Za-z0-9_.-]+\\$$"
+    },
+    "serviceAccountSid": {
+      "type": "string",
+      "pattern": "^S-1-5-21-(?:[0-9]+-){3}[0-9]+$"
+    },
+    "startMode": { "const": "AUTO" },
+    "scmSddlSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "configPath": { "type": "string", "pattern": "^[A-Za-z]:\\\\" },
+    "configSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "publicHost": {
+      "type": "string",
+      "pattern": "^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+[A-Za-z]{2,63}$"
+    },
+    "webRoot": { "type": "string", "pattern": "^[A-Za-z]:\\\\" },
+    "backendUpstream": { "const": "http://127.0.0.1:18080" },
+    "listenPorts": {
+      "type": "array",
+      "prefixItems": [{ "const": 80 }, { "const": 443 }],
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "tlsDataRoot": { "type": "string", "pattern": "^[A-Za-z]:\\\\" },
+    "logRoot": { "type": "string", "pattern": "^[A-Za-z]:\\\\" },
+    "adminEndpoint": { "const": "OFF" },
+    "firewallRuleGroup": { "type": "string", "minLength": 3, "maxLength": 128 },
+    "firewallPolicySha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

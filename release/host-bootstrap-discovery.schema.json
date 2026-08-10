@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leantpm.example/schemas/host-bootstrap-discovery.schema.json",
+  "title": "LeanTPM read-only Windows host bootstrap discovery",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "status",
+    "executable",
+    "trustSource",
+    "discoveryMode",
+    "planOnly",
+    "collectedAtUtc",
+    "productionBootstrapRoot",
+    "rawIdentifiersRedacted",
+    "hostFilesystemVerified",
+    "layoutInputs",
+    "preservedExternalPaths",
+    "caddyObservation",
+    "blockers",
+    "requiredNextSteps",
+    "discoverySha256"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "status": { "const": "INPUT_REQUIRED" },
+    "executable": { "const": false },
+    "trustSource": { "const": "UNTRUSTED_READ_ONLY_DISCOVERY" },
+    "discoveryMode": { "enum": ["LIVE", "PLAN_ONLY_FIXTURE"] },
+    "planOnly": { "type": "boolean" },
+    "collectedAtUtc": { "type": "string", "format": "date-time" },
+    "productionBootstrapRoot": { "const": "C:\\ProgramData\\LeanTPM-bootstrap" },
+    "rawIdentifiersRedacted": { "const": true },
+    "hostFilesystemVerified": { "const": false },
+    "layoutInputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "environmentKind",
+        "environmentId",
+        "hostId",
+        "installRoot",
+        "dataRoot",
+        "volumeIdentity",
+        "proxyMode",
+        "serviceId",
+        "bindingPolicyPath"
+      ],
+      "properties": {
+        "environmentKind": { "const": "PRODUCTION" },
+        "environmentId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$" },
+        "hostId": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "installRoot": { "const": "D:\\LeanTPM\\App" },
+        "dataRoot": { "const": "D:\\LeanTPM\\Runtime" },
+        "volumeIdentity": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "proxyMode": { "const": "EXTERNAL_EXISTING" },
+        "serviceId": { "const": "caddy" },
+        "bindingPolicyPath": { "const": "D:\\LeanTPM\\Runtime\\config\\external-caddy-binding.json" }
+      }
+    },
+    "preservedExternalPaths": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "purpose", "action"],
+        "properties": {
+          "path": { "const": "D:\\LeanTPM\\data" },
+          "purpose": { "const": "MYSQL_DATA" },
+          "action": { "const": "PRESERVE_EXTERNAL" }
+        }
+      }
+    },
+    "caddyObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "serviceCount",
+        "managedProxyCount",
+        "serviceState",
+        "servicePid",
+        "serviceImagePath",
+        "serviceImageSha256",
+        "serviceCommandLineSha256",
+        "serviceAccount",
+        "serviceAccountSid",
+        "startMode",
+        "scmSddlSha256",
+        "configPath",
+        "configSha256",
+        "listenerPorts",
+        "listenerPids"
+      ],
+      "properties": {
+        "serviceCount": { "type": "integer", "minimum": 0 },
+        "managedProxyCount": { "type": "integer", "minimum": 0 },
+        "serviceState": { "type": "string" },
+        "servicePid": { "type": "integer", "minimum": 0 },
+        "serviceImagePath": { "type": "string", "maxLength": 1024 },
+        "serviceImageSha256": { "type": "string", "pattern": "^(?:|[a-f0-9]{64})$" },
+        "serviceCommandLineSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "serviceAccount": { "type": "string", "maxLength": 256 },
+        "serviceAccountSid": { "type": "string", "maxLength": 256 },
+        "startMode": { "type": "string", "maxLength": 64 },
+        "scmSddlSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "configPath": { "type": "string", "maxLength": 1024 },
+        "configSha256": { "type": "string", "pattern": "^(?:|[a-f0-9]{64})$" },
+        "listenerPorts": { "type": "array", "items": { "type": "integer" }, "uniqueItems": true },
+        "listenerPids": { "type": "array", "items": { "type": "integer" }, "uniqueItems": true }
+      }
+    },
+    "blockers": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "requiredNextSteps": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "discoverySha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

@@ -5,7 +5,7 @@ import com.leantpm.common.exception.BusinessException;
 import com.leantpm.security.SecurityUtils;
 import com.leantpm.security.datascope.DataPermission;
 import com.leantpm.security.datascope.DataPermissionService;
-import com.leantpm.security.session.RedisAuthSessionService;
+import com.leantpm.security.session.AuthSessionService;
 import com.leantpm.system.dto.SystemDtos;
 import com.leantpm.system.mapper.SystemMapper;
 import org.springframework.http.HttpStatus;
@@ -30,13 +30,13 @@ public class SystemService {
     private final SystemMapper mapper;
     private final PasswordEncoder passwordEncoder;
     private final DataPermissionService dataPermissionService;
-    private final RedisAuthSessionService sessionService;
+    private final AuthSessionService sessionService;
 
     public SystemService(
             SystemMapper mapper,
             PasswordEncoder passwordEncoder,
             DataPermissionService dataPermissionService,
-            RedisAuthSessionService sessionService
+            AuthSessionService sessionService
     ) {
         this.mapper = mapper;
         this.passwordEncoder = passwordEncoder;
@@ -105,6 +105,7 @@ public class SystemService {
             throw optimisticConflict();
         }
         replaceUserRoles(current.tenantId(), userId, request.roleIds(), current.userId());
+        sessionService.revokeAllUserSessions(current.tenantId(), userId);
     }
 
     @Transactional
@@ -222,6 +223,7 @@ public class SystemService {
             throw new BusinessException("VERSION_REQUIRED", "缺少数据版本");
         }
         validateDataScope(current.tenantId(), request.dataScope(), request.customOrganizationIds());
+        List<Long> affectedUserIds = mapper.findUserIdsByRole(current.tenantId(), roleId);
         if (mapper.updateRole(current.tenantId(), roleId, request, current.userId()) == 0) {
             throw optimisticConflict();
         }
@@ -229,6 +231,7 @@ public class SystemService {
         replaceRoleDataScopes(
                 current.tenantId(), roleId, request.dataScope(), request.customOrganizationIds(), current.userId()
         );
+        invalidateRoleSessions(current.tenantId(), roleId, affectedUserIds, current.userId());
     }
 
     @Transactional(readOnly = true)
@@ -369,6 +372,7 @@ public class SystemService {
     public void updateRoleDataScope(long roleId, SystemDtos.UpdateRoleDataScopeRequest request) {
         var current = SecurityUtils.currentUser();
         validateDataScope(current.tenantId(), request.dataScope(), request.customOrganizationIds());
+        List<Long> affectedUserIds = mapper.findUserIdsByRole(current.tenantId(), roleId);
         if (mapper.updateRoleDataScope(
                 current.tenantId(),
                 roleId,
@@ -385,6 +389,17 @@ public class SystemService {
                 request.customOrganizationIds(),
                 current.userId()
         );
+        invalidateRoleSessions(current.tenantId(), roleId, affectedUserIds, current.userId());
+    }
+
+    private void invalidateRoleSessions(
+            long tenantId,
+            long roleId,
+            List<Long> affectedUserIds,
+            long operatorId
+    ) {
+        mapper.bumpAuthEpochForRole(tenantId, roleId, operatorId);
+        affectedUserIds.forEach(userId -> sessionService.revokeAllUserSessions(tenantId, userId));
     }
 
     @Transactional(readOnly = true)
@@ -411,6 +426,9 @@ public class SystemService {
                 }
             }
         } while (changed);
+        List<Long> affectedUserIds = mapper.findUserIdsByMenuIds(
+                current.tenantId(), List.copyOf(affectedIds)
+        );
         int affected = mapper.updateMenuStatuses(
                 current.tenantId(), List.copyOf(affectedIds), request.enabled(), current.userId()
         );
@@ -419,6 +437,14 @@ public class SystemService {
                     "MENU_STATUS_UPDATE_CONFLICT",
                     "部分菜单状态已发生变化，请刷新后重试",
                     HttpStatus.CONFLICT
+            );
+        }
+        if (!affectedUserIds.isEmpty()) {
+            mapper.bumpAuthEpochForUsers(
+                    current.tenantId(), affectedUserIds, current.userId()
+            );
+            affectedUserIds.forEach(userId ->
+                    sessionService.revokeAllUserSessions(current.tenantId(), userId)
             );
         }
         return affected;

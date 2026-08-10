@@ -18,8 +18,8 @@ const release = ref<AndroidAppRelease>({ available: false, enabled: false })
 const selectedFile = ref<File>()
 const fileInput = ref<HTMLInputElement>()
 const form = reactive({
-  versionName: '1.0.0',
-  versionCode: 100,
+  versionName: '1.0.1',
+  versionCode: 101,
   minimumVersionCode: 100,
   releaseNotes: '',
   enabled: true,

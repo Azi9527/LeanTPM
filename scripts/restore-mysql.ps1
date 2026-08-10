@@ -9,6 +9,7 @@ param(
     [int]$MySqlPort = 3306,
     [string]$MySqlUser = 'root',
     [string]$MySqlPassword = '',
+    [string]$MySqlSslCaPath = $env:LEANTPM_MYSQL_SSL_CA_PATH,
     [switch]$AllowNonEmpty
 )
 
@@ -19,11 +20,17 @@ if ($Database -ne $ConfirmDatabase) {
 if ($Database -notmatch '^[A-Za-z0-9_]+$') {
     throw 'Database contains unsupported characters'
 }
-$resolvedBackup = (Resolve-Path -LiteralPath $BackupFile).Path
-if ($resolvedBackup -match '[\r\n"]') {
-    throw 'Backup path contains unsupported characters'
+if ($MySqlHost -notmatch '^[A-Za-z0-9._:-]+$' -or
+        $MySqlUser -notmatch '^[A-Za-z0-9_.@-]+$' -or
+        $MySqlPort -lt 1 -or $MySqlPort -gt 65535) {
+    throw 'MySQL connection parameters contain unsupported characters or values'
 }
-$sourcePath = $resolvedBackup.Replace('\', '/')
+$resolvedBackup = (Resolve-Path -LiteralPath $BackupFile).Path
+$resolvedSslCa = (Resolve-Path -LiteralPath $MySqlSslCaPath -ErrorAction Stop).Path
+if (-not (Test-Path -LiteralPath $resolvedSslCa -PathType Leaf) -or
+        $resolvedSslCa -match '[\r\n"]') {
+    throw 'MySqlSslCaPath must identify a safe host-owned MySQL CA certificate'
+}
 
 $previousPassword = $env:MYSQL_PWD
 try {
@@ -32,6 +39,8 @@ try {
         "--host=$MySqlHost" `
         "--port=$MySqlPort" `
         "--user=$MySqlUser" `
+        '--ssl-mode=VERIFY_IDENTITY' `
+        "--ssl-ca=$resolvedSslCa" `
         '--batch' `
         '--skip-column-names' `
         -e "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name='$Database';"
@@ -42,6 +51,8 @@ try {
         "--host=$MySqlHost" `
         "--port=$MySqlPort" `
         "--user=$MySqlUser" `
+        '--ssl-mode=VERIFY_IDENTITY' `
+        "--ssl-ca=$resolvedSslCa" `
         '--batch' `
         '--skip-column-names' `
         -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$Database';"
@@ -52,13 +63,35 @@ try {
         throw "Target database is not empty: $Database"
     }
 
-    & mysql.exe `
-        "--host=$MySqlHost" `
-        "--port=$MySqlPort" `
-        "--user=$MySqlUser" `
-        "--database=$Database" `
-        -e "source $sourcePath"
-    if ($LASTEXITCODE -ne 0) {
+    $mysqlExecutable = (Get-Command mysql.exe -ErrorAction Stop).Source
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $mysqlExecutable
+    $startInfo.Arguments = "--host=$MySqlHost --port=$MySqlPort --user=$MySqlUser " +
+        "--ssl-mode=VERIFY_IDENTITY --ssl-ca=`"$resolvedSslCa`" --database=$Database"
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardInput = $true
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $startInfo
+    $dumpStream = $null
+    $restoreExitCode = -1
+    try {
+        if (-not $process.Start()) { throw 'Failed to start mysql restore client' }
+        $dumpStream = New-Object System.IO.FileStream(
+            $resolvedBackup,
+            [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::Read,
+            [System.IO.FileShare]::Read
+        )
+        $dumpStream.CopyTo($process.StandardInput.BaseStream)
+        $process.StandardInput.Close()
+        $process.WaitForExit()
+        $restoreExitCode = $process.ExitCode
+    }
+    finally {
+        if ($null -ne $dumpStream) { $dumpStream.Dispose() }
+        $process.Dispose()
+    }
+    if ($restoreExitCode -ne 0) {
         throw 'mysql restore failed'
     }
 }

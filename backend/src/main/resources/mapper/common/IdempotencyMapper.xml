@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.leantpm.common.idempotency.IdempotencyMapper">
+    <insert id="insertProcessing">
+        INSERT IGNORE INTO request_idempotency
+            (tenant_id, key_hash, fingerprint, state, owner_token, fencing_token,
+             lease_expires_at, expires_at, created_at, updated_at)
+        VALUES
+            (#{tenantId}, #{keyHash}, #{fingerprint}, 'PROCESSING', #{ownerToken}, 1,
+             #{leaseExpiresAt}, #{expiresAt}, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3))
+    </insert>
+
+    <select id="findForUpdate"
+            resultType="com.leantpm.common.idempotency.IdempotencyRecord">
+        SELECT tenant_id, key_hash, fingerprint, state, owner_token, fencing_token,
+               lease_expires_at, response_status, response_content_type, response_payload,
+               completed_at, expires_at
+        FROM request_idempotency
+        WHERE tenant_id = #{tenantId} AND key_hash = #{keyHash}
+        FOR UPDATE
+    </select>
+
+    <update id="markUnknown">
+        UPDATE request_idempotency
+        SET state = 'UNKNOWN', updated_at = #{now}
+        WHERE tenant_id = #{tenantId}
+          AND key_hash = #{keyHash}
+          AND state = 'PROCESSING'
+          AND owner_token = #{ownerToken}
+          AND fencing_token = #{fencingToken}
+    </update>
+
+    <update id="complete">
+        UPDATE request_idempotency
+        SET state = 'COMPLETED', response_status = #{responseStatus},
+            response_content_type = #{responseContentType},
+            response_payload = #{responsePayload}, completed_at = #{completedAt},
+            expires_at = #{expiresAt}, updated_at = #{completedAt}
+        WHERE tenant_id = #{tenantId}
+          AND key_hash = #{keyHash}
+          AND state = 'PROCESSING'
+          AND owner_token = #{ownerToken}
+          AND fencing_token = #{fencingToken}
+    </update>
+
+    <delete id="deleteExpired">
+        DELETE FROM request_idempotency
+        WHERE tenant_id = #{tenantId}
+          AND key_hash = #{keyHash}
+          AND state = 'COMPLETED'
+          AND expires_at &lt;= #{now}
+    </delete>
+
+    <delete id="deleteExpiredBatch">
+        DELETE FROM request_idempotency
+        WHERE state = 'COMPLETED'
+          AND expires_at &lt;= #{now}
+        ORDER BY expires_at
+        LIMIT #{batchSize}
+    </delete>
+</mapper>
