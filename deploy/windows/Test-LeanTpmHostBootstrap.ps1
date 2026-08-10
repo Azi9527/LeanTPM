@@ -56,6 +56,58 @@ function Assert-ApprovedGmsaAccount {
     return $sid
 }
 
+function Get-FixedVirtualServiceSid {
+    param([Parameter(Mandatory)][string]$ServiceName)
+
+    $sidOutput = (& sc.exe showsid $ServiceName 2>&1 | Out-String)
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to derive the virtual service SID for $ServiceName"
+    }
+    $sidMatches = @(
+        [regex]::Matches(
+            $sidOutput,
+            'S-1-5-80-(?:[0-9]+-){4}[0-9]+'
+        ) | ForEach-Object { $_.Value } | Select-Object -Unique
+    )
+    if ($sidMatches.Count -ne 1) {
+        throw "Virtual service SID output is ambiguous for $ServiceName"
+    }
+    return [string]$sidMatches[0]
+}
+
+function Assert-ApprovedWorkgroupAccount {
+    param(
+        [Parameter(Mandatory)][string]$Account,
+        [Parameter(Mandatory)]
+        [ValidateSet('Backend', 'Proxy', 'OpsControl', 'ReleaseAgent')]
+        [string]$Role
+    )
+
+    $expectedAccounts = @{
+        Backend = 'NT AUTHORITY\NetworkService'
+        Proxy = 'LocalSystem'
+        OpsControl = 'NT SERVICE\LeanTPM.OpsControl'
+        ReleaseAgent = 'NT SERVICE\LeanTPM.ReleaseAgent'
+    }
+    if ($Account -cne [string]$expectedAccounts[$Role]) {
+        throw "$Role service identity does not match the WORKGROUP_VIRTUAL contract"
+    }
+
+    if ($Role -eq 'OpsControl') {
+        return Get-FixedVirtualServiceSid -ServiceName 'LeanTPM.OpsControl'
+    }
+    if ($Role -eq 'ReleaseAgent') {
+        return Get-FixedVirtualServiceSid -ServiceName 'LeanTPM.ReleaseAgent'
+    }
+
+    $sid = Get-SidValue $Account
+    $expectedSid = if ($Role -eq 'Backend') { 'S-1-5-20' } else { 'S-1-5-18' }
+    if ($sid -cne $expectedSid) {
+        throw "$Role built-in service identity resolved to an unexpected SID"
+    }
+    return $sid
+}
+
 function Assert-HostOwnedAcl {
     param(
         [string]$Path,
@@ -361,6 +413,7 @@ $backendServiceAccount = $null
 $proxyServiceAccount = $null
 $opsControlServiceAccount = $null
 $releaseAgentServiceAccount = $null
+$serviceAccountMode = $null
 $backendSid = $null
 $proxySid = $null
 $opsControlSid = $null
@@ -504,14 +557,39 @@ try {
             $proxyServiceAccount = [string]$releaseTrust.proxyServiceAccount
             $opsControlServiceAccount = [string]$releaseTrust.opsControlServiceAccount
             $releaseAgentServiceAccount = [string]$releaseTrust.releaseAgentServiceAccount
-            $backendSid = Assert-ApprovedGmsaAccount `
-                -Account $backendServiceAccount -Role 'Backend'
-            $proxySid = Assert-ApprovedGmsaAccount `
-                -Account $proxyServiceAccount -Role 'Proxy'
-            $opsControlSid = Assert-ApprovedGmsaAccount `
-                -Account $opsControlServiceAccount -Role 'OpsControl'
-            $releaseAgentSid = Assert-ApprovedGmsaAccount `
-                -Account $releaseAgentServiceAccount -Role 'ReleaseAgent'
+            $serviceAccountMode = if ($releaseTrust.PSObject.Properties.Name -contains
+                    'serviceAccountMode') {
+                [string]$releaseTrust.serviceAccountMode
+            }
+            else { 'GMSA' }
+            if ($serviceAccountMode -cnotin @('GMSA', 'WORKGROUP_VIRTUAL')) {
+                throw 'Release trust contains an unsupported serviceAccountMode'
+            }
+            if ($serviceAccountMode -ceq 'WORKGROUP_VIRTUAL') {
+                $computerSystem = Get-CimInstance -ClassName Win32_ComputerSystem `
+                    -ErrorAction Stop
+                if ([bool]$computerSystem.PartOfDomain) {
+                    throw 'WORKGROUP_VIRTUAL cannot be used on a domain-joined host'
+                }
+                $backendSid = Assert-ApprovedWorkgroupAccount `
+                    -Account $backendServiceAccount -Role 'Backend'
+                $proxySid = Assert-ApprovedWorkgroupAccount `
+                    -Account $proxyServiceAccount -Role 'Proxy'
+                $opsControlSid = Assert-ApprovedWorkgroupAccount `
+                    -Account $opsControlServiceAccount -Role 'OpsControl'
+                $releaseAgentSid = Assert-ApprovedWorkgroupAccount `
+                    -Account $releaseAgentServiceAccount -Role 'ReleaseAgent'
+            }
+            else {
+                $backendSid = Assert-ApprovedGmsaAccount `
+                    -Account $backendServiceAccount -Role 'Backend'
+                $proxySid = Assert-ApprovedGmsaAccount `
+                    -Account $proxyServiceAccount -Role 'Proxy'
+                $opsControlSid = Assert-ApprovedGmsaAccount `
+                    -Account $opsControlServiceAccount -Role 'OpsControl'
+                $releaseAgentSid = Assert-ApprovedGmsaAccount `
+                    -Account $releaseAgentServiceAccount -Role 'ReleaseAgent'
+            }
             $serviceSids = @(
                 $backendSid,
                 $proxySid,
@@ -567,6 +645,7 @@ $report = [pscustomobject]@{
     bootstrapRoot = $bootstrap
     layoutSha256 = $layoutSha256
     proxyBindingPolicySha256 = $proxyPolicyVerifiedSha256
+    serviceAccountMode = $serviceAccountMode
     serviceIdentities = if ($PlanOnly) { $null } else {
         [pscustomobject]@{
             backend = [pscustomobject]@{

@@ -24,6 +24,8 @@ param(
     [Parameter(Mandatory)][string]$ReleaseAgentServiceAccount,
     [Parameter(Mandatory)][string]$BackendServiceAccount,
     [Parameter(Mandatory)][string]$ProxyServiceAccount,
+    [ValidateSet('GMSA', 'WORKGROUP_VIRTUAL')]
+    [string]$ServiceAccountMode = 'GMSA',
     [Parameter(Mandatory)][ValidatePattern('^[a-z0-9][a-z0-9._-]{2,63}$')]
     [string]$AgentId,
     [Parameter(Mandatory)]
@@ -42,6 +44,7 @@ $opsServiceId = 'LeanTPM.OpsControl'
 $agentServiceId = 'LeanTPM.ReleaseAgent'
 $serviceIds = @($opsServiceId, $agentServiceId)
 $gmsaPattern = '^[A-Za-z0-9_.-]+\\[A-Za-z0-9_.-]+\$$'
+$ServiceAccountMode = $ServiceAccountMode.ToUpperInvariant()
 
 function Get-FixedFile {
     param(
@@ -96,16 +99,37 @@ function Assert-ExpectedSha256 {
     return $actual
 }
 
-function Assert-DistinctGmsaAccounts {
+function Assert-ServiceAccountContract {
     $accounts = @(
         $OpsServiceAccount,
         $ReleaseAgentServiceAccount,
         $BackendServiceAccount,
         $ProxyServiceAccount
     )
-    foreach ($account in $accounts) {
-        if ($account -notmatch $gmsaPattern) {
-            throw 'All Ops, ReleaseAgent, Backend and Proxy accounts must be gMSA-shaped accounts'
+    if ($ServiceAccountMode -ceq 'GMSA') {
+        foreach ($account in $accounts) {
+            if ($account -notmatch $gmsaPattern) {
+                throw 'GMSA mode requires four gMSA-shaped service accounts'
+            }
+        }
+    }
+    else {
+        $expected = [ordered]@{
+            OpsControl = 'NT SERVICE\LeanTPM.OpsControl'
+            ReleaseAgent = 'NT SERVICE\LeanTPM.ReleaseAgent'
+            Backend = 'NT AUTHORITY\NetworkService'
+            Proxy = 'LocalSystem'
+        }
+        $actual = [ordered]@{
+            OpsControl = $OpsServiceAccount
+            ReleaseAgent = $ReleaseAgentServiceAccount
+            Backend = $BackendServiceAccount
+            Proxy = $ProxyServiceAccount
+        }
+        foreach ($role in $expected.Keys) {
+            if ([string]$actual[$role] -cne [string]$expected[$role]) {
+                throw "WORKGROUP_VIRTUAL requires the exact service account for $role"
+            }
         }
     }
     $normalized = @($accounts | ForEach-Object { $_.ToUpperInvariant() } |
@@ -113,6 +137,25 @@ function Assert-DistinctGmsaAccounts {
     if ($normalized.Count -ne $accounts.Count) {
         throw 'Ops, ReleaseAgent, Backend and Proxy service accounts must remain distinct'
     }
+}
+
+function Get-FixedVirtualServiceSid {
+    param([Parameter(Mandatory)][string]$ServiceName)
+
+    $sidOutput = (& sc.exe showsid $ServiceName 2>&1 | Out-String)
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to derive the virtual service SID for $ServiceName"
+    }
+    $sidMatches = @(
+        [regex]::Matches(
+            $sidOutput,
+            'S-1-5-80-(?:[0-9]+-){4}[0-9]+'
+        ) | ForEach-Object { $_.Value } | Select-Object -Unique
+    )
+    if ($sidMatches.Count -ne 1) {
+        throw "Virtual service SID output is ambiguous for $ServiceName"
+    }
+    return [string]$sidMatches[0]
 }
 
 function Get-RenderedTemplates {
@@ -155,7 +198,20 @@ function Get-RenderedTemplates {
 if ($AllowUnpinnedTestInputs -and -not $PlanOnly) {
     throw 'AllowUnpinnedTestInputs is restricted to side-effect-free PlanOnly validation'
 }
-Assert-DistinctGmsaAccounts
+Assert-ServiceAccountContract
+$opsServiceSid = $null
+$agentServiceSid = $null
+$opsAclPrincipal = $OpsServiceAccount
+$agentAclPrincipal = $ReleaseAgentServiceAccount
+if ($ServiceAccountMode -ceq 'WORKGROUP_VIRTUAL') {
+    $opsServiceSid = Get-FixedVirtualServiceSid -ServiceName $opsServiceId
+    $agentServiceSid = Get-FixedVirtualServiceSid -ServiceName $agentServiceId
+    if ($opsServiceSid -ceq $agentServiceSid) {
+        throw 'OpsControl and ReleaseAgent virtual service SIDs must be distinct'
+    }
+    $opsAclPrincipal = "*$opsServiceSid"
+    $agentAclPrincipal = "*$agentServiceSid"
+}
 
 $resolvedInstall = Get-FixedDirectory -Path $InstallRoot -Label 'InstallRoot'
 $resolvedData = Get-FixedDirectory -Path $DataRoot -Label 'DataRoot'
@@ -183,6 +239,7 @@ if ([bool]$rootPolicy.isProductionRootPair -and $AllowNonProductionRoots) {
     throw 'AllowNonProductionRoots cannot be used with the production root pair'
 }
 if ([bool]$rootPolicy.isProductionRootPair -and (
+        [string]$rootPolicy.serviceAccountMode -cne $ServiceAccountMode -or
         [string]$rootPolicy.serviceIdentities.opsControl.account -cne
             $OpsServiceAccount -or
         [string]$rootPolicy.serviceIdentities.releaseAgent.account -cne
@@ -269,7 +326,7 @@ finally { $templateHasher.Dispose() }
 $actions = @(
     'VERIFY_HOST_POLICY',
     'VERIFY_PINNED_INPUTS',
-    'VERIFY_DISTINCT_GMSA_IDENTITIES',
+    'VERIFY_ISOLATED_SERVICE_IDENTITIES',
     'ACQUIRE_GLOBAL_DEPLOYMENT_LOCK',
     'COPY_IMMUTABLE_SERVICE_ASSETS',
     'SET_SEPARATE_ACLS',
@@ -283,6 +340,7 @@ $report = [pscustomobject]@{
     executable = -not $PlanOnly
     installRoot = $resolvedInstall
     dataRoot = $resolvedData
+    serviceAccountMode = $ServiceAccountMode
     hostLayoutSha256 = if ([bool]$rootPolicy.isProductionRootPair) {
         [string]$rootPolicy.hostLayoutSha256
     }
@@ -290,6 +348,7 @@ $report = [pscustomobject]@{
     opsControl = [pscustomobject]@{
         serviceId = $opsServiceId
         account = $OpsServiceAccount
+        sid = $opsServiceSid
         listenAddress = '127.0.0.1'
         listenPort = 18090
         dataRoot = $opsDataRoot
@@ -299,6 +358,7 @@ $report = [pscustomobject]@{
     releaseAgent = [pscustomobject]@{
         serviceId = $agentServiceId
         account = $ReleaseAgentServiceAccount
+        sid = $agentServiceSid
         mode = 'ExecuteSignedDeployment'
         dataRoot = $agentDataRoot
         toolkitRoot = $installedToolkitRoot
@@ -330,7 +390,13 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 $trustPath = Join-Path $resolvedData 'config\release-trust.json'
 $trust = Get-Content -LiteralPath (Get-FixedFile $trustPath 'release trust') `
     -Encoding utf8 -Raw | ConvertFrom-Json
-if ([string]$trust.backendServiceAccount -cne $BackendServiceAccount -or
+$trustServiceAccountMode = if ($trust.PSObject.Properties.Name -contains
+        'serviceAccountMode') {
+    [string]$trust.serviceAccountMode
+}
+else { 'GMSA' }
+if ($trustServiceAccountMode -cne $ServiceAccountMode -or
+        [string]$trust.backendServiceAccount -cne $BackendServiceAccount -or
         [string]$trust.proxyServiceAccount -cne $ProxyServiceAccount -or
         [string]$trust.opsControlServiceAccount -cne $OpsServiceAccount -or
         [string]$trust.releaseAgentServiceAccount -cne
@@ -468,7 +534,7 @@ try {
     $null = New-Item -ItemType Directory -Path $serviceRoot -Force
     & icacls.exe $serviceRoot '/inheritance:r' '/grant:r' `
         'Administrators:(OI)(CI)F' 'SYSTEM:(OI)(CI)F' `
-        "$OpsServiceAccount`:RX" "$ReleaseAgentServiceAccount`:RX" | Out-Null
+        "$opsAclPrincipal`:RX" "$agentAclPrincipal`:RX" | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Failed to protect the Ops service root ACL' }
     foreach ($directory in @(
             $opsDataRoot,
@@ -524,9 +590,10 @@ try {
     )
 
     $policyCore = [ordered]@{
-        schemaVersion = 1
+        schemaVersion = 2
         installRoot = $resolvedInstall
         dataRoot = $resolvedData
+        serviceAccountMode = $ServiceAccountMode
         opsServiceId = $opsServiceId
         releaseAgentServiceId = $agentServiceId
         opsServiceAccount = $OpsServiceAccount
@@ -574,7 +641,7 @@ try {
             $targetConfig
         )) {
         & icacls.exe $opsFile '/inheritance:r' '/grant:r' `
-            'Administrators:F' 'SYSTEM:F' "$OpsServiceAccount`:RX" | Out-Null
+            'Administrators:F' 'SYSTEM:F' "$opsAclPrincipal`:RX" | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "Failed to protect Ops asset: $opsFile" }
     }
     foreach ($agentFile in @(
@@ -583,27 +650,27 @@ try {
             $targetAgentStarter
         )) {
         & icacls.exe $agentFile '/inheritance:r' '/grant:r' `
-            'Administrators:F' 'SYSTEM:F' "$ReleaseAgentServiceAccount`:RX" |
+            'Administrators:F' 'SYSTEM:F' "$agentAclPrincipal`:RX" |
             Out-Null
         if ($LASTEXITCODE -ne 0) { throw "Failed to protect Agent asset: $agentFile" }
     }
     & icacls.exe $policyPath '/inheritance:r' '/grant:r' `
-        'Administrators:F' 'SYSTEM:F' "$OpsServiceAccount`:RX" `
-        "$ReleaseAgentServiceAccount`:RX" | Out-Null
+        'Administrators:F' 'SYSTEM:F' "$opsAclPrincipal`:RX" `
+        "$agentAclPrincipal`:RX" | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Failed to protect the Ops binding policy' }
     & icacls.exe $installedToolkitRoot '/inheritance:r' '/grant:r' `
         'Administrators:(OI)(CI)F' 'SYSTEM:(OI)(CI)F' `
-        "$ReleaseAgentServiceAccount`:(OI)(CI)RX" | Out-Null
+        "$agentAclPrincipal`:(OI)(CI)RX" | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Failed to protect the Agent toolkit ACL' }
     & icacls.exe $opsDataRoot '/inheritance:r' '/grant:r' `
         'Administrators:(OI)(CI)F' 'SYSTEM:(OI)(CI)F' `
-        "$OpsServiceAccount`:(OI)(CI)M" `
-        "$ReleaseAgentServiceAccount`:(OI)(CI)RX" | Out-Null
+        "$opsAclPrincipal`:(OI)(CI)M" `
+        "$agentAclPrincipal`:(OI)(CI)RX" | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Failed to protect the Ops data root ACL' }
     & icacls.exe (Join-Path $opsDataRoot 'queue') '/inheritance:r' '/grant:r' `
         'Administrators:(OI)(CI)F' 'SYSTEM:(OI)(CI)F' `
-        "$OpsServiceAccount`:(OI)(CI)M" `
-        "$ReleaseAgentServiceAccount`:(OI)(CI)M" | Out-Null
+        "$opsAclPrincipal`:(OI)(CI)M" `
+        "$agentAclPrincipal`:(OI)(CI)M" | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Failed to protect the Agent queue ACL' }
     foreach ($readRoot in @(
             (Join-Path $opsDataRoot 'uploads'),
@@ -611,20 +678,20 @@ try {
         )) {
         & icacls.exe $readRoot '/inheritance:r' '/grant:r' `
             'Administrators:(OI)(CI)F' 'SYSTEM:(OI)(CI)F' `
-            "$OpsServiceAccount`:(OI)(CI)M" `
-            "$ReleaseAgentServiceAccount`:(OI)(CI)RX" | Out-Null
+            "$opsAclPrincipal`:(OI)(CI)M" `
+            "$agentAclPrincipal`:(OI)(CI)RX" | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "Failed to protect Agent input ACL: $readRoot" }
     }
     & icacls.exe $agentDataRoot '/inheritance:r' '/grant:r' `
         'Administrators:(OI)(CI)F' 'SYSTEM:(OI)(CI)F' `
-        "$ReleaseAgentServiceAccount`:(OI)(CI)M" |
+        "$agentAclPrincipal`:(OI)(CI)M" |
         Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Failed to protect the ReleaseAgent data ACL' }
-    & icacls.exe $resolvedData '/grant:r' "$OpsServiceAccount`:RX" `
-        "$ReleaseAgentServiceAccount`:RX" | Out-Null
+    & icacls.exe $resolvedData '/grant:r' "$opsAclPrincipal`:RX" `
+        "$agentAclPrincipal`:RX" | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Failed to grant fixed Runtime traversal access' }
-    & icacls.exe $trustPath '/grant:r' "$OpsServiceAccount`:RX" `
-        "$ReleaseAgentServiceAccount`:RX" | Out-Null
+    & icacls.exe $trustPath '/grant:r' "$opsAclPrincipal`:RX" `
+        "$agentAclPrincipal`:RX" | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Failed to grant fixed release-trust read access' }
     foreach ($protectedRoot in @(
             $serviceRoot,

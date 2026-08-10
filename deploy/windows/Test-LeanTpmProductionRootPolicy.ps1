@@ -105,6 +105,10 @@ $report = [pscustomobject]@{
     }
     else { $null }
     proxyBinding = $proxyBinding
+    serviceAccountMode = if ($isProductionRootPair) {
+        [string]$bootstrap.serviceAccountMode
+    }
+    else { $null }
     serviceIdentities = if ($isProductionRootPair) {
         $bootstrap.serviceIdentities
     }

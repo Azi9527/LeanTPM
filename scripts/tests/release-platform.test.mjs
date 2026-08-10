@@ -801,6 +801,14 @@ test('keeps executable host bootstrap identity and ACL validation fail closed', 
   assert.match(bootstrap, /\$releaseTrustStream\s*=\s*\[IO\.File\]::Open/)
   assert.match(bootstrap, /\$proxyPolicyStream\s*=\s*\[IO\.File\]::Open/)
   assert.match(bootstrap, /Assert-ApprovedGmsaAccount/)
+  assert.match(bootstrap, /WORKGROUP_VIRTUAL/)
+  assert.match(bootstrap, /serviceAccountMode/)
+  assert.match(bootstrap, /Win32_ComputerSystem/)
+  assert.match(bootstrap, /sc\.exe[\s\S]{0,160}showsid/)
+  assert.match(bootstrap, /NT SERVICE\\LeanTPM\.OpsControl/)
+  assert.match(bootstrap, /NT SERVICE\\LeanTPM\.ReleaseAgent/)
+  assert.match(bootstrap, /NT AUTHORITY\\NetworkService/)
+  assert.match(bootstrap, /LocalSystem/)
   assert.match(bootstrap, /serviceIdentities/)
   assert.match(bootstrap, /Untrusted principal owns a parent path/)
   assert.doesNotMatch(bootstrap, /return\s+Get-TextSha256Identity\s+\$canonical/)
@@ -5842,6 +5850,54 @@ test('plans isolated OpsControl and ReleaseAgent Windows services without side e
     assert.ok(report.actions.includes('VERIFY_FIXED_BINDING'))
     assert.deepEqual(snapshotTree(temporaryRoot), before)
 
+    const workgroupArgs = [...args]
+    workgroupArgs.splice(workgroupArgs.indexOf('-PlanOnly'), 0,
+      '-ServiceAccountMode', 'WORKGROUP_VIRTUAL')
+    workgroupArgs[workgroupArgs.indexOf('-OpsServiceAccount') + 1] =
+      'NT SERVICE\\LeanTPM.OpsControl'
+    workgroupArgs[workgroupArgs.indexOf('-ReleaseAgentServiceAccount') + 1] =
+      'NT SERVICE\\LeanTPM.ReleaseAgent'
+    workgroupArgs[workgroupArgs.indexOf('-BackendServiceAccount') + 1] =
+      'NT AUTHORITY\\NetworkService'
+    workgroupArgs[workgroupArgs.indexOf('-ProxyServiceAccount') + 1] = 'LocalSystem'
+    const workgroupPlan = invokePowerShell(installerPath, workgroupArgs)
+    assert.equal(workgroupPlan.status, 0, combinedOutput(workgroupPlan))
+    const workgroupReport = JSON.parse(workgroupPlan.stdout.trim())
+    assert.equal(workgroupReport.status, 'PLAN')
+    assert.equal(workgroupReport.executable, false)
+    assert.equal(workgroupReport.serviceAccountMode, 'WORKGROUP_VIRTUAL')
+    assert.equal(
+      workgroupReport.opsControl.account,
+      'NT SERVICE\\LeanTPM.OpsControl',
+    )
+    assert.match(workgroupReport.opsControl.sid, /^S-1-5-80-(?:\d+-){4}\d+$/)
+    assert.equal(
+      workgroupReport.releaseAgent.account,
+      'NT SERVICE\\LeanTPM.ReleaseAgent',
+    )
+    assert.match(workgroupReport.releaseAgent.sid, /^S-1-5-80-(?:\d+-){4}\d+$/)
+    assert.notEqual(
+      workgroupReport.opsControl.sid,
+      workgroupReport.releaseAgent.sid,
+    )
+    assert.ok(workgroupReport.actions.includes('VERIFY_ISOLATED_SERVICE_IDENTITIES'))
+    assert.deepEqual(snapshotTree(temporaryRoot), before)
+
+    const arbitraryLocalAccountArgs = [...workgroupArgs]
+    arbitraryLocalAccountArgs[
+      arbitraryLocalAccountArgs.indexOf('-OpsServiceAccount') + 1
+    ] = '.\\leantpm-ops'
+    const arbitraryLocalAccount = invokePowerShell(
+      installerPath,
+      arbitraryLocalAccountArgs,
+    )
+    assert.notEqual(arbitraryLocalAccount.status, 0)
+    assert.match(
+      combinedOutput(arbitraryLocalAccount),
+      /WORKGROUP_VIRTUAL|fixed virtual service account|exact service account/i,
+    )
+    assert.deepEqual(snapshotTree(temporaryRoot), before)
+
     const duplicateAccount = invokePowerShell(installerPath, [
       ...args.slice(0, args.indexOf('-ReleaseAgentServiceAccount') + 1),
       'CONTOSO\\leantpm-ops$',
@@ -5872,10 +5928,19 @@ test('plans isolated OpsControl and ReleaseAgent Windows services without side e
     const releaseTrustExample = fs.readFileSync(path.join(
       repositoryRoot, 'deploy', 'windows', 'release-trust.production.example.json',
     ), 'utf8')
+    const workgroupTrustExample = JSON.parse(fs.readFileSync(path.join(
+      repositoryRoot,
+      'deploy',
+      'windows',
+      'release-trust.workgroup.production.example.json',
+    ), 'utf8'))
     assert.match(installerSource, /Test-LeanTpmProductionRootPolicy\.ps1/)
     assert.match(installerSource, /deployment\.lock/)
     assert.match(installerSource, /INSTALL_DISABLED_SERVICES/)
     assert.match(installerSource, /sc\.exe[\s\S]*delayed-auto/)
+    assert.match(installerSource, /sc\.exe\s+showsid/)
+    assert.match(installerSource, /\$opsAclPrincipal/)
+    assert.match(installerSource, /\$agentAclPrincipal/)
     const protectRootIndex = installerSource.indexOf(
       "icacls.exe $serviceRoot '/inheritance:r'",
     )
@@ -5929,6 +5994,20 @@ test('plans isolated OpsControl and ReleaseAgent Windows services without side e
     assert.match(hostBootstrap, /releaseAgentServiceAccount/)
     assert.match(releaseTrustExample, /opsControlServiceAccount/)
     assert.match(releaseTrustExample, /releaseAgentServiceAccount/)
+    assert.equal(workgroupTrustExample.serviceAccountMode, 'WORKGROUP_VIRTUAL')
+    assert.equal(
+      workgroupTrustExample.opsControlServiceAccount,
+      'NT SERVICE\\LeanTPM.OpsControl',
+    )
+    assert.equal(
+      workgroupTrustExample.releaseAgentServiceAccount,
+      'NT SERVICE\\LeanTPM.ReleaseAgent',
+    )
+    assert.equal(
+      workgroupTrustExample.backendServiceAccount,
+      'NT AUTHORITY\\NetworkService',
+    )
+    assert.equal(workgroupTrustExample.proxyServiceAccount, 'LocalSystem')
   } finally {
     fs.rmSync(temporaryRoot, { recursive: true, force: true })
   }
@@ -6031,6 +6110,36 @@ test('discovers Ops service installation readiness and builds only a side-effect
       crypto.createHash('sha256').update(fs.readFileSync(inputs.lock)).digest('hex'),
     )
     assert.deepEqual(snapshotTree(temporaryRoot), before)
+
+    const workgroupArgs = [...args]
+    workgroupArgs.splice(workgroupArgs.indexOf('-OutputFormat'), 0,
+      '-ServiceAccountMode', 'WORKGROUP_VIRTUAL')
+    workgroupArgs[workgroupArgs.indexOf('-OpsServiceAccount') + 1] =
+      'NT SERVICE\\LeanTPM.OpsControl'
+    workgroupArgs[workgroupArgs.indexOf('-ReleaseAgentServiceAccount') + 1] =
+      'NT SERVICE\\LeanTPM.ReleaseAgent'
+    workgroupArgs[workgroupArgs.indexOf('-BackendServiceAccount') + 1] =
+      'NT AUTHORITY\\NetworkService'
+    workgroupArgs[workgroupArgs.indexOf('-ProxyServiceAccount') + 1] = 'LocalSystem'
+    const workgroupReady = invokePowerShell(readinessPath, workgroupArgs)
+    assert.equal(workgroupReady.status, 0, combinedOutput(workgroupReady))
+    const workgroupReport = JSON.parse(workgroupReady.stdout.trim())
+    assert.equal(workgroupReport.status, 'PLAN_READY', JSON.stringify(workgroupReport))
+    assert.equal(workgroupReport.serviceAccountMode, 'WORKGROUP_VIRTUAL')
+    assert.equal(workgroupReport.plan.serviceAccountMode, 'WORKGROUP_VIRTUAL')
+    assert.deepEqual(workgroupReport.blockers, [])
+    assert.deepEqual(snapshotTree(temporaryRoot), before)
+
+    const wrongProxyArgs = [...workgroupArgs]
+    wrongProxyArgs[wrongProxyArgs.indexOf('-ProxyServiceAccount') + 1] =
+      'NT AUTHORITY\\LocalService'
+    const wrongProxy = invokePowerShell(readinessPath, wrongProxyArgs)
+    assert.equal(wrongProxy.status, 0, combinedOutput(wrongProxy))
+    const wrongProxyReport = JSON.parse(wrongProxy.stdout.trim())
+    assert.equal(wrongProxyReport.status, 'INPUT_REQUIRED')
+    assert.ok(wrongProxyReport.blockers.some(
+      (blocker) => blocker.code === 'WORKGROUP_SERVICE_ACCOUNT_CONTRACT_INVALID',
+    ))
 
     const driftedToolkitFile = path.join(
       toolkitRoot,

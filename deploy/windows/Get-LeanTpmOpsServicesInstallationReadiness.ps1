@@ -14,6 +14,8 @@ param(
     [Parameter(Mandatory)][string]$ReleaseAgentServiceAccount,
     [Parameter(Mandatory)][string]$BackendServiceAccount,
     [Parameter(Mandatory)][string]$ProxyServiceAccount,
+    [ValidateSet('GMSA', 'WORKGROUP_VIRTUAL')]
+    [string]$ServiceAccountMode = 'GMSA',
     [Parameter(Mandatory)][string]$AgentId,
     [Parameter(Mandatory)][string]$AgentVersion,
     [switch]$AllowNonProductionRoots,
@@ -25,6 +27,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $blockers = New-Object 'System.Collections.Generic.List[object]'
 $gmsaPattern = '^[A-Za-z0-9_.-]+\\[A-Za-z0-9_.-]+\$$'
+$ServiceAccountMode = $ServiceAccountMode.ToUpperInvariant()
 $requiredToolkitPaths = @(
     'deploy/windows/Invoke-LeanTpmReleaseAgent.ps1',
     'scripts/Invoke-LeanTpmDeployment.ps1',
@@ -232,9 +235,28 @@ $accountValues = @(
     $BackendServiceAccount,
     $ProxyServiceAccount
 )
-if (@($accountValues | Where-Object { $_ -notmatch $gmsaPattern }).Count -gt 0) {
-    Add-ReadinessBlocker -Code 'SERVICE_ACCOUNT_SHAPE_INVALID' `
-        -Message 'All four service accounts must be domain gMSA-shaped accounts'
+if ($ServiceAccountMode -ceq 'GMSA') {
+    if (@($accountValues | Where-Object { $_ -notmatch $gmsaPattern }).Count -gt 0) {
+        Add-ReadinessBlocker -Code 'SERVICE_ACCOUNT_SHAPE_INVALID' `
+            -Message 'GMSA mode requires four domain gMSA-shaped accounts'
+    }
+}
+else {
+    $workgroupExpectedAccounts = @(
+        'NT SERVICE\LeanTPM.OpsControl',
+        'NT SERVICE\LeanTPM.ReleaseAgent',
+        'NT AUTHORITY\NetworkService',
+        'LocalSystem'
+    )
+    for ($accountIndex = 0; $accountIndex -lt $accountValues.Count; $accountIndex++) {
+        if ([string]$accountValues[$accountIndex] -cne
+                [string]$workgroupExpectedAccounts[$accountIndex]) {
+            Add-ReadinessBlocker `
+                -Code 'WORKGROUP_SERVICE_ACCOUNT_CONTRACT_INVALID' `
+                -Message 'WORKGROUP_VIRTUAL requires the four fixed service identities'
+            break
+        }
+    }
 }
 $normalizedAccounts = @($accountValues | ForEach-Object { $_.ToUpperInvariant() } |
     Select-Object -Unique)
@@ -350,29 +372,51 @@ if (-not $AllowNonProductionRoots -and
             -Message 'Both starters must have the host-pinned Authenticode signer'
     }
 
-    $testAdServiceAccount = Get-Command Test-ADServiceAccount `
-        -ErrorAction SilentlyContinue
-    if ($null -eq $testAdServiceAccount) {
-        Add-ReadinessBlocker -Code 'GMSA_VALIDATION_UNAVAILABLE' `
-            -Message 'Test-ADServiceAccount is unavailable on this host'
+    if ($ServiceAccountMode -ceq 'GMSA') {
+        $testAdServiceAccount = Get-Command Test-ADServiceAccount `
+            -ErrorAction SilentlyContinue
+        if ($null -eq $testAdServiceAccount) {
+            Add-ReadinessBlocker -Code 'GMSA_VALIDATION_UNAVAILABLE' `
+                -Message 'Test-ADServiceAccount is unavailable on this host'
+        }
+        elseif (@($accountValues | Where-Object { $_ -notmatch $gmsaPattern }).Count -eq 0) {
+            foreach ($account in @($OpsServiceAccount, $ReleaseAgentServiceAccount)) {
+                try {
+                    $sid = (New-Object Security.Principal.NTAccount $account).
+                        Translate([Security.Principal.SecurityIdentifier]).Value
+                    if ($sid -notmatch '^S-1-5-21-') {
+                        throw 'gMSA SID is not domain-scoped'
+                    }
+                    $samAccountName = ($account -split '\\', 2)[1].TrimEnd('$')
+                    if (-not (Test-ADServiceAccount -Identity $samAccountName)) {
+                        throw 'gMSA is not installed for the local machine'
+                    }
+                }
+                catch {
+                    Add-ReadinessBlocker -Code 'GMSA_NOT_READY' `
+                        -Message 'OpsControl and ReleaseAgent gMSAs must resolve and pass Test-ADServiceAccount'
+                }
+            }
+        }
     }
-    elseif (@($accountValues | Where-Object { $_ -notmatch $gmsaPattern }).Count -eq 0) {
-        foreach ($account in @($OpsServiceAccount, $ReleaseAgentServiceAccount)) {
-            try {
-                $sid = (New-Object Security.Principal.NTAccount $account).
-                    Translate([Security.Principal.SecurityIdentifier]).Value
-                if ($sid -notmatch '^S-1-5-21-') {
-                    throw 'gMSA SID is not domain-scoped'
-                }
-                $samAccountName = ($account -split '\\', 2)[1].TrimEnd('$')
-                if (-not (Test-ADServiceAccount -Identity $samAccountName)) {
-                    throw 'gMSA is not installed for the local machine'
+    else {
+        try {
+            $computerSystem = Get-CimInstance -ClassName Win32_ComputerSystem `
+                -ErrorAction Stop
+            if ([bool]$computerSystem.PartOfDomain) {
+                throw 'host is domain joined'
+            }
+            foreach ($serviceId in @('LeanTPM.OpsControl', 'LeanTPM.ReleaseAgent')) {
+                $sidText = (& sc.exe showsid $serviceId 2>&1 | Out-String)
+                if ($LASTEXITCODE -ne 0 -or
+                        $sidText -notmatch 'S-1-5-80-(?:[0-9]+-){4}[0-9]+') {
+                    throw "unable to derive virtual service SID for $serviceId"
                 }
             }
-            catch {
-                Add-ReadinessBlocker -Code 'GMSA_NOT_READY' `
-                    -Message 'OpsControl and ReleaseAgent gMSAs must resolve and pass Test-ADServiceAccount'
-            }
+        }
+        catch {
+            Add-ReadinessBlocker -Code 'WORKGROUP_HOST_IDENTITY_NOT_READY' `
+                -Message 'WORKGROUP_VIRTUAL requires a non-domain host and resolvable fixed service SIDs'
         }
     }
 }
@@ -417,6 +461,7 @@ if ($blockers.Count -eq 0) {
         ReleaseAgentServiceAccount = $ReleaseAgentServiceAccount
         BackendServiceAccount = $BackendServiceAccount
         ProxyServiceAccount = $ProxyServiceAccount
+        ServiceAccountMode = $ServiceAccountMode
         AgentId = $AgentId
         AgentVersion = $AgentVersion
         PlanOnly = $true
@@ -452,6 +497,7 @@ $report = [ordered]@{
         'NON_PRODUCTION'
     }
     else { 'PRODUCTION' }
+    serviceAccountMode = $ServiceAccountMode
     installRoot = $resolvedInstall
     dataRoot = $resolvedData
     serviceIds = @('LeanTPM.OpsControl', 'LeanTPM.ReleaseAgent')

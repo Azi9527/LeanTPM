@@ -25,6 +25,7 @@ $policy = Get-Content -LiteralPath $policyItem.FullName -Encoding utf8 -Raw |
 
 $requiredProperties = @(
     'schemaVersion', 'installRoot', 'dataRoot', 'opsServiceId',
+    'serviceAccountMode',
     'releaseAgentServiceId', 'opsServiceAccount', 'releaseAgentServiceAccount',
     'backendServiceAccount', 'proxyServiceAccount', 'wrapperSha256', 'javaPath',
     'javaSha256', 'opsJarSha256', 'opsConfigSha256', 'opsStarterSha256',
@@ -42,7 +43,7 @@ for ($index = 0; $index -lt $wantedProperties.Count; $index++) {
         throw 'Ops service binding policy properties do not match the fixed schema'
     }
 }
-if ([int]$policy.schemaVersion -ne 1 -or
+if ([int]$policy.schemaVersion -ne 2 -or
         [string]$policy.installRoot -cne $install -or
         [string]$policy.dataRoot -cne $data -or
         [string]$policy.opsServiceId -cne $opsServiceId -or
@@ -52,16 +53,34 @@ if ([int]$policy.schemaVersion -ne 1 -or
         [string]$policy.releaseAgentMode -cne 'ExecuteSignedDeployment') {
     throw 'Ops service binding policy identity or fixed runtime contract drifted'
 }
-foreach ($account in @(
-        [string]$policy.opsServiceAccount,
-        [string]$policy.releaseAgentServiceAccount,
-        [string]$policy.backendServiceAccount,
-        [string]$policy.proxyServiceAccount
-    )) {
-    if ($account -notmatch '^[A-Za-z0-9_.-]+\\[A-Za-z0-9_.-]+\$$') {
-        throw 'Ops service binding policy contains a non-gMSA-shaped account'
+$serviceAccountMode = [string]$policy.serviceAccountMode
+if ($serviceAccountMode -ceq 'GMSA') {
+    foreach ($account in @(
+            [string]$policy.opsServiceAccount,
+            [string]$policy.releaseAgentServiceAccount,
+            [string]$policy.backendServiceAccount,
+            [string]$policy.proxyServiceAccount
+        )) {
+        if ($account -notmatch '^[A-Za-z0-9_.-]+\\[A-Za-z0-9_.-]+\$$') {
+            throw 'GMSA binding policy contains a non-gMSA-shaped account'
+        }
     }
 }
+elseif ($serviceAccountMode -ceq 'WORKGROUP_VIRTUAL') {
+    $computerSystem = Get-CimInstance -ClassName Win32_ComputerSystem `
+        -ErrorAction Stop
+    if ([bool]$computerSystem.PartOfDomain -or
+            [string]$policy.opsServiceAccount -cne
+                'NT SERVICE\LeanTPM.OpsControl' -or
+            [string]$policy.releaseAgentServiceAccount -cne
+                'NT SERVICE\LeanTPM.ReleaseAgent' -or
+            [string]$policy.backendServiceAccount -cne
+                'NT AUTHORITY\NetworkService' -or
+            [string]$policy.proxyServiceAccount -cne 'LocalSystem') {
+        throw 'WORKGROUP_VIRTUAL binding policy does not match the fixed host contract'
+    }
+}
+else { throw 'Ops service binding policy has an unsupported serviceAccountMode' }
 $distinctAccounts = @(
     @(
         [string]$policy.opsServiceAccount,
@@ -78,6 +97,7 @@ $policyCore = [ordered]@{
     schemaVersion = [int]$policy.schemaVersion
     installRoot = [string]$policy.installRoot
     dataRoot = [string]$policy.dataRoot
+    serviceAccountMode = $serviceAccountMode
     opsServiceId = [string]$policy.opsServiceId
     releaseAgentServiceId = [string]$policy.releaseAgentServiceId
     opsServiceAccount = [string]$policy.opsServiceAccount
@@ -160,7 +180,13 @@ foreach ($binding in @(
 
 $trustPath = Join-Path $data 'config\release-trust.json'
 $trust = Get-Content -LiteralPath $trustPath -Encoding utf8 -Raw | ConvertFrom-Json
-if ([string]$trust.backendServiceAccount -cne
+$trustServiceAccountMode = if ($trust.PSObject.Properties.Name -contains
+        'serviceAccountMode') {
+    [string]$trust.serviceAccountMode
+}
+else { 'GMSA' }
+if ($trustServiceAccountMode -cne $serviceAccountMode -or
+        [string]$trust.backendServiceAccount -cne
         [string]$policy.backendServiceAccount -or
         [string]$trust.proxyServiceAccount -cne
             [string]$policy.proxyServiceAccount -or
@@ -234,6 +260,7 @@ $report = [pscustomobject]@{
     opsListenAddress = '127.0.0.1'
     opsListenPort = 18090
     releaseAgentMode = 'ExecuteSignedDeployment'
+    serviceAccountMode = $serviceAccountMode
 }
 if ($OutputFormat -eq 'Json') {
     $report | ConvertTo-Json -Depth 5 -Compress
