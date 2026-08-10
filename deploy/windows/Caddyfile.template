@@ -1,0 +1,31 @@
+{
+    admin off
+}
+
+@SITE_HOST@ {
+    log {
+        output file "@LOG_ROOT@\access.log" {
+            roll_size 25MiB
+            roll_keep 10
+            roll_keep_for 720h
+        }
+        format json
+    }
+    encode zstd gzip
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+    handle /api/* {
+        reverse_proxy 127.0.0.1:18080
+    }
+    @health path /actuator/health*
+    respond @health 404
+    handle {
+        root * "@INSTALL_ROOT@\current\payload\web"
+        try_files {path} /index.html
+        file_server
+    }
+}

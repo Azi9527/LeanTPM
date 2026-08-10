@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leantpm.example/schemas/legacy-layout-inventory.schema.json",
+  "title": "LeanTPM legacy Windows layout inventory",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "status",
+    "readOnly",
+    "legacyRoot",
+    "installRoot",
+    "dataRoot",
+    "canonicalRoots",
+    "blockingCount",
+    "entries"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "status": { "enum": ["PASS", "IMPORT_REQUIRED"] },
+    "readOnly": { "const": true },
+    "legacyRoot": { "type": "string", "minLength": 3 },
+    "installRoot": { "type": "string", "minLength": 3 },
+    "dataRoot": { "type": "string", "minLength": 3 },
+    "canonicalRoots": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "installRootExists",
+        "dataRootExists",
+        "bothAbsent",
+        "missingAllowed"
+      ],
+      "properties": {
+        "installRootExists": { "type": "boolean" },
+        "dataRootExists": { "type": "boolean" },
+        "bothAbsent": { "type": "boolean" },
+        "missingAllowed": { "type": "boolean" }
+      }
+    },
+    "blockingCount": { "type": "integer", "minimum": 0 },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "relativePath",
+          "path",
+          "classification",
+          "exists",
+          "nonEmpty",
+          "itemCount",
+          "inspectionComplete",
+          "reparseDetected"
+        ],
+        "properties": {
+          "relativePath": { "type": "string", "minLength": 1 },
+          "path": { "type": "string", "minLength": 3 },
+          "classification": {
+            "enum": [
+              "ABSENT",
+              "EMPTY",
+              "IMPORT_REQUIRED",
+              "PRESERVE_EXTERNAL",
+              "UNSAFE_REPARSE"
+            ]
+          },
+          "exists": { "type": "boolean" },
+          "nonEmpty": { "type": "boolean" },
+          "itemCount": { "type": "integer", "minimum": 0 },
+          "inspectionComplete": { "type": "boolean" },
+          "reparseDetected": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}

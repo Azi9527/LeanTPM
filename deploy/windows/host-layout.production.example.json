@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "readiness": "INPUT_REQUIRED",
+  "environmentKind": "PRODUCTION",
+  "environmentId": "leantpm-production-cn",
+  "hostId": "0000000000000000000000000000000000000000000000000000000000000000",
+  "installRoot": "D:\\LeanTPM\\App",
+  "dataRoot": "D:\\LeanTPM\\Runtime",
+  "volumeIdentity": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "proxy": {
+    "mode": "EXTERNAL_EXISTING",
+    "serviceId": "caddy",
+    "bindingPolicyPath": "D:\\LeanTPM\\Runtime\\config\\external-caddy-binding.json",
+    "bindingPolicySha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}

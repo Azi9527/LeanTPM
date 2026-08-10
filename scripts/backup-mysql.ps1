@@ -4,11 +4,16 @@ param(
     [string]$MySqlUser = 'root',
     [string]$MySqlPassword = '',
     [string]$Database = 'leantpm',
+    [string]$MySqlSslCaPath = $env:LEANTPM_MYSQL_SSL_CA_PATH,
     [string]$OutputFile = '',
     [switch]$Force
 )
 
 $ErrorActionPreference = 'Stop'
+$resolvedSslCa = (Resolve-Path -LiteralPath $MySqlSslCaPath -ErrorAction Stop).Path
+if (-not (Test-Path -LiteralPath $resolvedSslCa -PathType Leaf)) {
+    throw 'MySqlSslCaPath must identify the host-owned MySQL CA certificate'
+}
 $repositoryRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 if ([string]::IsNullOrWhiteSpace($OutputFile)) {
     $backupDirectory = Join-Path $repositoryRoot 'runtime\backups'
@@ -32,6 +37,8 @@ try {
         "--host=$MySqlHost" `
         "--port=$MySqlPort" `
         "--user=$MySqlUser" `
+        '--ssl-mode=VERIFY_IDENTITY' `
+        "--ssl-ca=$resolvedSslCa" `
         '--single-transaction' `
         '--routines' `
         '--triggers' `

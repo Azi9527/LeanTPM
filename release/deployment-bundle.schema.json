@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leantpm.local/schemas/deployment-bundle.schema.json",
+  "title": "LeanTPM production deployment bundle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "action",
+    "releaseId",
+    "environmentId",
+    "hostId",
+    "hostSnapshotSha256",
+    "createdAtUtc",
+    "expiresAtUtc",
+    "releasePackage",
+    "deploymentPlan"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "action": { "const": "DEPLOY_RELEASE" },
+    "releaseId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$"
+    },
+    "environmentId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{3,128}$"
+    },
+    "hostId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{3,128}$"
+    },
+    "hostSnapshotSha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "createdAtUtc": { "type": "string", "format": "date-time" },
+    "expiresAtUtc": { "type": "string", "format": "date-time" },
+    "releasePackage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "bytes", "sha256", "manifestSha256"],
+      "properties": {
+        "path": { "const": "release-package.zip" },
+        "bytes": { "type": "integer", "minimum": 1, "maximum": 5368709120 },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "manifestSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    },
+    "deploymentPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "bytes",
+        "sha256",
+        "requesterSignaturePath",
+        "requesterSignatureBytes",
+        "requesterSignatureSha256",
+        "approverSignaturePath",
+        "approverSignatureBytes",
+        "approverSignatureSha256"
+      ],
+      "properties": {
+        "path": { "const": "deployment-plan.json" },
+        "bytes": { "type": "integer", "minimum": 2, "maximum": 1048576 },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "requesterSignaturePath": { "const": "deployment-plan.requester.p7s" },
+        "requesterSignatureBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16777216
+        },
+        "requesterSignatureSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "approverSignaturePath": { "const": "deployment-plan.approver.p7s" },
+        "approverSignatureBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16777216
+        },
+        "approverSignatureSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leantpm.example/schemas/migration-classification-v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "entries"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["version", "phase", "backwardCompatible", "requiresDowntime", "reviewStatus", "reviewedBy", "approvedAtUtc", "evidence"],
+        "properties": {
+          "version": { "type": "integer", "minimum": 1 },
+          "phase": { "enum": ["EXPAND", "MIGRATE", "CONTRACT"] },
+          "backwardCompatible": { "type": "boolean" },
+          "requiresDowntime": { "type": "boolean" },
+          "reviewStatus": { "const": "APPROVED" },
+          "reviewedBy": { "type": "string", "minLength": 3 },
+          "approvedAtUtc": { "type": "string", "format": "date-time" },
+          "evidence": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

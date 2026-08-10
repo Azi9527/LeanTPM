@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leantpm.local/schemas/stage-one-evidence.schema.json",
+  "title": "LeanTPM stage-one isolated environment evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "evidenceId",
+    "environmentId",
+    "hostId",
+    "environmentKind",
+    "baselineCommit",
+    "workingTreeClean",
+    "releaseId",
+    "productVersion",
+    "packageSha256",
+    "manifestSha256",
+    "toolchainLockSha256",
+    "startedAtUtc",
+    "completedAtUtc",
+    "scenarios",
+    "residualRisks"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "evidenceId": { "type": "string", "pattern": "^[A-Za-z0-9._-]{3,128}$" },
+    "environmentId": { "type": "string", "pattern": "^[A-Za-z0-9._-]{3,128}$" },
+    "hostId": { "type": "string", "pattern": "^[A-Za-z0-9._-]{3,128}$" },
+    "environmentKind": { "const": "ISOLATED_WINDOWS_SERVER" },
+    "baselineCommit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "workingTreeClean": { "const": true },
+    "releaseId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$" },
+    "productVersion": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$" },
+    "packageSha256": { "$ref": "#/$defs/sha256" },
+    "manifestSha256": { "$ref": "#/$defs/sha256" },
+    "toolchainLockSha256": { "$ref": "#/$defs/sha256" },
+    "startedAtUtc": { "type": "string", "format": "date-time" },
+    "completedAtUtc": { "type": "string", "format": "date-time" },
+    "scenarios": {
+      "type": "array",
+      "minItems": 11,
+      "maxItems": 11,
+      "items": { "$ref": "#/$defs/scenario" }
+    },
+    "residualRisks": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 3, "maxLength": 500 },
+      "maxItems": 50
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "scenarioName": {
+      "enum": [
+        "WINDOWS_SERVICE_LIFECYCLE",
+        "HTTPS_SECRET_HEALTH",
+        "BACKUP_OFFHOST_RECEIPT",
+        "DATABASE_FRESH_UPGRADE",
+        "DATABASE_OLD_SCHEMA_MATRIX",
+        "DATABASE_REPEAT_MIGRATE",
+        "DEPLOYMENT_E2E",
+        "ROLLBACK_E2E",
+        "RESTORE_E2E",
+        "POWER_LOSS_RECOVERY",
+        "FAULT_INJECTION"
+      ]
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "result",
+        "startedAtUtc",
+        "completedAtUtc",
+        "evidenceSha256",
+        "evidenceUri"
+      ],
+      "properties": {
+        "name": { "$ref": "#/$defs/scenarioName" },
+        "result": { "const": "PASS" },
+        "startedAtUtc": { "type": "string", "format": "date-time" },
+        "completedAtUtc": { "type": "string", "format": "date-time" },
+        "evidenceSha256": { "$ref": "#/$defs/sha256" },
+        "evidenceUri": {
+          "type": "string",
+          "pattern": "^(?:evidence|worm)://[A-Za-z0-9._/@:-]{3,500}$"
+        }
+      }
+    }
+  }
+}

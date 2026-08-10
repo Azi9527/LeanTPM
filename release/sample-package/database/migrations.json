@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "engine": "mysql",
+  "migrationTool": "flyway",
+  "schemaFrom": 50,
+  "schemaTo": 50,
+  "phase": "NONE",
+  "backwardCompatible": true,
+  "requiresDowntime": false,
+  "classificationConfirmed": true,
+  "classificationSha256": null,
+  "migrations": []
+}

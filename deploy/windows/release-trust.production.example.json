@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "environmentId": "leantpm-production",
+  "hostId": "REPLACE_WITH_IMMUTABLE_WINDOWS_HOST_ID",
+  "publicHost": "tpm.example.com",
+  "backendServiceAccount": "CONTOSO\\leantpm-backend$",
+  "proxyServiceAccount": "CONTOSO\\leantpm-proxy$",
+  "opsControlServiceAccount": "CONTOSO\\leantpm-ops$",
+  "releaseAgentServiceAccount": "CONTOSO\\leantpm-agent$",
+  "javaSha256": "REPLACE_WITH_PINNED_JAVA_SHA256",
+  "winSWSha256": "REPLACE_WITH_PINNED_WINSW_SHA256",
+  "caddySha256": "REPLACE_WITH_PINNED_CADDY_SHA256",
+  "manifestCertificateThumbprint": "REPLACE_WITH_PINNED_RELEASE_SIGNER_THUMBPRINT",
+  "backupManifestCertificateThumbprint": "REPLACE_WITH_PINNED_BACKUP_SIGNER_THUMBPRINT",
+  "scriptSignerThumbprint": "REPLACE_WITH_PINNED_AUTHENTICODE_SIGNER_THUMBPRINT",
+  "requesterSigners": [
+    {
+      "identity": "release.requester@example.com",
+      "thumbprint": "REPLACE_WITH_REQUESTER_CERTIFICATE_THUMBPRINT"
+    }
+  ],
+  "approverSigners": [
+    {
+      "identity": "release.approver@example.com",
+      "thumbprint": "REPLACE_WITH_DIFFERENT_APPROVER_CERTIFICATE_THUMBPRINT"
+    }
+  ]
+}

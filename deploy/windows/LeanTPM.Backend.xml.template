@@ -1,0 +1,25 @@
+<service>
+  <id>LeanTPM.Backend</id>
+  <name>LeanTPM Backend</name>
+  <description>LeanTPM business backend. Managed only by approved LeanTPM release tooling.</description>
+  <executable>%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe</executable>
+  <arguments>-NoProfile -NonInteractive -ExecutionPolicy AllSigned -File "@SERVICE_ROOT@\Start-LeanTpmBackend.ps1" -InstallRoot "@INSTALL_ROOT@" -DataRoot "@DATA_ROOT@" -JavaExecutable "@JAVA_EXECUTABLE@"</arguments>
+  <workingdirectory>@DATA_ROOT@</workingdirectory>
+  <startmode>Automatic</startmode>
+  <delayedAutoStart>true</delayedAutoStart>
+  <stoptimeout>30sec</stoptimeout>
+  <logpath>@DATA_ROOT@\logs</logpath>
+  <onfailure action="restart" delay="10 sec" />
+  <onfailure action="restart" delay="30 sec" />
+  <resetfailure>1 hour</resetfailure>
+  <log mode="roll-by-size-time">
+    <sizeThreshold>10485760</sizeThreshold>
+    <pattern>yyyyMMdd</pattern>
+    <autoRollAtTime>00:00:00</autoRollAtTime>
+    <zipOlderThanNumDays>7</zipOlderThanNumDays>
+    <zipDateFormat>yyyyMM</zipDateFormat>
+  </log>
+  <serviceaccount>
+    <username>@SERVICE_ACCOUNT@</username>
+  </serviceaccount>
+</service>

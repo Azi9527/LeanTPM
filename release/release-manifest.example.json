@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "releaseId": "leantpm-1.0.1-test.1",
+  "releaseTier": "TEST",
+  "productVersion": "1.0.1",
+  "createdAtUtc": "2026-08-08T04:00:00Z",
+  "source": {
+    "commit": "2185536ea9da0a323b27f53dcf849b818ea19069",
+    "dirty": false,
+    "treeSha256": "8cfee5c2b57d6101c03d904f895c6034d12c94ad247352c02c144f84f9ceaefb",
+    "sourceDateEpoch": 1786161320
+  },
+  "components": {
+    "backend": { "version": "1.0.1" },
+    "web": { "version": "1.0.1" },
+    "app": {
+      "version": "1.0.1",
+      "versionCode": 101,
+      "minimumSupportedVersionCode": 101
+    },
+    "database": {
+      "engine": "mysql",
+      "migrationTool": "flyway",
+      "schemaFrom": 50,
+      "schemaTo": 50,
+      "phase": "NONE",
+      "backwardCompatible": true,
+      "requiresDowntime": false
+    }
+  },
+  "compatibility": {
+    "matrixPath": "operations/compatibility-matrix.json",
+    "unknownCombinationPolicy": "BLOCKED"
+  },
+  "artifacts": [
+    {
+      "component": "app",
+      "path": "app/LeanTPM.apk",
+      "size": 76,
+      "sha256": "3e6aab8bbb9e83f7a473e1cb1ae37e5d85d322ae300c4b5159fb68603198fadf",
+      "mediaType": "application/vnd.android.package-archive"
+    },
+    {
+      "component": "backend",
+      "path": "backend/leantpm-backend.jar",
+      "size": 68,
+      "sha256": "1c81e6ca03efa1d2615375317afa070277f81ab6150498453312b4c417d00bcd",
+      "mediaType": "application/java-archive"
+    },
+    {
+      "component": "database",
+      "path": "database/migrations.json",
+      "size": 278,
+      "sha256": "e3b3a891b563496bd2f07c7fbe44925433f7e8d53bb2f8e4cad86d0abcbc9716",
+      "mediaType": "application/json"
+    },
+    {
+      "component": "operations",
+      "path": "operations/compatibility-matrix.json",
+      "size": 421,
+      "sha256": "a49cc7e6c5ae66f57d2523c951142fb90e33e866a120364202d47a4192845b64",
+      "mediaType": "application/json"
+    },
+    {
+      "component": "web",
+      "path": "web/index.html",
+      "size": 63,
+      "sha256": "11f1b0c5b87512aacc07f3679e7f2ed44b29f4df1e0c5edcf8b8518c3ee03dec",
+      "mediaType": "text/html"
+    }
+  ],
+  "signing": {
+    "algorithm": "CMS-SHA256",
+    "required": false,
+    "signaturePath": null,
+    "certificateThumbprint": null
+  },
+  "rollback": {
+    "class": "RECOVERY_REQUIRED",
+    "previousReleaseRequired": true,
+    "databaseRestoreRequired": true,
+    "instructions": "Do not start the previous application against persistent security state written by this release. Complete forward recovery or restore into a new validated target under recovery inhibit."
+  }
+}

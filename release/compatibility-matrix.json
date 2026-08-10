@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "productVersion": "1.0.1",
+  "databaseSchemaVersion": 50,
+  "combinations": [
+    {
+      "backend": "1.0.1",
+      "web": "1.0.1",
+      "appVersionCodeRange": { "minimum": 101, "maximum": 101 },
+      "databaseSchema": 50,
+      "status": "CANDIDATE_UNVERIFIED",
+      "notes": "Repository candidate only. Formal APP inventory, signing, Windows and database drills remain required."
+    },
+    {
+      "backend": "1.0.0",
+      "web": "1.0.1",
+      "appVersionCodeRange": { "minimum": 2, "maximum": 100 },
+      "databaseSchema": 50,
+      "status": "BLOCKED",
+      "notes": "The previous mobile contract probes an endpoint removed by this release and must upgrade before connecting."
+    }
+  ],
+  "unknownCombinationPolicy": "BLOCKED"
+}
