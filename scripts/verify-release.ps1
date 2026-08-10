@@ -13,6 +13,7 @@ param(
     [string]$TrustedManifestCertificateThumbprint = '',
     [string]$CanonicalAppApkPath = '',
     [string]$TrustedAppSignerSha256 = '',
+    [switch]$ReleaseWithoutApp,
     [string]$StageOneEvidencePath = '',
     [string]$StageOneEvidenceSignaturePath = '',
     [string]$TrustedStageOneEvidenceCertificateThumbprint = '',
@@ -330,7 +331,22 @@ try {
         }
     }
 
-    if ([string]::IsNullOrWhiteSpace($CanonicalAppApkPath) -or
+    if ($ReleaseWithoutApp) {
+        if ($null -eq $script:verifiedPackageReport -or
+                $script:verifiedPackageReport.PSObject.Properties.Name -notcontains
+                    'appArtifactIncluded' -or
+                [bool]$script:verifiedPackageReport.appArtifactIncluded -or
+                -not [string]::IsNullOrWhiteSpace($CanonicalAppApkPath) -or
+                -not [string]::IsNullOrWhiteSpace($TrustedAppSignerSha256)) {
+            throw 'ReleaseWithoutApp requires a verified APP-excluded package and no APP signing inputs'
+        }
+        $results.Add([pscustomobject]@{
+            Step = 'Canonical LeanTPM-APP package'
+            Result = 'NOT_INCLUDED'
+            Seconds = 0
+        })
+    }
+    elseif ([string]::IsNullOrWhiteSpace($CanonicalAppApkPath) -or
             [string]::IsNullOrWhiteSpace($TrustedAppSignerSha256) -or
             [string]::IsNullOrWhiteSpace($verifiedPackageRoot)) {
         $releaseable = $false
@@ -435,5 +451,5 @@ else { $results | Format-Table -AutoSize }
 
 if ($null -ne $pipelineFailure) { throw $pipelineFailure }
 if (-not $releaseable -and -not $AllowPartialVerification) {
-    throw 'NOT_RELEASEABLE: database, signed package, and canonical signed LeanTPM-APP evidence are required'
+    throw 'NOT_RELEASEABLE: database, signed package, and required APP evidence are incomplete'
 }

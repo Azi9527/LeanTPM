@@ -12,6 +12,7 @@ param(
     [Parameter(Mandatory)][ValidateSet('NONE', 'EXPAND', 'MIGRATE', 'CONTRACT')]
     [string]$DatabasePhase,
     [switch]$RequiresDowntime,
+    [switch]$ExcludeAppArtifact,
     [switch]$AllowUnsignedTestManifest,
     [switch]$AllowSyntheticTestBaseline,
     [switch]$EmitUnsignedSigningCandidate,
@@ -139,6 +140,15 @@ $artifacts = @(
         }
 )
 if ($artifacts.Count -eq 0) { throw 'Package payload is empty' }
+$appArtifacts = @($artifacts | Where-Object { [string]$_.component -ceq 'app' })
+if ($ExcludeAppArtifact) {
+    if ($appArtifacts.Count -ne 0) {
+        throw 'ExcludeAppArtifact requires a payload with no APP artifacts'
+    }
+}
+elseif (@($appArtifacts | Where-Object { [string]$_.path -ceq 'app/LeanTPM.apk' }).Count -ne 1) {
+    throw 'APP-included payload must contain exactly one app/LeanTPM.apk'
+}
 $migrationCatalogPath = Join-Path $payload 'database\migrations.json'
 $migrationCatalog = Get-Content -LiteralPath $migrationCatalogPath -Encoding utf8 -Raw |
     ConvertFrom-Json
@@ -194,9 +204,10 @@ $manifest = [ordered]@{
         backend = [ordered]@{ version = [string]$version.productVersion }
         web = [ordered]@{ version = [string]$version.productVersion }
         app = [ordered]@{
-            version = [string]$version.productVersion
+            version = [string]$version.appVersionName
             versionCode = [int]$version.appVersionCode
             minimumSupportedVersionCode = [int]$version.minimumSupportedAppVersionCode
+            includedInRelease = -not [bool]$ExcludeAppArtifact
         }
         database = [ordered]@{
             engine = 'mysql'

@@ -4,6 +4,8 @@ All notable LeanTPM changes are recorded here. Product versions follow SemVer; d
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-08-11
+
 ### Added
 
 - Machine-readable unified version contract and compatibility matrix.
@@ -35,7 +37,8 @@ All notable LeanTPM changes are recorded here. Product versions follow SemVer; d
 
 ### Operations
 
-- Candidate product version is unified as 1.0.1 with Android versionCode 101.
+- Product version is frozen as 1.0.2 for Backend, PC Web, OpsControl and ReleaseAgent.
+- The published APP remains 1.0.1 with Android versionCode 101 and is excluded from the PC/API deployment payload.
 - Android clients below versionCode 101 are blocked because the public login contract no longer contains captcha fields or endpoints.
 - This candidate is not a production release, Git tag or deployment approval.
 

@@ -183,7 +183,7 @@ foreach ($componentName in @('backend', 'web', 'app', 'database')) {
     Require-Property $manifest.components $componentName 'components'
 }
 Assert-OnlyProperties $manifest.components @('backend', 'web', 'app', 'database') 'components'
-foreach ($componentName in @('backend', 'web', 'app')) {
+foreach ($componentName in @('backend', 'web')) {
     $component = $manifest.components.PSObject.Properties[$componentName].Value
     Require-Property $component 'version' "components.$componentName"
     if ([string]$component.version -cne [string]$manifest.productVersion) {
@@ -193,15 +193,28 @@ foreach ($componentName in @('backend', 'web', 'app')) {
 Assert-OnlyProperties $manifest.components.backend @('version') 'components.backend'
 Assert-OnlyProperties $manifest.components.web @('version') 'components.web'
 Assert-OnlyProperties $manifest.components.app @(
-    'version', 'versionCode', 'minimumSupportedVersionCode'
+    'version', 'versionCode', 'minimumSupportedVersionCode', 'includedInRelease'
 ) 'components.app'
+Require-Property $manifest.components.app 'version' 'components.app'
 Require-Property $manifest.components.app 'versionCode' 'components.app'
 Require-Property $manifest.components.app 'minimumSupportedVersionCode' 'components.app'
-if ([int64]$manifest.components.app.versionCode -lt 1 -or
+$appSemVerPattern = '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$'
+if ([string]$manifest.components.app.version -notmatch $appSemVerPattern -or
+        [int64]$manifest.components.app.versionCode -lt 1 -or
         [int64]$manifest.components.app.minimumSupportedVersionCode -lt 1 -or
         [int64]$manifest.components.app.minimumSupportedVersionCode -gt
         [int64]$manifest.components.app.versionCode) {
     throw 'APP versionCode values are invalid or minimum exceeds current'
+}
+$appIncludedProperty = $manifest.components.app.PSObject.Properties['includedInRelease']
+if ($null -ne $appIncludedProperty -and $appIncludedProperty.Value -isnot [bool]) {
+    throw 'components.app.includedInRelease must be a JSON boolean'
+}
+$appArtifactIncluded = if ($null -eq $appIncludedProperty) {
+    $true
+}
+else {
+    [bool]$appIncludedProperty.Value
 }
 Require-Property $manifest.components.database 'schemaTo' 'components.database'
 Require-Property $manifest.components.database 'phase' 'components.database'
@@ -348,9 +361,14 @@ if (-not $approvedPaths.Contains([string]$manifest.compatibility.matrixPath)) {
 $requiredCoreArtifacts = [ordered]@{
     'backend/leantpm-backend.jar' = 'backend'
     'web/index.html' = 'web'
-    'app/LeanTPM.apk' = 'app'
     'database/migrations.json' = 'database'
     'operations/compatibility-matrix.json' = 'operations'
+}
+if ($appArtifactIncluded) {
+    $requiredCoreArtifacts['app/LeanTPM.apk'] = 'app'
+}
+elseif (@($artifacts | Where-Object { [string]$_.component -ceq 'app' }).Count -ne 0) {
+    throw 'APP-excluded release manifest must not list APP artifacts'
 }
 foreach ($requiredPath in $requiredCoreArtifacts.Keys) {
     $coreMatches = @($artifacts | Where-Object {
@@ -502,6 +520,7 @@ $report = [pscustomobject]@{
     productVersion = [string]$manifest.productVersion
     databaseSchemaFrom = [int]$manifest.components.database.schemaFrom
     databaseSchemaVersion = [int]$manifest.components.database.schemaTo
+    appArtifactIncluded = $appArtifactIncluded
     artifactCount = $artifacts.Count
     packageRoot = $resolvedPackageRoot
     signatureVerified = $signatureRequired

@@ -1,15 +1,15 @@
 {
   "schemaVersion": 1,
-  "productVersion": "1.0.1",
+  "productVersion": "1.0.2",
   "databaseSchemaVersion": 50,
   "combinations": [
     {
-      "backend": "1.0.1",
-      "web": "1.0.1",
+      "backend": "1.0.2",
+      "web": "1.0.2",
       "appVersionCodeRange": { "minimum": 101, "maximum": 101 },
       "databaseSchema": 50,
       "status": "CANDIDATE_UNVERIFIED",
-      "notes": "Repository candidate only. Formal APP inventory, signing, Windows and database drills remain required."
+      "notes": "PC/API 1.0.2 candidate with APP 1.0.1 versionCode 101 compatibility; formal signing, Windows and database drills remain required."
     },
     {
       "backend": "1.0.0",

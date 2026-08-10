@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "releaseId": "leantpm-1.0.1-test.1",
+  "releaseId": "leantpm-1.0.2-test.1",
   "releaseTier": "TEST",
-  "productVersion": "1.0.1",
+  "productVersion": "1.0.2",
   "createdAtUtc": "2026-08-08T04:00:00Z",
   "source": {
     "commit": "2185536ea9da0a323b27f53dcf849b818ea19069",
@@ -11,12 +11,13 @@
     "sourceDateEpoch": 1786161320
   },
   "components": {
-    "backend": { "version": "1.0.1" },
-    "web": { "version": "1.0.1" },
+    "backend": { "version": "1.0.2" },
+    "web": { "version": "1.0.2" },
     "app": {
       "version": "1.0.1",
       "versionCode": 101,
-      "minimumSupportedVersionCode": 101
+      "minimumSupportedVersionCode": 101,
+      "includedInRelease": true
     },
     "database": {
       "engine": "mysql",
@@ -58,7 +59,7 @@
       "component": "operations",
       "path": "operations/compatibility-matrix.json",
       "size": 421,
-      "sha256": "a49cc7e6c5ae66f57d2523c951142fb90e33e866a120364202d47a4192845b64",
+      "sha256": "42a4ee69dd9f53096bd9c39e73b89f57325f4082e6b1170cc73a0b16a97ead00",
       "mediaType": "application/json"
     },
     {

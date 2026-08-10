@@ -54,6 +54,9 @@ if ([int]$version.schemaVersion -ne 1) {
 if ([string]$version.productVersion -notmatch $semVerPattern) {
     $errors.Add("Invalid SemVer productVersion: $($version.productVersion)")
 }
+if ([string]$version.appVersionName -notmatch $semVerPattern) {
+    $errors.Add("Invalid SemVer appVersionName: $($version.appVersionName)")
+}
 if ([int64]$version.appVersionCode -lt 1 -or [int64]$version.appVersionCode -gt [int]::MaxValue) {
     $errors.Add('appVersionCode must be a positive 32-bit integer')
 }
@@ -88,8 +91,8 @@ Add-Mismatch $errors 'frontend/package-lock.json version' `
     $frontendLockVersions[0].Groups[1].Value $version.productVersion
 Add-Mismatch $errors 'frontend/package-lock.json root version' `
     $frontendLockVersions[1].Groups[1].Value $version.productVersion
-Add-Mismatch $errors 'LeanTPM-APP/package.json version' $appPackage.version $version.productVersion
-Add-Mismatch $errors 'LeanTPM-APP/manifest.json versionName' $appManifest.versionName $version.productVersion
+Add-Mismatch $errors 'LeanTPM-APP/package.json version' $appPackage.version $version.appVersionName
+Add-Mismatch $errors 'LeanTPM-APP/manifest.json versionName' $appManifest.versionName $version.appVersionName
 Add-Mismatch $errors 'LeanTPM-APP/manifest.json versionCode' $appManifest.versionCode $version.appVersionCode
 Add-Mismatch $errors 'LeanTPM-APP Android package name' `
     $appManifest.'app-plus'.distribute.android.packagename $version.appPackageName
@@ -98,7 +101,7 @@ Add-Mismatch $errors 'compatibility matrix databaseSchemaVersion' $compatibility
 Add-Mismatch $errors 'example manifest productVersion' $exampleManifest.productVersion $version.productVersion
 Add-Mismatch $errors 'example manifest backend version' $exampleManifest.components.backend.version $version.productVersion
 Add-Mismatch $errors 'example manifest web version' $exampleManifest.components.web.version $version.productVersion
-Add-Mismatch $errors 'example manifest app version' $exampleManifest.components.app.version $version.productVersion
+Add-Mismatch $errors 'example manifest app version' $exampleManifest.components.app.version $version.appVersionName
 Add-Mismatch $errors 'example manifest app versionCode' $exampleManifest.components.app.versionCode $version.appVersionCode
 Add-Mismatch $errors 'example manifest minimum app versionCode' `
     $exampleManifest.components.app.minimumSupportedVersionCode $version.minimumSupportedAppVersionCode
@@ -116,7 +119,7 @@ if (-not $gradleVersionName.Success -or -not $gradleVersionCode.Success) {
     $errors.Add('Unable to read Android versionName/versionCode from frontend/android/app/build.gradle')
 }
 else {
-    Add-Mismatch $errors 'Capacitor Android versionName' $gradleVersionName.Groups[1].Value $version.productVersion
+    Add-Mismatch $errors 'Capacitor Android versionName' $gradleVersionName.Groups[1].Value $version.appVersionName
     Add-Mismatch $errors 'Capacitor Android versionCode' $gradleVersionCode.Groups[1].Value $version.appVersionCode
 }
 
@@ -129,7 +132,7 @@ if (-not $fallbackVersion.Success -or -not $fallbackCode.Success) {
     $errors.Add('Unable to read uni-app runtime fallback version')
 }
 else {
-    Add-Mismatch $errors 'uni-app runtime fallback version' $fallbackVersion.Groups[1].Value $version.productVersion
+    Add-Mismatch $errors 'uni-app runtime fallback version' $fallbackVersion.Groups[1].Value $version.appVersionName
     Add-Mismatch $errors 'uni-app runtime fallback versionCode' $fallbackCode.Groups[1].Value $version.appVersionCode
 }
 
@@ -161,6 +164,7 @@ else {
 $report = [pscustomobject]@{
     status = if ($errors.Count -eq 0) { 'PASS' } else { 'FAIL' }
     productVersion = [string]$version.productVersion
+    appVersionName = [string]$version.appVersionName
     appVersionCode = [int]$version.appVersionCode
     appPackageName = [string]$version.appPackageName
     minimumSupportedAppVersionCode = [int]$version.minimumSupportedAppVersionCode

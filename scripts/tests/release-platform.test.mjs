@@ -445,7 +445,8 @@ test('accepts the canonical version only when every component and schema agrees'
   assert.equal(result.status, 0, combinedOutput(result))
   const report = JSON.parse(result.stdout.trim())
   assert.equal(report.status, 'PASS')
-  assert.equal(report.productVersion, '1.0.1')
+  assert.equal(report.productVersion, '1.0.2')
+  assert.equal(report.appVersionName, '1.0.1')
   assert.equal(report.appVersionCode, 101)
   assert.equal(report.minimumSupportedAppVersionCode, 101)
   assert.equal(report.appPackageName, 'com.leantpm.mobile')
@@ -876,7 +877,7 @@ test('builds byte-for-byte deterministic release bundles and verifies the archiv
     assert.equal(verified.status, 0, combinedOutput(verified))
     const report = JSON.parse(verified.stdout.trim())
     assert.equal(report.status, 'PASS')
-    assert.equal(report.releaseId, 'leantpm-1.0.1-test.1')
+    assert.equal(report.releaseId, 'leantpm-1.0.2-test.1')
 
     const extracted = path.join(temporaryRoot, 'verified-extraction')
     const extractedResult = invokePowerShell('scripts/Test-ReleasePackage.ps1', [
@@ -1108,7 +1109,7 @@ test('builds backup, deployment and rollback plans without touching a database o
       schemaVersion: 1,
       environmentName: 'isolated-test',
       environmentKind: 'NON_PRODUCTION',
-      releaseId: 'leantpm-1.0.1-test.1',
+      releaseId: 'leantpm-1.0.2-test.1',
       approvalId: 'approval-test-001',
       packagePath,
       installRoot: install,
@@ -1116,7 +1117,7 @@ test('builds backup, deployment and rollback plans without touching a database o
       backupRoot: backups,
       serviceId: 'LeanTPM.Backend',
       healthUri: 'http://127.0.0.1:18080/actuator/health/readiness',
-      runtimeConfigId: 'leantpm-1.0.1-test.1-config',
+      runtimeConfigId: 'leantpm-1.0.2-test.1-config',
       runtimeConfigSha256: 'a'.repeat(64),
     }, null, 2))
     beforePlan = snapshotTree(temporaryRoot)
@@ -1142,7 +1143,7 @@ test('builds backup, deployment and rollback plans without touching a database o
       environmentKind: 'NON_PRODUCTION',
       rollbackId: 'rollback-test-001',
       approvalId: 'approval-test-002',
-      failedReleaseId: 'leantpm-1.0.1-test.1',
+      failedReleaseId: 'leantpm-1.0.2-test.1',
       targetReleaseId: 'leantpm-1.0.0',
       installRoot: install,
       dataRoot: temporaryRoot,
@@ -1261,7 +1262,7 @@ test('generates a canonical manifest from payload bytes instead of hand-maintain
     const result = invokePowerShell('scripts/New-ReleaseManifest.ps1', [
       '-PayloadRoot', 'release/sample-package',
       '-OutputPath', output,
-      '-ReleaseId', 'leantpm-1.0.1-generated-test',
+      '-ReleaseId', 'leantpm-1.0.2-generated-test',
       '-ReleaseTier', 'TEST',
       '-SourceCommit', '2185536ea9da0a323b27f53dcf849b818ea19069',
       '-BaselinePath', baselinePath,
@@ -1274,7 +1275,7 @@ test('generates a canonical manifest from payload bytes instead of hand-maintain
     ])
     assert.equal(result.status, 0, combinedOutput(result))
     const manifest = JSON.parse(fs.readFileSync(output, 'utf8'))
-    assert.equal(manifest.productVersion, '1.0.1')
+    assert.equal(manifest.productVersion, '1.0.2')
     assert.equal(manifest.components.database.schemaTo, 50)
     assert.equal(manifest.artifacts.length, 5)
     for (const artifact of manifest.artifacts) {
@@ -1294,6 +1295,92 @@ test('generates a canonical manifest from payload bytes instead of hand-maintain
     )
     assert.match(signer, /SignedCms/)
     assert.match(signer, /ConfirmSigning/)
+  } finally {
+    fs.rmSync(temporaryRoot, { recursive: true, force: true })
+  }
+})
+
+test('generates and validates a PC API release manifest without an APP artifact', () => {
+  const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'leantpm-no-app-manifest-'))
+  try {
+    const payload = path.join(temporaryRoot, 'payload')
+    fs.cpSync(path.join(repositoryRoot, 'release', 'sample-package'), payload, { recursive: true })
+    fs.rmSync(path.join(payload, 'app'), { recursive: true, force: true })
+
+    const matrixPath = path.join(payload, 'operations', 'compatibility-matrix.json')
+    const matrix = JSON.parse(fs.readFileSync(matrixPath, 'utf8'))
+    matrix.productVersion = '1.0.2'
+    matrix.combinations[0].backend = '1.0.2'
+    matrix.combinations[0].web = '1.0.2'
+    fs.writeFileSync(matrixPath, JSON.stringify(matrix, null, 2))
+
+    const baselinePath = path.join(temporaryRoot, 'baseline.json')
+    fs.writeFileSync(baselinePath, JSON.stringify({
+      schemaVersion: 1,
+      status: 'PASS',
+      commit: '2185536ea9da0a323b27f53dcf849b818ea19069',
+      dirty: false,
+      sourceDateEpoch: 1786161320,
+      fileTreeSha256: 'a'.repeat(64),
+    }))
+    const output = path.join(temporaryRoot, 'release-manifest.json')
+    const generated = invokePowerShell('scripts/New-ReleaseManifest.ps1', [
+      '-PayloadRoot', payload,
+      '-OutputPath', output,
+      '-ReleaseId', 'leantpm-1.0.2-pc-api-test',
+      '-ReleaseTier', 'TEST',
+      '-SourceCommit', '2185536ea9da0a323b27f53dcf849b818ea19069',
+      '-BaselinePath', baselinePath,
+      '-AllowSyntheticTestBaseline',
+      '-CreatedAtUtc', '2026-08-11T04:00:00Z',
+      '-SchemaFrom', '50',
+      '-DatabasePhase', 'NONE',
+      '-ExcludeAppArtifact',
+      '-AllowUnsignedTestManifest',
+      '-OutputFormat', 'Json',
+    ])
+    assert.equal(generated.status, 0, combinedOutput(generated))
+
+    const manifest = JSON.parse(fs.readFileSync(output, 'utf8'))
+    assert.equal(manifest.productVersion, '1.0.2')
+    assert.equal(manifest.components.app.version, '1.0.1')
+    assert.equal(manifest.components.app.versionCode, 101)
+    assert.equal(manifest.components.app.includedInRelease, false)
+    assert.equal(manifest.artifacts.some((artifact) => artifact.component === 'app'), false)
+
+    const invalidTypeManifest = path.join(temporaryRoot, 'release-manifest-invalid-app-flag.json')
+    manifest.components.app.includedInRelease = 0
+    fs.writeFileSync(invalidTypeManifest, JSON.stringify(manifest, null, 2))
+    const invalidType = invokePowerShell('scripts/Test-ReleaseManifest.ps1', [
+      '-ManifestPath', invalidTypeManifest,
+      '-PackageRoot', payload,
+      '-AllowUnsignedTestManifest',
+      '-OutputFormat', 'Json',
+    ])
+    assert.notEqual(invalidType.status, 0, 'includedInRelease must be a JSON boolean')
+    manifest.components.app.includedInRelease = false
+    fs.writeFileSync(output, JSON.stringify(manifest, null, 2))
+
+    const verified = invokePowerShell('scripts/Test-ReleaseManifest.ps1', [
+      '-ManifestPath', output,
+      '-PackageRoot', payload,
+      '-AllowUnsignedTestManifest',
+      '-OutputFormat', 'Json',
+    ])
+    assert.equal(verified.status, 0, combinedOutput(verified))
+    const report = JSON.parse(verified.stdout.trim())
+    assert.equal(report.status, 'PASS')
+    assert.equal(report.appArtifactIncluded, false)
+
+    fs.mkdirSync(path.join(payload, 'app'))
+    fs.writeFileSync(path.join(payload, 'app', 'LeanTPM.apk'), 'unexpected unsigned app')
+    const contaminated = invokePowerShell('scripts/Test-ReleaseManifest.ps1', [
+      '-ManifestPath', output,
+      '-PackageRoot', payload,
+      '-AllowUnsignedTestManifest',
+      '-OutputFormat', 'Json',
+    ])
+    assert.notEqual(contaminated.status, 0, 'excluded APP payload must fail closed if an APK appears')
   } finally {
     fs.rmSync(temporaryRoot, { recursive: true, force: true })
   }

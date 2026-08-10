@@ -179,6 +179,7 @@ try {
         productVersion = [string]$validation.productVersion
         databaseSchemaFrom = [int]$validation.databaseSchemaFrom
         databaseSchemaVersion = [int]$validation.databaseSchemaVersion
+        appArtifactIncluded = [bool]$validation.appArtifactIncluded
         artifactCount = [int]$validation.artifactCount
         package = $packageFile.FullName
         bytes = $packageFile.Length
