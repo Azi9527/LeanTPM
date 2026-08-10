@@ -1,0 +1,99 @@
+{
+    "schemaVersion":  1,
+    "evidenceStatus":  "SUPERSEDED",
+    "supersededAt":  "2026-08-08T19:20:00+08:00",
+    "supersededBy":  "../2026-08-08-no-redis-cloud-preparation/validation/offline-validation.json",
+    "supersededReason":  "The no-Redis candidate source and test inventory changed after this aggregate was generated.",
+    "startedAtUtc":  "2026-08-08T08:42:51.3313355Z",
+    "completedAtUtc":  "2026-08-08T08:44:35.7914252Z",
+    "baselineCommit":  "2185536ea9da0a323b27f53dcf849b818ea19069",
+    "workingTreeDirty":  true,
+    "toolchainLockSha256":  "5c71ae94462ed9a6fa62f51da0d8dd29182cd72a7f227d4cea9e93faf8d9b95b",
+    "productVersion":  "1.0.1",
+    "result":  "NOT_RELEASEABLE",
+    "releaseable":  false,
+    "steps":  [
+                  {
+                      "Step":  "Unified version contract",
+                      "Result":  "PASS",
+                      "Seconds":  0.1
+                  },
+                  {
+                      "Step":  "Clean release candidate source",
+                      "Result":  "NOT_RELEASEABLE",
+                      "Seconds":  0
+                  },
+                  {
+                      "Step":  "Pinned release toolchain",
+                      "Result":  "NOT_RELEASEABLE",
+                      "Seconds":  0
+                  },
+                  {
+                      "Step":  "Git whitespace check",
+                      "Result":  "PASS",
+                      "Seconds":  0.2
+                  },
+                  {
+                      "Step":  "Release platform contract and fault tests",
+                      "Result":  "PASS",
+                      "Seconds":  20.6,
+                      "Details":  {
+                                      "tests":  53,
+                                      "passed":  53,
+                                      "failed":  0,
+                                      "evidencePath":  "C:\\Users\\Mayn\\.codex\\worktrees\\fca1\\LeanTPM\\reports\\ai\\2026-08-08-release-platform\\release-platform-tests.tap",
+                                      "evidenceSha256":  "c2d8b5476e4f2151859541577e5e7b3257f7505ae520f52ad9da5cfec8399bdf"
+                                  }
+                  },
+                  {
+                      "Step":  "Backend unit tests",
+                      "Result":  "PASS",
+                      "Seconds":  28.2
+                  },
+                  {
+                      "Step":  "MySQL integration tests",
+                      "Result":  "NOT_RELEASEABLE",
+                      "Seconds":  0
+                  },
+                  {
+                      "Step":  "Frontend clean dependency install",
+                      "Result":  "PASS",
+                      "Seconds":  19.7
+                  },
+                  {
+                      "Step":  "Frontend type check",
+                      "Result":  "PASS",
+                      "Seconds":  10.7
+                  },
+                  {
+                      "Step":  "Frontend production build",
+                      "Result":  "PASS",
+                      "Seconds":  20.5
+                  },
+                  {
+                      "Step":  "Frontend dependency audit",
+                      "Result":  "PASS",
+                      "Seconds":  1.1
+                  },
+                  {
+                      "Step":  "LeanTPM-APP checks and tests",
+                      "Result":  "PASS",
+                      "Seconds":  3.1
+                  },
+                  {
+                      "Step":  "Signed release package",
+                      "Result":  "NOT_RELEASEABLE",
+                      "Seconds":  0
+                  },
+                  {
+                      "Step":  "Canonical LeanTPM-APP package",
+                      "Result":  "NOT_RELEASEABLE",
+                      "Seconds":  0
+                  },
+                  {
+                      "Step":  "Stage-one isolated environment evidence",
+                      "Result":  "NOT_RELEASEABLE",
+                      "Seconds":  0
+                  }
+              ]
+}

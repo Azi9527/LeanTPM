@@ -4,7 +4,9 @@
 
 | Flag | 状态 | 默认值 | 保留原因 | 退休条件 | 建议时间 | 回滚方式 |
 |---|---|---|---|---|---|---|
-| _示例占位，使用时删除_ | 规划中 | OFF | | | | |
+| `ops-auto-remediation` | 长期保留 | OFF | 固定 Windows 服务自动启动具有生产副作用，必须能独立关闭 | 建立经签名 Agent 修复协议并完成隔离 Windows 故障演练后重新评审 | 2026-Q4 | 设置 `leantpm.ops.remediation.enabled=false` 并重启控制面；只读监控继续工作 |
+| `ops-pushplus-notifications` | 长期保留 | OFF | 外部消息涉及令牌、额度和接收范围，必须由生产配置显式启用 | 若迁移到统一企业告警平台并完成双通道切换后删除 | 2026-Q4 | 设置 `leantpm.ops.notifications.pushplus.enabled=false` 并重启控制面；监控和审计不受影响 |
+| `ops-host-resource-monitoring` | 长期保留 | ON | 只读展示运行控制面的主机资源；需能在受限环境快速恢复纯占位状态 | 基础主机可观测能力长期保留 | 长期 | 设置 `leantpm.ops.monitoring.host-resources-enabled=false` 并重启控制面；完整监控和发布功能不受影响 |
 
 登记规则：
 

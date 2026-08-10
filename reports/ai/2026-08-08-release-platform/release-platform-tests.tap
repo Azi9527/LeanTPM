@@ -1,0 +1,328 @@
+TAP version 13
+# Subtest: accepts the canonical version only when every component and schema agrees
+ok 1 - accepts the canonical version only when every component and schema agrees
+  ---
+  duration_ms: 328.1376
+  type: 'test'
+  ...
+# Subtest: rejects an unsigned manifest unless the caller explicitly allows a test manifest
+ok 2 - rejects an unsigned manifest unless the caller explicitly allows a test manifest
+  ---
+  duration_ms: 869.6487
+  type: 'test'
+  ...
+# Subtest: rejects a tampered artifact and an unexpected package file
+ok 3 - rejects a tampered artifact and an unexpected package file
+  ---
+  duration_ms: 874.041
+  type: 'test'
+  ...
+# Subtest: keeps the APP profile fallback aligned with the canonical version code
+ok 4 - keeps the APP profile fallback aligned with the canonical version code
+  ---
+  duration_ms: 0.2995
+  type: 'test'
+  ...
+# Subtest: verifies restored databases using the actual core table names
+ok 5 - verifies restored databases using the actual core table names
+  ---
+  duration_ms: 0.2488
+  type: 'test'
+  ...
+# Subtest: resolves the D drive host layout only as a non-executable PlanOnly contract
+ok 6 - resolves the D drive host layout only as a non-executable PlanOnly contract
+  ---
+  duration_ms: 5596.7828
+  type: 'test'
+  ...
+# Subtest: rejects manifest paths that can escape the package root
+ok 7 - rejects manifest paths that can escape the package root
+  ---
+  duration_ms: 356.4577
+  type: 'test'
+  ...
+# Subtest: builds byte-for-byte deterministic release bundles and verifies the archive
+ok 8 - builds byte-for-byte deterministic release bundles and verifies the archive
+  ---
+  duration_ms: 2254.5985
+  type: 'test'
+  ...
+# Subtest: defines production-safe Flyway and health probe contracts
+ok 9 - defines production-safe Flyway and health probe contracts
+  ---
+  duration_ms: 0.8966
+  type: 'test'
+  ...
+# Subtest: keeps database passwords out of process arguments and requires an isolated-write confirmation
+ok 10 - keeps database passwords out of process arguments and requires an isolated-write confirmation
+  ---
+  duration_ms: 0.5866
+  type: 'test'
+  ...
+# Subtest: produces a side-effect-free Windows Service installation plan for a pinned wrapper
+ok 11 - produces a side-effect-free Windows Service installation plan for a pinned wrapper
+  ---
+  duration_ms: 612.7443
+  type: 'test'
+  ...
+# Subtest: builds backup, deployment and rollback plans without touching a database or service
+ok 12 - builds backup, deployment and rollback plans without touching a database or service
+  ---
+  duration_ms: 2223.187
+  type: 'test'
+  ...
+# Subtest: validates every deployment audit hash before accepting the append-only chain
+ok 13 - validates every deployment audit hash before accepting the append-only chain
+  ---
+  duration_ms: 618.3253
+  type: 'test'
+  ...
+# Subtest: generates a canonical manifest from payload bytes instead of hand-maintained hashes
+ok 14 - generates a canonical manifest from payload bytes instead of hand-maintained hashes
+  ---
+  duration_ms: 490.0935
+  type: 'test'
+  ...
+# Subtest: plans a fixed Windows Service action and refuses arbitrary service identifiers
+ok 15 - plans a fixed Windows Service action and refuses arbitrary service identifiers
+  ---
+  duration_ms: 270.374
+  type: 'test'
+  ...
+# Subtest: plans restore only into a different isolated target after backup integrity verification
+ok 16 - plans restore only into a different isolated target after backup integrity verification
+  ---
+  duration_ms: 613.1872
+  type: 'test'
+  ...
+# Subtest: generates a contiguous checksum-locked migration catalog for an explicit upgrade range
+ok 17 - generates a contiguous checksum-locked migration catalog for an explicit upgrade range
+  ---
+  duration_ms: 1102.0377
+  type: 'test'
+  ...
+# Subtest: rejects a self-consistent artifact hash when the migration catalog contradicts the manifest
+ok 18 - rejects a self-consistent artifact hash when the migration catalog contradicts the manifest
+  ---
+  duration_ms: 427.3865
+  type: 'test'
+  ...
+# Subtest: records a clean trusted Git baseline and rejects a dirty source tree
+ok 19 - records a clean trusted Git baseline and rejects a dirty source tree
+  ---
+  duration_ms: 951.9203
+  type: 'test'
+  ...
+# Subtest: enforces the complete manifest contract and rejects unlisted ZIP root entries
+ok 20 - enforces the complete manifest contract and rejects unlisted ZIP root entries
+  ---
+  duration_ms: 1816.144
+  type: 'test'
+  ...
+# Subtest: switches the Windows Web current junction only between contained immutable releases
+ok 21 - switches the Windows Web current junction only between contained immutable releases
+  ---
+  duration_ms: 735.6651
+  type: 'test'
+  ...
+# Subtest: binds production approvals to the exact immutable plan bytes that are executed
+ok 22 - binds production approvals to the exact immutable plan bytes that are executed
+  ---
+  duration_ms: 0.5742
+  type: 'test'
+  ...
+# Subtest: binds production approval to package identity, expiry, current state and safe compensation
+ok 23 - binds production approval to package identity, expiry, current state and safe compensation
+  ---
+  duration_ms: 0.8317
+  type: 'test'
+  ...
+# Subtest: recovers stale lock files safely and isolates every compensation failure
+ok 24 - recovers stale lock files safely and isolates every compensation failure
+  ---
+  duration_ms: 0.7927
+  type: 'test'
+  ...
+# Subtest: preflights target volumes and rejects an unexpected backend port owner before stop
+ok 25 - preflights target volumes and rejects an unexpected backend port owner before stop
+  ---
+  duration_ms: 0.3497
+  type: 'test'
+  ...
+# Subtest: switches an approved immutable runtime configuration with every release pointer
+ok 26 - switches an approved immutable runtime configuration with every release pointer
+  ---
+  duration_ms: 1675.5947
+  type: 'test'
+  ...
+# Subtest: returns the audited result for an exact successful retry and treats schemaTo as a no-op
+ok 27 - returns the audited result for an exact successful retry and treats schemaTo as a no-op
+  ---
+  duration_ms: 0.4989
+  type: 'test'
+  ...
+# Subtest: executes only reviewed migration bytes and reports runtime storage readiness
+ok 28 - executes only reviewed migration bytes and reports runtime storage readiness
+  ---
+  duration_ms: 0.3849
+  type: 'test'
+  ...
+# Subtest: keeps service and restore trust anchors host-owned and all database passwords off argv
+ok 29 - keeps service and restore trust anchors host-owned and all database passwords off argv
+  ---
+  duration_ms: 0.8744
+  type: 'test'
+  ...
+# Subtest: revalidates mutable release state under the global lock before any service mutation
+ok 30 - revalidates mutable release state under the global lock before any service mutation
+  ---
+  duration_ms: 0.3174
+  type: 'test'
+  ...
+# Subtest: binds production approvals to the host identity and exact rollback target
+ok 31 - binds production approvals to the host identity and exact rollback target
+  ---
+  duration_ms: 0.581
+  type: 'test'
+  ...
+# Subtest: requires MySQL identity verification and does not claim application recovery before E2E
+ok 32 - requires MySQL identity verification and does not claim application recovery before E2E
+  ---
+  duration_ms: 0.4496
+  type: 'test'
+  ...
+# Subtest: runs migration upgrade fixtures in a database isolated from module integration tests
+ok 33 - runs migration upgrade fixtures in a database isolated from module integration tests
+  ---
+  duration_ms: 324.9083
+  type: 'test'
+  ...
+# Subtest: rejects a custom MySQL test pattern that mixes migration and module tests
+ok 34 - rejects a custom MySQL test pattern that mixes migration and module tests
+  ---
+  duration_ms: 292.7961
+  type: 'test'
+  ...
+# Subtest: fails loudly and attempts every cleanup when an isolated database drop fails
+ok 35 - fails loudly and attempts every cleanup when an isolated database drop fails
+  ---
+  duration_ms: 362.8206
+  type: 'test'
+  ...
+# Subtest: cleans a database whose create outcome is unknown after the server may have committed
+ok 36 - cleans a database whose create outcome is unknown after the server may have committed
+  ---
+  duration_ms: 311.7674
+  type: 'test'
+  ...
+# Subtest: proves Flyway checksum tampering fails closed and interrupted migration recovery is repeatable
+ok 37 - proves Flyway checksum tampering fails closed and interrupted migration recovery is repeatable
+  ---
+  duration_ms: 0.315
+  type: 'test'
+  ...
+# Subtest: requires signed two-person approval for production restore and service uninstall
+ok 38 - requires signed two-person approval for production restore and service uninstall
+  ---
+  duration_ms: 0.3367
+  type: 'test'
+  ...
+# Subtest: holds verified backup files read-only through restore consumption
+ok 39 - holds verified backup files read-only through restore consumption
+  ---
+  duration_ms: 0.2418
+  type: 'test'
+  ...
+# Subtest: emits a machine-readable aggregate release gate result
+ok 40 - emits a machine-readable aggregate release gate result
+  ---
+  duration_ms: 0.1961
+  type: 'test'
+  ...
+# Subtest: requires signed stage-one environment evidence before declaring RELEASEABLE
+ok 41 - requires signed stage-one environment evidence before declaring RELEASEABLE
+  ---
+  duration_ms: 910.3775
+  type: 'test'
+  ...
+# Subtest: binds the backed-up effective configuration to the actual runtime environment
+ok 42 - binds the backed-up effective configuration to the actual runtime environment
+  ---
+  duration_ms: 0.4432
+  type: 'test'
+  ...
+# Subtest: bootstraps only an empty host and empty schema through a dedicated first-install ceremony
+ok 43 - bootstraps only an empty host and empty schema through a dedicated first-install ceremony
+  ---
+  duration_ms: 0.729
+  type: 'test'
+  ...
+# Subtest: reconciles recovery only by an approved exact forward completion
+ok 44 - reconciles recovery only by an approved exact forward completion
+  ---
+  duration_ms: 0.5622
+  type: 'test'
+  ...
+# Subtest: classifies every historical migration before building a first-install catalog
+ok 45 - classifies every historical migration before building a first-install catalog
+  ---
+  duration_ms: 3286.6243
+  type: 'test'
+  ...
+# Subtest: pins and plans an HTTPS proxy service under an identity isolated from Backend secrets
+ok 46 - pins and plans an HTTPS proxy service under an identity isolated from Backend secrets
+  ---
+  duration_ms: 326.7429
+  type: 'test'
+  ...
+# Subtest: derives production policy from canonical roots and binds recovery to the original database
+ok 47 - derives production policy from canonical roots and binds recovery to the original database
+  ---
+  duration_ms: 1.302
+  type: 'test'
+  ...
+# Subtest: revalidates the fixed Backend service supply chain and fails loudly on compensation errors
+ok 48 - revalidates the fixed Backend service supply chain and fails loudly on compensation errors
+  ---
+  duration_ms: 0.5133
+  type: 'test'
+  ...
+# Subtest: fails closed on ambiguous service stop and protects Backend secrets and proxy TLS state
+ok 49 - fails closed on ambiguous service stop and protects Backend secrets and proxy TLS state
+  ---
+  duration_ms: 1.0476
+  type: 'test'
+  ...
+# Subtest: isolates public traffic when recovery compensation cannot stop the running backend
+ok 50 - isolates public traffic when recovery compensation cannot stop the running backend
+  ---
+  duration_ms: 0.78
+  type: 'test'
+  ...
+# Subtest: normalizes every promoted release ACL and revalidates bytes before migration
+ok 51 - normalizes every promoted release ACL and revalidates bytes before migration
+  ---
+  duration_ms: 0.3456
+  type: 'test'
+  ...
+# Subtest: requires full RX and treats DeleteChild as write access in service ACL gates
+ok 52 - requires full RX and treats DeleteChild as write access in service ACL gates
+  ---
+  duration_ms: 150.8926
+  type: 'test'
+  ...
+# Subtest: installs the proxy disabled and removes an owned registration on final gate failure
+ok 53 - installs the proxy disabled and removes an owned registration on final gate failure
+  ---
+  duration_ms: 0.669
+  type: 'test'
+  ...
+1..53
+# tests 53
+# suites 0
+# pass 53
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 27868.253

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "productVersion": "1.0.1",
+  "appPackageName": "com.leantpm.mobile",
+  "appVersionCode": 101,
+  "minimumSupportedAppVersionCode": 101,
+  "databaseSchemaVersion": 50,
+  "releaseManifestSchemaVersion": 1
+}
