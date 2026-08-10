@@ -73,7 +73,7 @@ function device(value: string) {
     <header class="page-header">
       <div>
         <h1>在线用户</h1>
-        <p>会话状态来自 Redis；退出、改密或强制下线后，原访问令牌立即失效。</p>
+        <p>会话状态持久化保存；退出、改密或强制下线后，原访问令牌立即失效。</p>
       </div>
       <div class="page-actions">
         <el-button :loading="loading" @click="load">刷新会话</el-button>

@@ -6,7 +6,7 @@ export interface OrganizationRow {
   parentId: number
   organizationCode: string
   organizationName: string
-  organizationType: 'ENTERPRISE' | 'FACTORY' | 'DEPARTMENT' | 'WORKSHOP' | 'LINE' | 'TEAM'
+  organizationType: 'ENTERPRISE' | 'FACTORY' | 'DEPARTMENT' | 'WORKSHOP' | 'LINE' | 'SECTION' | 'TEAM'
   managerUserId?: number
   managerName?: string
   sortOrder: number

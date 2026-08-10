@@ -15,7 +15,10 @@ const props = withDefaults(defineProps<{
 const branding = useBranding()
 const failed = ref(false)
 const initials = computed(() => branding.shortName.slice(0, 2))
-watch(() => branding.logoUrl, () => { failed.value = false })
+const imageSource = computed(() => props.compact
+  ? '/branding/baoshan-mining-mark.png?v=20260810'
+  : branding.logoUrl)
+watch(imageSource, () => { failed.value = false })
 </script>
 
 <template>
@@ -24,7 +27,7 @@ watch(() => branding.logoUrl, () => { failed.value = false })
     :class="{ compact, light, fallback: failed }"
     :style="{ '--brand-logo-height': `${height}px` }"
   >
-    <img v-if="!failed" :src="branding.logoUrl" :alt="`${branding.shortName} Logo`" @error="failed = true" />
+    <img v-if="!failed" :src="imageSource" :alt="`${branding.shortName} Logo`" @error="failed = true" />
     <strong v-else>{{ initials }}</strong>
   </span>
 </template>
@@ -52,12 +55,6 @@ watch(() => branding.logoUrl, () => { failed.value = false })
 }
 .brand-logo.compact {
   width: var(--brand-logo-height);
-}
-.brand-logo.compact img {
-  width: calc(var(--brand-logo-height) * 3.08);
-  max-width: none;
-  object-fit: cover;
-  object-position: left center;
 }
 .brand-logo.light { box-shadow: 0 6px 20px rgba(0, 0, 0, .14); }
 .brand-logo.fallback {

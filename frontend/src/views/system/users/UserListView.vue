@@ -39,7 +39,7 @@ const activeTab = ref('relationships')
 const relationshipLoading = ref(false)
 const relationshipSavingId = ref<number>()
 const relationship = ref<PersonnelOrganizationSnapshot>({ organizations: [], users: [] })
-const managerDraft = reactive<Record<number, number[]>>({})
+const managerDraft = reactive<Record<number, number | undefined>>({})
 const memberDraft = reactive<Record<number, number[]>>({})
 const relationshipKeyword = ref('')
 const selectedOrganizationId = ref<number>()
@@ -101,11 +101,8 @@ const organizationTreeProps = {
   disabled: (data: OrganizationNode) => data.status !== 1,
 }
 
-const workshopManagerOptions = computed(() =>
-  relationship.value.users.filter((user) => user.roleCodes.includes('WORKSHOP_MANAGER')),
-)
-const teamLeaderOptions = computed(() =>
-  relationship.value.users.filter((user) => user.roleCodes.includes('TEAM_LEADER')),
+const managerOptions = computed(() =>
+  relationship.value.users.filter((user) => user.status === 1),
 )
 const employeeOptions = computed(() =>
   relationship.value.users.filter((user) => user.status === 1 && user.roleCodes.includes('OPERATOR')),
@@ -164,7 +161,15 @@ const selectedMemberUsers = computed(() => {
 })
 
 function organizationTypeLabel(type: string) {
-  return ({ ENTERPRISE: '企业', FACTORY: '工厂', WORKSHOP: '车间', LINE: '产线', TEAM: '班组' } as Record<string, string>)[type] || type
+  return ({ ENTERPRISE: '企业', FACTORY: '工厂', WORKSHOP: '车间', LINE: '产线', SECTION: '工段', TEAM: '班组' } as Record<string, string>)[type] || type
+}
+
+function managerLabel(organization: PersonnelOrganizationRow) {
+  if (organization.organizationType === 'WORKSHOP') return '车间负责人'
+  if (organization.organizationType === 'LINE') return '产线负责人'
+  if (organization.organizationType === 'SECTION') return '工段长'
+  if (organization.organizationType === 'TEAM') return '班组长'
+  return '负责人'
 }
 
 function selectOrganization(node: PersonnelOrganizationRow) {
@@ -206,7 +211,8 @@ async function loadRelationships() {
   try {
     relationship.value = await systemApi.personnelOrganization()
     relationship.value.organizations.forEach((organization) => {
-      managerDraft[organization.id] = [...(organization.managerUserIds || (organization.managerUserId ? [organization.managerUserId] : []))]
+      managerDraft[organization.id] = organization.managerUserId
+        || organization.managerUserIds?.[0]
       memberDraft[organization.id] = [...(organization.memberUserIds || [])]
     })
     if (!relationship.value.organizations.some((item) => item.id === selectedOrganizationId.value)) {
@@ -224,10 +230,10 @@ async function saveOrganizationManager(organization: PersonnelOrganizationRow) {
   relationshipSavingId.value = organization.id
   try {
     await systemApi.updateOrganizationManager(organization.id, {
-      managerUserIds: managerDraft[organization.id] || [],
+      managerUserIds: managerDraft[organization.id] ? [managerDraft[organization.id]!] : [],
       version: organization.version,
     })
-    ElMessage.success(organization.organizationType === 'WORKSHOP' ? '车间主任已更新' : '班组长已更新')
+    ElMessage.success(`${managerLabel(organization)}已更新`)
     await loadRelationships()
   } catch (error) {
     ElMessage.error(errorMessage(error, '负责人保存失败'))
@@ -240,7 +246,7 @@ async function saveTeamRelationships(organization: PersonnelOrganizationRow) {
   relationshipSavingId.value = organization.id
   try {
     await systemApi.updateTeamRelationships(organization.id, {
-      managerUserIds: managerDraft[organization.id] || [],
+      managerUserIds: managerDraft[organization.id] ? [managerDraft[organization.id]!] : [],
       userIds: memberDraft[organization.id] || [],
       version: organization.version,
     })
@@ -429,7 +435,7 @@ const pageSummary = computed(() => `共 ${total.value} 个用户`)
 <template>
   <div class="page-shell">
     <header class="page-header">
-      <div><h1>人员与组织关系</h1><p>统一维护车间主任、班组长、员工上下级关系及员工多班组任职。</p></div>
+      <div><h1>人员与组织关系</h1><p>每个组织统一维护一名负责人；员工仍可在多个班组任职。</p></div>
       <div v-if="activeTab === 'users'" class="page-actions">
         <el-button v-if="auth.can('system:user:import')" :icon="UploadFilled" @click="openImport">批量导入</el-button>
         <el-button v-if="auth.can('system:user:create')" type="primary" :icon="Plus" @click="openCreate">新增用户</el-button>
@@ -440,7 +446,7 @@ const pageSummary = computed(() => `共 ${total.value} 个用户`)
       <el-tab-pane label="组织人员关系" name="relationships">
         <section class="surface-card relationship-card">
           <el-alert
-            title="层级规则：车间主任负责车间；每个班组设置一名班组长；员工可以同时加入多个班组。点检异常优先上报任务所属班组长，再按规则升级到车间主任。"
+            title="层级规则：车间、产线/工段、班组各设置一名负责人；没有工段的车间可直接管理班组；员工可以同时加入多个班组。"
             type="info"
             :closable="false"
             show-icon
@@ -507,20 +513,20 @@ const pageSummary = computed(() => `共 ${total.value} 个用户`)
                 </div>
               </header>
 
-              <section v-if="selectedOrganization.organizationType === 'WORKSHOP'" class="maintenance-panel">
+              <section v-if="['WORKSHOP', 'LINE', 'SECTION'].includes(selectedOrganization.organizationType)" class="maintenance-panel">
                 <div class="panel-heading">
-                  <div><h3>车间负责人</h3><p>异常升级到该车间时，系统将通知这里设置的车间主任。</p></div>
+                  <div><h3>{{ managerLabel(selectedOrganization) }}</h3><p>当前组织只设置一名负责人，称谓随组织类型显示。</p></div>
                   <el-tag type="success">管理关系</el-tag>
                 </div>
                 <el-form label-position="top">
-                  <el-form-item label="车间主任">
-                    <el-select v-model="managerDraft[selectedOrganization.id]" multiple collapse-tags collapse-tags-tooltip clearable filterable placeholder="可选择多名车间主任" style="width: 100%">
-                      <el-option v-for="user in workshopManagerOptions" :key="user.id" :label="userLabel(user)" :value="user.id" :disabled="user.status !== 1" />
+                  <el-form-item :label="managerLabel(selectedOrganization)">
+                    <el-select v-model="managerDraft[selectedOrganization.id]" clearable filterable :placeholder="`请选择${managerLabel(selectedOrganization)}`" style="width: 100%">
+                      <el-option v-for="user in managerOptions" :key="user.id" :label="userLabel(user)" :value="user.id" />
                     </el-select>
                   </el-form-item>
                 </el-form>
                 <div class="panel-actions">
-                  <el-button type="primary" :loading="relationshipSavingId === selectedOrganization.id" @click="saveOrganizationManager(selectedOrganization)">保存车间主任</el-button>
+                  <el-button type="primary" :loading="relationshipSavingId === selectedOrganization.id" @click="saveOrganizationManager(selectedOrganization)">保存{{ managerLabel(selectedOrganization) }}</el-button>
                 </div>
               </section>
 
@@ -532,8 +538,8 @@ const pageSummary = computed(() => `共 ${total.value} 个用户`)
                   </div>
                   <el-form label-position="top">
                     <el-form-item label="班组长">
-                      <el-select v-model="managerDraft[selectedOrganization.id]" multiple collapse-tags collapse-tags-tooltip clearable filterable placeholder="可选择多名班组长" style="width: 100%">
-                        <el-option v-for="user in teamLeaderOptions" :key="user.id" :label="`${userLabel(user)}${user.status === 1 ? '' : ' · 已停用'}`" :value="user.id" />
+                      <el-select v-model="managerDraft[selectedOrganization.id]" clearable filterable placeholder="请选择一名班组长" style="width: 100%">
+                        <el-option v-for="user in managerOptions" :key="user.id" :label="userLabel(user)" :value="user.id" />
                       </el-select>
                     </el-form-item>
                     <el-form-item label="班组员工（支持多选，员工可加入多个班组）">
@@ -674,7 +680,7 @@ const pageSummary = computed(() => `共 ${total.value} 个用户`)
     <el-dialog v-model="importDialogVisible" title="批量导入用户" width="min(820px, 96vw)" destroy-on-close>
       <el-alert
         title="账号、角色和组织关系可在同一份 Excel 中导入"
-        description="可指定主要归属组织、多个任职班组、主班组，以及车间主任或班组长负责的组织。模板的“组织关系说明”页已列出全部可用组织编码和填写规则。"
+        description="可指定主要归属组织、多个任职班组、主班组，以及一个负责组织。负责人统一写入组织的负责人字段，模板的“组织关系说明”页已列出全部可用组织编码。"
         type="info"
         :closable="false"
         show-icon
@@ -787,6 +793,7 @@ const pageSummary = computed(() => `共 ${total.value} 个用户`)
 .type-factory { background: #1c7d50; }
 .type-workshop { background: #2f9665; }
 .type-line { background: #287e8b; }
+.type-section { background: #2563a6; }
 .type-team { background: #b7791f; }
 .tree-node-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 3px; }
 .tree-node-copy strong { overflow: hidden; color: inherit; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }

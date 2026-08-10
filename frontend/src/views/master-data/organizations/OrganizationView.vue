@@ -40,6 +40,7 @@ const typeLabels: Record<OrganizationRow['organizationType'], string> = {
   DEPARTMENT: '部门',
   WORKSHOP: '车间',
   LINE: '产线',
+  SECTION: '工段',
   TEAM: '班组',
 }
 
@@ -47,8 +48,9 @@ const nextType: Partial<Record<OrganizationRow['organizationType'], Organization
   ENTERPRISE: 'FACTORY',
   FACTORY: 'WORKSHOP',
   DEPARTMENT: 'TEAM',
-  WORKSHOP: 'LINE',
+  WORKSHOP: 'SECTION',
   LINE: 'TEAM',
+  SECTION: 'TEAM',
 }
 
 const treeRows = computed(() => buildTree(filterWithAncestors(rows.value, keyword.value)))

@@ -2,13 +2,14 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { captcha } from '@/api/auth'
+import type { ApiResponse } from '@/types/api'
 import {
   errorMessage,
+  http,
   serverBaseUrl,
   setServerBaseUrl,
 } from '@/utils/http'
-import { initializeBranding, useBranding } from '@/branding/branding'
+import { applyBranding, type BrandingSettings, useBranding } from '@/branding/branding'
 
 const router = useRouter()
 const branding = useBranding()
@@ -19,8 +20,15 @@ async function saveAndTest() {
   testing.value = true
   try {
     await setServerBaseUrl(value.value)
-    await captcha()
-    await initializeBranding()
+    const response = await http.get<ApiResponse<BrandingSettings>>('/public/branding', {
+      timeout: 5000,
+    })
+    if (response.data.code !== 'OK'
+      || !response.data.data?.systemName?.trim()
+      || !response.data.data.shortName?.trim()) {
+      throw new Error('服务器品牌配置响应无效')
+    }
+    applyBranding(response.data.data)
     ElMessage.success('服务连接成功')
     await router.replace('/login?redirect=/mobile/workbench')
   } catch (error) {

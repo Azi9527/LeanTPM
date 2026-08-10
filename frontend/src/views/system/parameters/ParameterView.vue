@@ -21,7 +21,10 @@ const groupCode = ref('')
 const dialogVisible = ref(false)
 const editing = ref<ParameterRow | null>(null)
 const brandingSaving = ref(false)
+const barcodeLogoSaving = ref(false)
 const watermarkSaving = ref(false)
+const barcodeCenterLogoKey = 'equipment.barcode.center-logo-url'
+const barcodeCenterLogoUrl = ref('DEFAULT')
 const brandForm = reactive<BrandingSettings>({ ...DEFAULT_BRANDING })
 const watermarkForm = reactive<PhotoWatermarkSettings>({
   watermarkEnabled: true,
@@ -63,6 +66,7 @@ async function load() {
     configurationRows.value = allRows
     Object.assign(watermarkForm, watermarkSettings)
     hydrateBrandingForm()
+    hydrateBarcodeLogoForm()
   } catch (error) {
     loadError.value = errorMessage(error)
   } finally {
@@ -117,6 +121,15 @@ function hydrateBrandingForm() {
   })
 }
 
+function hydrateBarcodeLogoForm() {
+  const configured = configurationRows.value.find(
+    (row) => row.parameterKey === barcodeCenterLogoKey,
+  )
+  barcodeCenterLogoUrl.value = configured?.status === 1
+    ? configured.parameterValue
+    : 'DEFAULT'
+}
+
 async function handleLogoChange(file: UploadFile) {
   const raw = file.raw
   if (!raw) return
@@ -131,6 +144,20 @@ async function handleLogoChange(file: UploadFile) {
   brandForm.logoUrl = await readDataUrl(raw)
 }
 
+async function handleBarcodeLogoChange(file: UploadFile) {
+  const raw = file.raw
+  if (!raw) return
+  if (!['image/png', 'image/jpeg'].includes(raw.type)) {
+    ElMessage.warning('二维码中心图标仅支持 PNG 或 JPEG 图片')
+    return
+  }
+  if (raw.size > 512 * 1024) {
+    ElMessage.warning('二维码中心图标不能超过 512KB')
+    return
+  }
+  barcodeCenterLogoUrl.value = await readDataUrl(raw)
+}
+
 function readDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -142,6 +169,37 @@ function readDataUrl(file: File): Promise<string> {
 
 function resetBranding() {
   Object.assign(brandForm, DEFAULT_BRANDING)
+}
+
+function resetBarcodeLogo() {
+  barcodeCenterLogoUrl.value = 'DEFAULT'
+}
+
+async function saveBarcodeLogo() {
+  barcodeLogoSaving.value = true
+  try {
+    const existing = configurationRows.value.find(
+      (row) => row.parameterKey === barcodeCenterLogoKey,
+    )
+    const payload = {
+      parameterKey: barcodeCenterLogoKey,
+      parameterName: '设备二维码中心图标',
+      parameterValue: barcodeCenterLogoUrl.value,
+      valueType: 'STRING',
+      groupCode: 'EQUIPMENT',
+      description: '设备二维码标签中央图标；DEFAULT 使用内置 LT 盾牌',
+      enabled: true,
+      version: existing?.version,
+    }
+    if (existing) await systemApi.updateParameter(existing.id, payload)
+    else await systemApi.createParameter(payload)
+    ElMessage.success('设备二维码标签配置已保存，新生成的预览和打印立即生效')
+    await load()
+  } catch (error) {
+    ElMessage.error(errorMessage(error, '设备二维码标签配置保存失败'))
+  } finally {
+    barcodeLogoSaving.value = false
+  }
 }
 
 async function saveBranding() {
@@ -315,6 +373,81 @@ async function remove(row: ParameterRow) {
       </div>
     </section>
 
+    <section class="surface-card barcode-label-card">
+      <div class="branding-heading">
+        <div>
+          <h2>设备二维码标签</h2>
+          <p>客户确认的蓝色科技风标签。二维码与设备动态绑定，这里只配置二维码中央品牌图标。</p>
+        </div>
+        <el-tag type="success" effect="plain">打印即时生效</el-tag>
+      </div>
+      <div class="barcode-label-grid">
+        <div class="qr-label-preview">
+          <strong>大宝山设备管理系统</strong>
+          <div class="qr-wave-lines" />
+          <div class="qr-code-card">
+            <div class="qr-dot-field">
+              <i class="finder finder-top-left" />
+              <i class="finder finder-top-right" />
+              <i class="finder finder-bottom-left" />
+              <div class="qr-center-logo">
+                <img
+                  v-if="barcodeCenterLogoUrl !== 'DEFAULT'"
+                  :src="barcodeCenterLogoUrl"
+                  alt="二维码中心图标预览"
+                />
+                <span v-else>LT</span>
+              </div>
+            </div>
+          </div>
+          <div class="qr-device-row"><span>▣</span><b>设备名称：循环泵站一号</b></div>
+          <div class="qr-device-row"><span>⚙</span><b>设备编号：VIZ-PUMP-01</b></div>
+          <div class="qr-scan-action"><span>⌗</span><b>扫码查看设备档案</b></div>
+        </div>
+        <div class="barcode-label-settings">
+          <div class="settings-callout">
+            <strong>关于二维码图片</strong>
+            <p>二维码本体由系统按设备实时生成，不能上传一张固定二维码替换，否则所有设备会指向同一地址。</p>
+          </div>
+          <el-form label-position="top">
+            <el-form-item label="二维码中心图标">
+              <div class="barcode-logo-actions">
+                <div class="barcode-logo-thumb">
+                  <img
+                    v-if="barcodeCenterLogoUrl !== 'DEFAULT'"
+                    :src="barcodeCenterLogoUrl"
+                    alt="自定义二维码中心图标"
+                  />
+                  <span v-else>LT</span>
+                </div>
+                <div>
+                  <el-upload
+                    accept="image/png,image/jpeg"
+                    :auto-upload="false"
+                    :show-file-list="false"
+                    :on-change="handleBarcodeLogoChange"
+                  >
+                    <el-button>选择中心图标</el-button>
+                  </el-upload>
+                  <p>PNG/JPEG，最大 512KB；建议方形透明图，主体居中并保留留白。</p>
+                </div>
+              </div>
+            </el-form-item>
+            <div v-if="auth.can('system:parameter:manage')" class="barcode-label-actions">
+              <el-button @click="resetBarcodeLogo">恢复内置 LT 图标</el-button>
+              <el-button
+                type="primary"
+                :loading="barcodeLogoSaving"
+                @click="saveBarcodeLogo"
+              >
+                保存二维码标签配置
+              </el-button>
+            </div>
+          </el-form>
+        </div>
+      </div>
+    </section>
+
     <section class="surface-card watermark-card">
       <div class="branding-heading">
         <div>
@@ -442,8 +575,11 @@ async function remove(row: ParameterRow) {
             <el-tag v-if="row.valueType === 'BOOLEAN'" :type="row.parameterValue === 'true' ? 'success' : 'info'">
               {{ row.parameterValue === 'true' ? '开启' : '关闭' }}
             </el-tag>
-            <span v-else-if="row.parameterKey === 'branding.logo-url'" class="mono">
-              {{ row.parameterValue.startsWith('data:') ? '已上传自定义 Logo' : row.parameterValue }}
+            <span
+              v-else-if="['branding.logo-url', barcodeCenterLogoKey].includes(row.parameterKey)"
+              class="mono"
+            >
+              {{ row.parameterValue.startsWith('data:') ? '已上传自定义图片' : row.parameterValue }}
             </span>
             <span v-else class="mono">{{ row.parameterValue }}</span>
           </template>
@@ -548,6 +684,79 @@ async function remove(row: ParameterRow) {
 .logo-actions span { color: var(--tpm-text-secondary); font-size: 12px; }
 .color-field { display: grid; grid-template-columns: 40px 1fr; gap: 8px; width: 100%; }
 .branding-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.barcode-label-card { padding: 20px; }
+.barcode-label-grid { display: grid; grid-template-columns: minmax(280px, .72fr) minmax(460px, 1.45fr); gap: 28px; }
+.qr-label-preview {
+  position: relative; overflow: hidden; aspect-ratio: 3 / 4; padding: 7.5% 7% 4.5%; border-radius: 18px;
+  color: #fff; background: linear-gradient(145deg, #0879e6 19%, #0758ba 54%, #00327e 100%);
+  box-shadow: 0 18px 46px rgba(0, 67, 155, .24);
+}
+.qr-label-preview::before {
+  position: absolute; top: -3%; right: -20%; left: -20%; height: 30%; border-radius: 0 0 50% 48%;
+  background: #fff; content: ''; transform: rotate(-1.5deg);
+}
+.qr-label-preview::after {
+  position: absolute; right: 0; bottom: 0; left: 0; height: 22%; opacity: .34;
+  background:
+    linear-gradient(45deg, transparent 46%, #42a1ef 47% 49%, transparent 50%) 0 0 / 34px 34px,
+    linear-gradient(-45deg, transparent 46%, #42a1ef 47% 49%, transparent 50%) 0 0 / 34px 34px;
+  content: '';
+}
+.qr-label-preview > strong {
+  position: relative; z-index: 2; display: block; overflow: hidden; margin: 0 -2% 18%; color: #074ca7;
+  font-size: clamp(18px, 2.1vw, 36px); font-weight: 900; letter-spacing: .04em; text-align: center; white-space: nowrap;
+}
+.qr-wave-lines {
+  position: absolute; top: 19%; right: -8%; left: -8%; z-index: 1; height: 15%; opacity: .72;
+  border-top: 3px solid #7fc5ff; border-radius: 50%; transform: rotate(-3deg);
+  box-shadow: 0 -7px 0 rgba(151, 207, 255, .55), 0 -14px 0 rgba(189, 225, 255, .45);
+}
+.qr-code-card {
+  position: relative; z-index: 2; width: 72%; margin: 0 auto 5%; padding: 4.2%; border: 2px solid #5fc4ff;
+  border-radius: 10%; background: rgba(255, 255, 255, .98); box-shadow: 0 10px 28px rgba(0, 32, 101, .24);
+}
+.qr-dot-field {
+  position: relative; aspect-ratio: 1; border-radius: 4%;
+  background-color: #fff;
+  background-image: radial-gradient(circle, #064b9e 0 30%, transparent 34%);
+  background-size: 8.6% 8.6%;
+}
+.finder { position: absolute; z-index: 2; width: 23%; height: 23%; border: clamp(4px, .8vw, 9px) solid #0757b9; border-radius: 22%; background: #fff; }
+.finder::after { position: absolute; inset: 22%; border-radius: 22%; background: #0757b9; content: ''; }
+.finder-top-left { top: 0; left: 0; }
+.finder-top-right { top: 0; right: 0; }
+.finder-bottom-left { bottom: 0; left: 0; }
+.qr-center-logo, .barcode-logo-thumb {
+  display: grid; overflow: hidden; place-items: center; color: #fff;
+  background: linear-gradient(145deg, #17bea7, #007c74); font-weight: 900;
+}
+.qr-center-logo {
+  position: absolute; top: 50%; left: 50%; z-index: 3; width: 23%; aspect-ratio: 1; border: 5px solid #fff;
+  clip-path: polygon(50% 0, 88% 18%, 84% 68%, 70% 85%, 50% 100%, 30% 85%, 16% 68%, 12% 18%);
+  font-size: clamp(13px, 1.7vw, 26px); transform: translate(-50%, -50%);
+}
+.qr-center-logo img, .barcode-logo-thumb img { width: 100%; height: 100%; object-fit: contain; background: #fff; }
+.qr-device-row, .qr-scan-action { position: relative; z-index: 2; display: grid; align-items: center; border: 2px solid rgba(255, 255, 255, .88); }
+.qr-device-row {
+  grid-template-columns: 22% 1fr; min-height: 7%; margin-top: 2.4%; border-radius: 12px;
+  background: rgba(0, 59, 145, .56); font-size: clamp(11px, 1.25vw, 20px);
+}
+.qr-device-row span { display: grid; height: 100%; place-items: center; border-right: 1px solid rgba(255, 255, 255, .8); font-size: 1.35em; }
+.qr-device-row b { padding: 2.5% 5%; white-space: nowrap; }
+.qr-scan-action {
+  grid-template-columns: 22% 1fr; min-height: 8.5%; margin-top: 3.3%; border-radius: 14px; color: #074ca7;
+  background: #fff; font-size: clamp(12px, 1.45vw, 22px); letter-spacing: .08em;
+}
+.qr-scan-action span { display: grid; height: 100%; place-items: center; border-radius: 11px 0 0 11px; color: #fff; background: #0aa99b; font-size: 1.5em; }
+.qr-scan-action b { padding: 2.5% 5%; text-align: center; white-space: nowrap; }
+.barcode-label-settings { align-self: start; }
+.settings-callout { margin-bottom: 20px; padding: 16px 18px; border: 1px solid #cfe4fb; border-radius: 12px; background: #f5faff; }
+.settings-callout strong { color: #0757b9; }
+.settings-callout p { margin: 7px 0 0; color: var(--tpm-text-secondary); font-size: 13px; line-height: 1.7; }
+.barcode-logo-actions { display: flex; align-items: center; gap: 16px; }
+.barcode-logo-thumb { width: 88px; height: 88px; flex: 0 0 auto; border: 8px solid #fff; border-radius: 22px; box-shadow: 0 0 0 1px #dbe8f5; font-size: 24px; }
+.barcode-logo-actions p { margin: 9px 0 0; color: var(--tpm-text-secondary); font-size: 12px; }
+.barcode-label-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
 .watermark-card { padding: 20px; }
 .watermark-grid { display: grid; grid-template-columns: minmax(280px, .8fr) minmax(520px, 1.5fr); gap: 24px; }
 .watermark-preview {
@@ -568,11 +777,12 @@ async function remove(row: ParameterRow) {
 .watermark-actions { display: flex; justify-content: flex-end; grid-column: 1 / -1; }
 .parameter-form { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
 .full-row { grid-column: 1 / -1; }
-@media (max-width: 900px) { .branding-grid, .watermark-grid { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .branding-grid, .barcode-label-grid, .watermark-grid { grid-template-columns: 1fr; } }
 @media (max-width: 640px) {
   .branding-form, .watermark-form, .parameter-form { grid-template-columns: 1fr; }
   .logo-field, .branding-actions, .watermark-actions, .full-row { grid-column: auto; }
   .logo-actions { align-items: flex-start; flex-direction: column; }
-  .branding-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .branding-actions, .barcode-label-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .barcode-logo-actions { align-items: flex-start; flex-direction: column; }
 }
 </style>

@@ -65,6 +65,12 @@ export function hasToken(): boolean {
   return Boolean(token())
 }
 
+export function isAuthenticationFailure(error: unknown): boolean {
+  if (!axios.isAxiosError<ApiResponse<unknown>>(error)) return false
+  const status = error.response?.status
+  return status === 401 || status === 403
+}
+
 export function serverBaseUrl(): string {
   return apiBaseUrlCache
 }
@@ -139,9 +145,14 @@ http.interceptors.response.use(
         const tokens = await refreshing
         original.headers.Authorization = `Bearer ${tokens.accessToken}`
         return http(original)
-      } catch {
-        await clearTokens()
-        window.location.assign('/login')
+      } catch (refreshError) {
+        const refreshAuthenticationFailed = axios.isAxiosError(refreshError)
+          && refreshError.response?.status === 401
+        if (refreshAuthenticationFailed) {
+          await clearTokens()
+          window.location.assign('/login')
+        }
+        throw refreshError
       }
     }
     return Promise.reject(error)
@@ -153,4 +164,27 @@ export function errorMessage(error: unknown, fallback = '操作失败，请稍�
     return error.response?.data?.message || fallback
   }
   return error instanceof Error ? error.message : fallback
+}
+
+export function loginErrorMessage(error: unknown): string {
+  if (!axios.isAxiosError<ApiResponse<unknown>>(error)) {
+    return error instanceof Error ? error.message : '登录失败，请稍后重试'
+  }
+
+  const rawMessage = error.response?.data?.message
+  const responseMessage = typeof rawMessage === 'string' ? rawMessage.trim() : ''
+  if (responseMessage) return responseMessage
+
+  if (!error.response) {
+    return '无法连接后端服务，请确认后端已启动并检查网络'
+  }
+
+  const status = error.response.status
+  if (status === 401) return '账号或密码错误'
+  if (status === 403) return '当前账号无权登录此系统'
+  if (status === 429) return '登录尝试过于频繁，请稍后再试'
+  if (status >= 500) {
+    return `后端服务暂时不可用（HTTP ${status}），请确认后端已启动`
+  }
+  return `登录失败（HTTP ${status}）`
 }

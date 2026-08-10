@@ -46,8 +46,8 @@ const form = reactive({
   required: true,
   photoRequired: false,
   photoMinCount: 0,
-  photoMaxCount: 9,
-  photoMaxSizeMb: 10,
+  photoMaxCount: 2,
+  photoMaxSizeMb: 5,
   photoAllowedTypes: 'image/jpeg,image/png',
   photoCompressionQuality: 82,
   numericRequired: false,
@@ -55,7 +55,7 @@ const form = reactive({
   abnormalSeverity: 'MEDIUM',
   abnormalAdvice: '',
   abnormalDefaultStop: true,
-  standardMinutes: 5,
+  standardMinutes: 2,
   safetyNotes: '',
   enabled: true,
   description: '',
@@ -151,7 +151,7 @@ function open(row?: ItemRow) {
     ? {
         itemCode: row.itemCode,
         itemName: row.itemName,
-        organizationId: row.organizationId ?? organizationId.value ?? organizations.value[0]?.id,
+        organizationId: row.organizationId ?? 0,
         itemCategory: row.itemCategory,
         inspectionPart: row.inspectionPart || '',
         inspectionContent: row.inspectionContent,
@@ -167,8 +167,8 @@ function open(row?: ItemRow) {
         required: row.requiredFlag,
         photoRequired: row.photoRequiredFlag ?? false,
         photoMinCount: row.photoMinCount ?? 0,
-        photoMaxCount: row.photoMaxCount ?? 9,
-        photoMaxSizeMb: row.photoMaxSizeMb ?? 10,
+        photoMaxCount: row.photoMaxCount ?? 2,
+        photoMaxSizeMb: row.photoMaxSizeMb ?? 5,
         photoAllowedTypes: row.photoAllowedTypes || 'image/jpeg,image/png',
         photoCompressionQuality: row.photoCompressionQuality ?? 82,
         numericRequired: row.numericRequiredFlag ?? row.resultType === 'NUMBER',
@@ -176,7 +176,7 @@ function open(row?: ItemRow) {
         abnormalSeverity: row.abnormalSeverity || 'MEDIUM',
         abnormalAdvice: row.abnormalAdvice || '',
         abnormalDefaultStop: row.abnormalDefaultStopFlag ?? true,
-        standardMinutes: row.standardMinutes ?? 5,
+        standardMinutes: row.standardMinutes ?? 2,
         safetyNotes: row.safetyNotes || '',
         enabled: row.status === 1,
         description: row.description || '',
@@ -200,8 +200,8 @@ function open(row?: ItemRow) {
         required: true,
         photoRequired: false,
         photoMinCount: 0,
-        photoMaxCount: 9,
-        photoMaxSizeMb: 10,
+        photoMaxCount: 2,
+        photoMaxSizeMb: 5,
         photoAllowedTypes: 'image/jpeg,image/png',
         photoCompressionQuality: 82,
         numericRequired: false,
@@ -209,7 +209,7 @@ function open(row?: ItemRow) {
         abnormalSeverity: 'MEDIUM',
         abnormalAdvice: '',
         abnormalDefaultStop: true,
-        standardMinutes: 5,
+        standardMinutes: 2,
         safetyNotes: '',
         enabled: true,
         description: '',
@@ -221,7 +221,6 @@ async function save() {
   const missing = [
     !form.itemCode && '项目编码',
     !form.itemName && '项目名称',
-    !form.organizationId && '所属部门',
     !form.itemCategory && '项目分类',
     !form.inspectionContent && '点检内容',
     !form.inspectionStandard && '点检标准',
@@ -255,6 +254,7 @@ async function save() {
   try {
     const payload = {
       ...form,
+      organizationId: form.organizationId || undefined,
       resultOptions: form.resultType === 'NORMAL_ABNORMAL'
         ? ['NORMAL', 'ABNORMAL']
         : form.resultType === 'PASS_FAIL'
@@ -351,10 +351,12 @@ function parseOptions(value?: string): string[] {
       <el-form label-position="top" class="form-grid">
         <el-form-item label="项目编码" required><el-input v-model="form.itemCode" :disabled="Boolean(editing)" placeholder="例如 CNC-LUBRICATION" /></el-form-item>
         <el-form-item label="项目名称" required><el-input v-model="form.itemName" /></el-form-item>
-        <el-form-item label="所属部门" required>
+        <el-form-item label="适用范围" required>
           <el-select v-model="form.organizationId" filterable style="width: 100%">
+            <el-option label="共享标准（所有组织可用）" :value="0" />
             <el-option v-for="row in organizations" :key="row.id" :label="row.organizationName" :value="row.id" />
           </el-select>
+          <div class="field-hint">共享标准可被所有组织的点检方案复用。</div>
         </el-form-item>
         <el-form-item label="项目分类" required><el-input v-model="form.itemCategory" /></el-form-item>
         <el-form-item label="点检部位"><el-input v-model="form.inspectionPart" /></el-form-item>
