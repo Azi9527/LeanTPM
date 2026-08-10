@@ -121,3 +121,22 @@ the Aliyun host.
   evidence for this change.
 - No certificate store, service, database, network, cloud host or production
   file was mutated during implementation and verification.
+
+## App current alias access incident
+
+Requirement: bootstrap `PlanOnly` must identify the running release without
+requiring the interactive administrator to read through `App\current` when the
+fixed Backend starter already names the immutable release JAR.
+
+- Given a host without `current-release.json`, a protected `App\current` alias,
+  and a readable fixed Backend starter that names an existing release JAR,
+  when live bootstrap discovery runs, then it resolves and hashes the
+  release-specific JAR from the starter before considering the alias.
+- Given a starter that does not name an approved immutable release path, when
+  the alias is unavailable, then discovery fails closed without changing ACLs.
+- Scope: release identity discovery ordering only. No service, ACL, database,
+  package or host-policy contract changes.
+- Risk: L4 because this is the production bootstrap gate. GitNexus does not
+  index the PowerShell `Get-LiveObservation` function and reports UNKNOWN with
+  zero known callers; validation therefore uses a failure-first source-order
+  contract plus the full release-platform regression suite.

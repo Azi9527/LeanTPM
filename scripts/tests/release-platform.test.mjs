@@ -6518,6 +6518,18 @@ test('validates one WORKGROUP bootstrap kit and produces one side-effect-free se
       bootstrapSource,
       /fixedBackendStarterPath[\s\S]{0,2400}releaseMatch[\s\S]{0,900}'releases\\'/i,
     )
+    const starterDiscoveryIndex = bootstrapSource.indexOf(
+      '$starterText = [IO.File]::ReadAllText',
+    )
+    const currentAliasIndex = bootstrapSource.indexOf(
+      "'current\\payload\\backend\\leantpm-backend.jar'",
+    )
+    assert.ok(starterDiscoveryIndex >= 0, 'missing fixed Backend starter discovery')
+    assert.ok(currentAliasIndex >= 0, 'missing App current compatibility fallback')
+    assert.ok(
+      starterDiscoveryIndex < currentAliasIndex,
+      'fixed Backend starter must be resolved before the protected App current alias',
+    )
     assert.match(bootstrapSource, /Grant-FixedServiceControl[\s\S]*LeanTPM\.Backend/)
     assert.match(bootstrapSource, /Grant-FixedServiceControl[\s\S]*caddy/)
     assert.match(bootstrapSource, /\(A;;CCLCSWRPWPLOCRRC;;;\$AgentSid\)/)

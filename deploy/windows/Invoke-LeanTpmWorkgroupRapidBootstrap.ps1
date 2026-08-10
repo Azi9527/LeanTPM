@@ -174,9 +174,8 @@ function Get-LiveObservation {
         $packageSha256 = [string]$pointer.value.packageSha256
     }
     else {
-        $currentJar = Join-Path $fixedInstallRoot `
-            'current\payload\backend\leantpm-backend.jar'
-        if (-not (Test-Path -LiteralPath $currentJar -PathType Leaf)) {
+        $releaseMatch = $null
+        if (Test-Path -LiteralPath $fixedBackendStarterPath -PathType Leaf) {
             $starterText = [IO.File]::ReadAllText(
                 $fixedBackendStarterPath,
                 $strictUtf8
@@ -186,9 +185,8 @@ function Get-LiveObservation {
                 "D:\\LeanTPM\\App\\releases\\(?<release>[0-9A-Za-z][0-9A-Za-z._-]{2,127})\\payload\\backend\\leantpm-backend\.jar",
                 [Text.RegularExpressions.RegexOptions]::CultureInvariant
             )
-            if (-not $releaseMatch.Success) {
-                throw 'Current release pointer and fixed Backend release path are both missing'
-            }
+        }
+        if ($null -ne $releaseMatch -and $releaseMatch.Success) {
             $releaseId = $releaseMatch.Groups['release'].Value
             $currentJar = Join-Path $fixedInstallRoot (
                 'releases\' + $releaseId +
@@ -196,6 +194,13 @@ function Get-LiveObservation {
             )
             if (-not (Test-Path -LiteralPath $currentJar -PathType Leaf)) {
                 throw 'Fixed Backend starter references a missing release JAR'
+            }
+        }
+        else {
+            $currentJar = Join-Path $fixedInstallRoot `
+                'current\payload\backend\leantpm-backend.jar'
+            if (-not (Test-Path -LiteralPath $currentJar -PathType Leaf)) {
+                throw 'Current release pointer and fixed Backend release path are both missing'
             }
         }
         $packageSha256 = Get-FileSha256 $currentJar
