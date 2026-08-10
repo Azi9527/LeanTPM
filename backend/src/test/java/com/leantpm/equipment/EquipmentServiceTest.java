@@ -1,6 +1,10 @@
 package com.leantpm.equipment;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.zxing.BinaryBitmap;
+import com.google.zxing.MultiFormatReader;
+import com.google.zxing.RGBLuminanceSource;
+import com.google.zxing.common.HybridBinarizer;
 import com.leantpm.common.exception.BusinessException;
 import com.leantpm.foundation.service.NumberRuleService;
 import com.leantpm.foundation.service.ParameterService;
@@ -122,31 +126,47 @@ class EquipmentServiceTest {
     }
 
     @Test
-    void rendersEquipmentNameAndCodeBelowQrImage() {
+    void rendersCustomerApprovedPremiumBlueEquipmentLabel() {
         BufferedImage qrCode = new BufferedImage(240, 240, BufferedImage.TYPE_INT_RGB);
         var graphics = qrCode.createGraphics();
         graphics.setColor(Color.WHITE);
         graphics.fillRect(0, 0, qrCode.getWidth(), qrCode.getHeight());
         graphics.dispose();
 
-        BufferedImage label = EquipmentService.withEquipmentCaption(
+        BufferedImage label = EquipmentService.withPremiumEquipmentLabel(
                 qrCode,
+                "大宝山设备管理系统",
                 "循环泵站一号",
                 "VIZ-PUMP-01"
         );
 
         assertThat(label.getWidth()).isEqualTo(240);
-        assertThat(label.getHeight()).isGreaterThan(240);
-        boolean hasCaptionPixels = false;
-        for (int y = 240; y < label.getHeight() && !hasCaptionPixels; y++) {
-            for (int x = 0; x < label.getWidth(); x++) {
-                if ((label.getRGB(x, y) & 0xFFFFFF) != 0xFFFFFF) {
-                    hasCaptionPixels = true;
-                    break;
-                }
-            }
-        }
-        assertThat(hasCaptionPixels).isTrue();
+        assertThat(label.getHeight()).isEqualTo(320);
+        assertThat(label.getRGB(8, 8) & 0xFFFFFF).isEqualTo(0xFFFFFF);
+        assertThat(label.getRGB(8, 150) & 0xFFFFFF).isNotEqualTo(0xFFFFFF);
+        assertThat(label.getRGB(120, 302) & 0xFFFFFF).isEqualTo(0xFFFFFF);
+    }
+
+    @Test
+    void keepsStyledQrDecodableWhenCenterLogoIsApplied() throws Exception {
+        String content = "https://equipment.example/m/e/scan-safe-token";
+        BufferedImage logo = new BufferedImage(64, 64, BufferedImage.TYPE_INT_ARGB);
+        var graphics = logo.createGraphics();
+        graphics.setColor(new Color(0, 160, 136));
+        graphics.fillRoundRect(0, 0, 64, 64, 12, 12);
+        graphics.dispose();
+
+        BufferedImage qrCode = EquipmentService.renderStyledQr(content, 480, logo);
+        int[] pixels = qrCode.getRGB(
+                0, 0, qrCode.getWidth(), qrCode.getHeight(), null, 0, qrCode.getWidth()
+        );
+        BinaryBitmap bitmap = new BinaryBitmap(new HybridBinarizer(
+                new RGBLuminanceSource(qrCode.getWidth(), qrCode.getHeight(), pixels)
+        ));
+
+        assertThat(new MultiFormatReader().decode(bitmap).getText()).isEqualTo(content);
+        Color center = new Color(qrCode.getRGB(240, 240), true);
+        assertThat(center.getGreen()).isGreaterThan(center.getRed());
     }
 
     private EquipmentDtos.EquipmentRow equipment() {

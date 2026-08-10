@@ -25,14 +25,6 @@ import java.util.regex.PatternSyntaxException;
 
 @Service
 public class MasterDataService {
-    private static final Map<String, Set<String>> ORGANIZATION_PARENTS = Map.of(
-            "ENTERPRISE", Set.of(),
-            "FACTORY", Set.of("ENTERPRISE"),
-            "DEPARTMENT", Set.of("ENTERPRISE", "FACTORY", "DEPARTMENT"),
-            "WORKSHOP", Set.of("FACTORY", "DEPARTMENT"),
-            "LINE", Set.of("WORKSHOP"),
-            "TEAM", Set.of("DEPARTMENT", "WORKSHOP", "LINE")
-    );
     private static final Map<String, Set<String>> LOCATION_PARENTS = Map.of(
             "AREA", Set.of("AREA"),
             "BUILDING", Set.of("AREA"),
@@ -851,25 +843,14 @@ public class MasterDataService {
             Long currentId,
             MasterDataDtos.SaveOrganizationRequest request
     ) {
-        String type = request.organizationType();
-        if ("ENTERPRISE".equals(type)) {
-            if (request.parentId() != 0) {
-                throw hierarchyError("企业必须为根组织");
-            }
+        if (request.parentId() == 0) {
             if (currentId == null && !dataPermissionService.current().allData()) {
                 throw dataScopeDenied();
             }
             return;
         }
-        if (request.parentId() == 0) {
-            throw hierarchyError("非企业组织必须选择上级");
-        }
         var parent = requireOrganization(tenantId, request.parentId());
         assertOrganizationAccess(parent.id());
-        if (!ORGANIZATION_PARENTS.getOrDefault(type, Set.of())
-                .contains(parent.organizationType())) {
-            throw hierarchyError(type + " 不能位于 " + parent.organizationType() + " 下");
-        }
         if (currentId != null) {
             assertNoCycle(
                     currentId,
@@ -999,7 +980,7 @@ public class MasterDataService {
         if (mapper.countOrganizationCode(tenantId, code, excludeId) > 0) {
             throw new BusinessException(
                     "ORGANIZATION_CODE_EXISTS",
-                    "组织编码已存在",
+                    "组织编码已存在或曾被使用，请更换编码",
                     HttpStatus.CONFLICT
             );
         }

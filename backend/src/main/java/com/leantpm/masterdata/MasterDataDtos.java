@@ -39,7 +39,7 @@ public final class MasterDataDtos {
             @NotBlank @Size(max = 100) String organizationName,
             @NotBlank
             @Pattern(
-                    regexp = "^(ENTERPRISE|FACTORY|DEPARTMENT|WORKSHOP|LINE|TEAM)$",
+                    regexp = "^(ENTERPRISE|FACTORY|DEPARTMENT|WORKSHOP|LINE|SECTION|TEAM)$",
                     message = "组织类型不正确"
             )
             String organizationType,

@@ -4,7 +4,7 @@ import com.leantpm.common.exception.BusinessException;
 import com.leantpm.security.CurrentUser;
 import com.leantpm.security.datascope.DataPermission;
 import com.leantpm.security.datascope.DataPermissionService;
-import com.leantpm.security.session.RedisAuthSessionService;
+import com.leantpm.security.session.AuthSessionService;
 import com.leantpm.system.dto.SystemDtos;
 import com.leantpm.system.mapper.SystemMapper;
 import com.leantpm.system.service.SystemService;
@@ -34,7 +34,7 @@ class SystemServicePersonnelRelationshipTest {
     @Mock
     private DataPermissionService dataPermissionService;
     @Mock
-    private RedisAuthSessionService sessionService;
+    private AuthSessionService sessionService;
 
     private SystemService service;
 
@@ -57,31 +57,39 @@ class SystemServicePersonnelRelationshipTest {
     }
 
     @Test
-    void teamManagerMustBeEnabledTeamLeader() {
+    void organizationManagerMustBeEnabledWithoutRoleCoupling() {
         when(mapper.findPersonnelOrganization(1L, 20L)).thenReturn(team(20L));
-        when(mapper.countActiveUsersWithRole(1L, List.of(7L), "TEAM_LEADER")).thenReturn(0);
+        when(mapper.countActiveUsers(1L, List.of(7L))).thenReturn(0);
 
         assertThatThrownBy(() -> service.updateOrganizationManager(
                 20L, new SystemDtos.UpdateOrganizationManagerRequest(List.of(7L), 0)
         )).isInstanceOf(BusinessException.class)
-                .extracting("code").isEqualTo("ORGANIZATION_MANAGER_ROLE_INVALID");
+                .extracting("code").isEqualTo("ORGANIZATION_MANAGER_USER_INVALID");
     }
 
     @Test
-    void teamSupportsMultipleTeamLeadersWithoutDuplicateRelations() {
+    void organizationRejectsMultipleManagers() {
         when(mapper.findPersonnelOrganization(1L, 20L)).thenReturn(team(20L));
-        when(mapper.countActiveUsersWithRole(1L, List.of(7L, 8L), "TEAM_LEADER"))
-                .thenReturn(2);
-        when(mapper.updateOrganizationManager(1L, 20L, 7L, 0, 1L)).thenReturn(1);
+
+        assertThatThrownBy(() -> service.updateOrganizationManager(
+                20L, new SystemDtos.UpdateOrganizationManagerRequest(List.of(7L, 8L), 0)
+        )).isInstanceOf(BusinessException.class)
+                .extracting("code").isEqualTo("ORGANIZATION_MANAGER_MULTIPLE_NOT_ALLOWED");
+    }
+
+    @Test
+    void lineSupportsOneUnifiedManager() {
+        when(mapper.findPersonnelOrganization(1L, 21L)).thenReturn(line(21L));
+        when(mapper.countActiveUsers(1L, List.of(7L))).thenReturn(1);
+        when(mapper.updateOrganizationManager(1L, 21L, 7L, 0, 1L)).thenReturn(1);
 
         service.updateOrganizationManager(
-                20L, new SystemDtos.UpdateOrganizationManagerRequest(List.of(7L, 8L, 7L), 0)
+                21L, new SystemDtos.UpdateOrganizationManagerRequest(List.of(7L), 0)
         );
 
-        verify(mapper).updateOrganizationManager(1L, 20L, 7L, 0, 1L);
-        verify(mapper).deleteOrganizationManagers(1L, 20L, 1L);
-        verify(mapper).insertOrganizationManager(1L, 20L, 7L, "TEAM_LEADER", 0, 1L);
-        verify(mapper).insertOrganizationManager(1L, 20L, 8L, "TEAM_LEADER", 1, 1L);
+        verify(mapper).updateOrganizationManager(1L, 21L, 7L, 0, 1L);
+        verify(mapper).deleteOrganizationManagers(1L, 21L, 1L);
+        verify(mapper).insertOrganizationManager(1L, 21L, 7L, "LINE_LEADER", 0, 1L);
     }
 
     @Test
@@ -104,8 +112,7 @@ class SystemServicePersonnelRelationshipTest {
     @Test
     void teamManagerAndMembersAreSavedAsOneRelationshipUpdate() {
         when(mapper.findPersonnelOrganization(1L, 20L)).thenReturn(team(20L));
-        when(mapper.countActiveUsersWithRole(1L, List.of(7L), "TEAM_LEADER"))
-                .thenReturn(1);
+        when(mapper.countActiveUsers(1L, List.of(7L))).thenReturn(1);
         when(mapper.countActiveUsersWithRole(1L, List.of(31L, 32L), "OPERATOR"))
                 .thenReturn(2);
         when(mapper.updateOrganizationManager(1L, 20L, 7L, 4, 1L)).thenReturn(1);
@@ -129,6 +136,13 @@ class SystemServicePersonnelRelationshipTest {
     private SystemDtos.PersonnelOrganizationRow team(long id) {
         return new SystemDtos.PersonnelOrganizationRow(
                 id, 10L, "TEAM-A-1", "装配一线一班", "TEAM",
+                null, null, 1, 0, List.of(), List.of(), ""
+        );
+    }
+
+    private SystemDtos.PersonnelOrganizationRow line(long id) {
+        return new SystemDtos.PersonnelOrganizationRow(
+                id, 10L, "LINE-A", "装配产线", "LINE",
                 null, null, 1, 0, List.of(), List.of(), ""
         );
     }

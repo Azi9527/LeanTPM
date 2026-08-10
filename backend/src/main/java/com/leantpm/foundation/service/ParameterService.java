@@ -17,6 +17,11 @@ import java.util.regex.Pattern;
 @Service
 public class ParameterService {
     private static final String BRANDING_LOGO_KEY = "branding.logo-url";
+    private static final String BARCODE_CENTER_LOGO_KEY = "equipment.barcode.center-logo-url";
+    private static final Set<String> LARGE_IMAGE_VALUE_KEYS = Set.of(
+            BRANDING_LOGO_KEY,
+            BARCODE_CENTER_LOGO_KEY
+    );
     private static final Set<String> BRANDING_COLOR_KEYS = Set.of(
             "branding.primary-color",
             "branding.secondary-color",
@@ -25,6 +30,9 @@ public class ParameterService {
     private static final Pattern HEX_COLOR = Pattern.compile("^#[0-9a-fA-F]{6}$");
     private static final Pattern IMAGE_DATA_URL = Pattern.compile(
             "^data:image/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$"
+    );
+    private static final Pattern BARCODE_IMAGE_DATA_URL = Pattern.compile(
+            "^data:image/(png|jpeg);base64,[A-Za-z0-9+/=]+$"
     );
     private static final int STANDARD_VALUE_MAX_LENGTH = 2000;
     private static final int LOGO_VALUE_MAX_LENGTH = 700000;
@@ -154,13 +162,15 @@ public class ParameterService {
     }
 
     private void validateLengthAndBranding(String key, String value) {
-        int maxLength = BRANDING_LOGO_KEY.equals(key)
+        int maxLength = LARGE_IMAGE_VALUE_KEYS.contains(key)
                 ? LOGO_VALUE_MAX_LENGTH
                 : STANDARD_VALUE_MAX_LENGTH;
         if (value.length() > maxLength) {
             throw new BusinessException(
                     "PARAMETER_VALUE_TOO_LONG",
-                    BRANDING_LOGO_KEY.equals(key) ? "Logo 图片不能超过 512KB" : "参数值不能超过 2000 个字符"
+                    LARGE_IMAGE_VALUE_KEYS.contains(key)
+                            ? "图片不能超过 512KB"
+                            : "参数值不能超过 2000 个字符"
             );
         }
         if (BRANDING_COLOR_KEYS.contains(key) && !HEX_COLOR.matcher(value).matches()) {
@@ -172,6 +182,14 @@ public class ParameterService {
             throw new BusinessException(
                     "BRANDING_LOGO_INVALID",
                     "Logo 仅支持系统内路径或 PNG、JPEG、WebP 图片"
+            );
+        }
+        if (BARCODE_CENTER_LOGO_KEY.equals(key)
+                && !"DEFAULT".equals(value)
+                && !BARCODE_IMAGE_DATA_URL.matcher(value).matches()) {
+            throw new BusinessException(
+                    "EQUIPMENT_BARCODE_LOGO_INVALID",
+                    "设备二维码中心图标仅支持默认图标或 PNG、JPEG 图片"
             );
         }
     }

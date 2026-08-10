@@ -1,6 +1,7 @@
 package com.leantpm.oee;
 
 import com.leantpm.common.exception.BusinessException;
+import com.leantpm.common.excel.ImportWorkbookSupport;
 import com.leantpm.security.SecurityUtils;
 import com.leantpm.security.datascope.DataPermissionService;
 import org.apache.poi.ss.usermodel.Cell;
@@ -27,6 +28,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 public class OeeImportService {
@@ -35,6 +37,7 @@ public class OeeImportService {
             "计划工作分钟", "计划停机分钟", "计划数量", "实际产量",
             "良品数量", "不良品数量"
     );
+    private static final Set<String> REQUIRED_HEADERS = Set.copyOf(HEADERS);
 
     private final OeeMapper mapper;
     private final OeeService oeeService;
@@ -62,7 +65,9 @@ public class OeeImportService {
             Row header = sheet.createRow(0);
             for (int index = 0; index < HEADERS.size(); index++) {
                 Cell cell = header.createCell(index);
-                cell.setCellValue(HEADERS.get(index));
+                cell.setCellValue(ImportWorkbookSupport.displayHeader(
+                        HEADERS.get(index), REQUIRED_HEADERS
+                ));
                 cell.setCellStyle(headerStyle);
                 sheet.setColumnWidth(index, index < 3 ? 18 * 256 : 16 * 256);
             }
@@ -208,7 +213,12 @@ public class OeeImportService {
         DataFormatter formatter = new DataFormatter(Locale.CHINA);
         Map<String, Integer> columns = new LinkedHashMap<>();
         for (Cell cell : header) {
-            columns.put(formatter.formatCellValue(cell).trim(), cell.getColumnIndex());
+            columns.put(
+                    ImportWorkbookSupport.canonicalHeader(
+                            formatter.formatCellValue(cell)
+                    ),
+                    cell.getColumnIndex()
+            );
         }
         List<String> missing = HEADERS.stream()
                 .filter(name -> !columns.containsKey(name))

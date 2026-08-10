@@ -3,6 +3,7 @@ package com.leantpm.system.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leantpm.common.excel.ImportWorkbookSupport;
 import com.leantpm.common.exception.BusinessException;
 import com.leantpm.security.SecurityUtils;
 import com.leantpm.security.datascope.DataPermission;
@@ -43,10 +44,15 @@ public class UserImportService {
     private static final long MAX_FILE_BYTES = 5L * 1024L * 1024L;
     private static final int MAX_ROWS = 1_000;
     private static final String SHEET_NAME = "用户导入";
+    private static final String RESPONSIBLE_ORGANIZATION_HEADER = "负责组织编码";
+    private static final String LEGACY_RESPONSIBLE_ORGANIZATION_HEADER = "负责组织编码列表";
     private static final List<String> HEADERS = List.of(
             "账号", "姓名", "工号", "手机号", "邮箱", "组织编码", "角色编码列表",
             "允许移动端", "初始密码", "处理策略", "任职班组编码列表",
-            "主班组编码", "负责组织编码列表"
+            "主班组编码", RESPONSIBLE_ORGANIZATION_HEADER
+    );
+    private static final Set<String> REQUIRED_HEADERS = Set.of(
+            "账号", "姓名", "组织编码", "角色编码列表", "处理策略"
     );
     private static final Set<String> STRATEGIES = Set.of("ADD_ONLY", "ADD_UPDATE");
 
@@ -93,7 +99,9 @@ public class UserImportService {
             style.setFont(font);
             for (int index = 0; index < HEADERS.size(); index++) {
                 var cell = header.createCell(index);
-                cell.setCellValue(HEADERS.get(index));
+                cell.setCellValue(ImportWorkbookSupport.displayHeader(
+                        HEADERS.get(index), REQUIRED_HEADERS
+                ));
                 cell.setCellStyle(style);
             }
             header.setHeightInPoints(32);
@@ -147,7 +155,9 @@ public class UserImportService {
                 {"组织编码", "用户的主要归属组织，只能填写一个有效组织编码", "WORKSHOP-A"},
                 {"任职班组编码列表", "员工可任职多个班组，用逗号分隔；仅员工角色填写", "TEAM-A-1,TEAM-A-2"},
                 {"主班组编码", "必须包含在任职班组编码列表中；不填时取第一个班组", "TEAM-A-1"},
-                {"负责组织编码列表", "车间主任填写车间编码，班组长填写班组编码；多个用逗号分隔", "TEAM-A-1"}
+                {RESPONSIBLE_ORGANIZATION_HEADER,
+                        "选填且只能填写一个组织编码；负责人称谓随组织类型显示，如车间负责人、产线负责人、工段长或班组长",
+                        "LINE-A"}
         };
         for (int rowIndex = 0; rowIndex < instructions.length; rowIndex++) {
             Row row = guide.createRow(rowIndex);
@@ -368,20 +378,29 @@ public class UserImportService {
                     teamCode.equals(primaryTeamCode), operatorId
             );
         }
-        for (String organizationCode : safeCodes(row.managedOrganizationCodes())) {
-            SystemDtos.OrganizationNode managed = organizations.get(organizationCode);
+        List<String> responsibleOrganizationCodes = safeCodes(
+                row.managedOrganizationCodes()
+        );
+        if (!responsibleOrganizationCodes.isEmpty()) {
+            SystemDtos.OrganizationNode managed = organizations.get(
+                    responsibleOrganizationCodes.getFirst()
+            );
             SystemDtos.PersonnelOrganizationRow current = mapper.findPersonnelOrganization(
                     tenantId, managed.id()
             );
-            LinkedHashSet<Long> managerUserIds = new LinkedHashSet<>(
-                    mapper.findOrganizationManagerUserIds(tenantId, managed.id())
-            );
-            managerUserIds.add(userId);
-            systemService.updateOrganizationManager(
-                    managed.id(),
-                    new SystemDtos.UpdateOrganizationManagerRequest(
-                            new ArrayList<>(managerUserIds), current.version()
-                    )
+            if (current == null || mapper.updateOrganizationManager(
+                    tenantId, managed.id(), userId, current.version(), operatorId
+            ) == 0) {
+                throw new BusinessException(
+                        "ORGANIZATION_MANAGER_VERSION_CONFLICT",
+                        "组织负责人已被其他操作修改，请重新校验导入文件",
+                        HttpStatus.CONFLICT
+                );
+            }
+            mapper.deleteOrganizationManagers(tenantId, managed.id(), operatorId);
+            mapper.insertOrganizationManager(
+                    tenantId, managed.id(), userId,
+                    managerType(managed.organizationType()), 0, operatorId
             );
         }
     }
@@ -396,6 +415,13 @@ public class UserImportService {
                 throw new BusinessException("USER_IMPORT_SHEET_MISSING", "缺少“用户导入”工作表");
             }
             Map<String, Integer> columns = columns(sheet.getRow(0));
+            if (!columns.containsKey(RESPONSIBLE_ORGANIZATION_HEADER)
+                    && columns.containsKey(LEGACY_RESPONSIBLE_ORGANIZATION_HEADER)) {
+                columns.put(
+                        RESPONSIBLE_ORGANIZATION_HEADER,
+                        columns.get(LEGACY_RESPONSIBLE_ORGANIZATION_HEADER)
+                );
+            }
             for (String header : HEADERS) {
                 if (!columns.containsKey(header)) {
                     throw new BusinessException(
@@ -428,7 +454,7 @@ public class UserImportService {
                             )),
                             upper(optional(row, columns, formatter, "主班组编码")),
                             splitCodes(optional(
-                                    row, columns, formatter, "负责组织编码列表"
+                                    row, columns, formatter, RESPONSIBLE_ORGANIZATION_HEADER
                             ))
                     ));
                 } catch (RowError exception) {
@@ -461,6 +487,7 @@ public class UserImportService {
         Map<String, SystemDtos.RoleRow> roles = rolesByCode();
         DataPermission scope = dataPermissionService.current();
         Set<String> usernames = new HashSet<>();
+        Set<String> responsibleOrganizationCodes = new HashSet<>();
         for (UserImportDtos.UserInput row : rows) {
             List<UserImportDtos.ImportError> rowErrors = new ArrayList<>();
             if (!row.username().matches("^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$")) {
@@ -508,36 +535,29 @@ public class UserImportService {
                         row, "主班组编码", "主班组必须包含在任职班组编码列表中"
                 ));
             }
-            for (String managedCode : safeCodes(row.managedOrganizationCodes())) {
+            List<String> managedCodes = safeCodes(row.managedOrganizationCodes());
+            String responsibleOrganizationCode = managedCodes.size() == 1
+                    ? managedCodes.getFirst() : null;
+            if (managedCodes.size() > 1) {
+                rowErrors.add(error(
+                        row, RESPONSIBLE_ORGANIZATION_HEADER,
+                        "只能填写一个负责组织编码"
+                ));
+            }
+            for (String managedCode : managedCodes) {
                 SystemDtos.OrganizationNode managed = organizations.get(managedCode);
-                if (managed == null || managed.status() != 1
-                        || !Set.of("WORKSHOP", "TEAM").contains(
-                        managed.organizationType()
-                )) {
+                if (managed == null || managed.status() != 1) {
                     rowErrors.add(error(
-                            row, "负责组织编码列表",
-                            "负责组织不存在、已停用或不是车间/班组：" + managedCode
+                            row, RESPONSIBLE_ORGANIZATION_HEADER,
+                            "负责组织不存在或已停用：" + managedCode
                     ));
                     continue;
-                }
-                String requiredRole = "WORKSHOP".equals(managed.organizationType())
-                        ? "WORKSHOP_MANAGER" : "TEAM_LEADER";
-                boolean relationshipValid = true;
-                if (!row.roleCodes().contains(requiredRole)) {
-                    relationshipValid = false;
-                    rowErrors.add(error(
-                            row, "负责组织编码列表",
-                            "负责" + managedCode + "需要角色：" + requiredRole
-                    ));
                 }
                 if (!scope.canCreateIn(managed.id())) {
-                    relationshipValid = false;
                     rowErrors.add(error(
-                            row, "负责组织编码列表", "无权维护该组织负责人：" + managedCode
+                            row, RESPONSIBLE_ORGANIZATION_HEADER,
+                            "无权维护该组织负责人：" + managedCode
                     ));
-                }
-                if (!relationshipValid) {
-                    continue;
                 }
             }
             if (row.roleCodes().isEmpty()) {
@@ -573,6 +593,15 @@ public class UserImportService {
             }
             if (row.realName().length() > 100) {
                 rowErrors.add(error(row, "姓名", "姓名不能超过 100 个字符"));
+            }
+            if (rowErrors.isEmpty()
+                    && responsibleOrganizationCode != null
+                    && !responsibleOrganizationCodes.add(responsibleOrganizationCode)) {
+                rowErrors.add(error(
+                        row, RESPONSIBLE_ORGANIZATION_HEADER,
+                        "同一负责组织在文件中只能指定一名负责人："
+                                + responsibleOrganizationCode
+                ));
             }
             if (rowErrors.isEmpty()) {
                 valid.add(row);
@@ -690,7 +719,7 @@ public class UserImportService {
         for (int index = 0; index < row.getLastCellNum(); index++) {
             String value = formatter.formatCellValue(row.getCell(index)).trim();
             if (!value.isEmpty()) {
-                result.put(value, index);
+                result.put(ImportWorkbookSupport.canonicalHeader(value), index);
             }
         }
         return result;
@@ -768,6 +797,15 @@ public class UserImportService {
                 .map(this::upper)
                 .distinct()
                 .toList();
+    }
+
+    private String managerType(String organizationType) {
+        return switch (organizationType) {
+            case "WORKSHOP" -> "WORKSHOP_MANAGER";
+            case "LINE", "SECTION" -> "LINE_LEADER";
+            case "TEAM" -> "TEAM_LEADER";
+            default -> "ORGANIZATION_MANAGER";
+        };
     }
 
     private List<String> safeCodes(List<String> values) {

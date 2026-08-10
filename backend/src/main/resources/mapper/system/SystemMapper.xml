@@ -125,7 +125,8 @@
             organization_id = #{request.organizationId},
             mobile_enabled = #{request.mobileEnabled},
             updated_by = #{operatorId},
-            version = version + 1
+            version = version + 1,
+            auth_epoch = auth_epoch + 1
         WHERE u.tenant_id = #{tenantId} AND u.id = #{userId}
           AND u.version = #{request.version} AND u.deleted = 0
           <include refid="userDataPermission"/>
@@ -133,7 +134,8 @@
 
     <update id="updateUserStatus">
         UPDATE system_user AS u
-        SET status = IF(#{enabled}, 1, 0), updated_by = #{operatorId}, version = version + 1
+        SET status = IF(#{enabled}, 1, 0), updated_by = #{operatorId},
+            version = version + 1, auth_epoch = auth_epoch + 1
         WHERE u.tenant_id = #{tenantId} AND u.id = #{userId}
           AND u.version = #{version} AND u.deleted = 0
           <include refid="userDataPermission"/>
@@ -142,7 +144,8 @@
     <update id="resetUserPassword">
         UPDATE system_user AS u
         SET password_hash = #{passwordHash}, must_change_password = 1,
-            updated_by = #{operatorId}, version = version + 1
+            updated_by = #{operatorId}, version = version + 1,
+            auth_epoch = auth_epoch + 1
         WHERE u.tenant_id = #{tenantId} AND u.id = #{userId} AND u.deleted = 0
           <include refid="userDataPermission"/>
     </update>
@@ -155,6 +158,28 @@
         INSERT INTO system_user_role (tenant_id, user_id, role_id, created_by, updated_by)
         VALUES (#{tenantId}, #{userId}, #{roleId}, #{operatorId}, #{operatorId})
     </insert>
+
+    <select id="findUserIdsByRole" resultType="long">
+        SELECT user_id
+        FROM system_user_role
+        WHERE tenant_id = #{tenantId}
+          AND role_id = #{roleId}
+          AND deleted = 0
+        ORDER BY user_id
+    </select>
+
+    <update id="bumpAuthEpochForRole">
+        UPDATE system_user AS u
+        JOIN system_user_role AS relation
+          ON relation.tenant_id = u.tenant_id
+         AND relation.user_id = u.id
+         AND relation.role_id = #{roleId}
+         AND relation.deleted = 0
+        SET u.auth_epoch = u.auth_epoch + 1,
+            u.updated_by = #{operatorId}
+        WHERE u.tenant_id = #{tenantId}
+          AND u.deleted = 0
+    </update>
 
     <select id="findRoles" resultType="com.leantpm.system.dto.SystemDtos$RoleRow">
         SELECT id, role_code, role_name, data_scope, status, sort_order, remark, version,
@@ -409,6 +434,17 @@
           AND role.role_code = #{roleCode} AND role.status = 1
     </select>
 
+    <select id="countActiveUsers" resultType="int">
+        SELECT COUNT(DISTINCT user.id)
+        FROM system_user user
+        WHERE user.tenant_id = #{tenantId}
+          AND user.id IN
+          <foreach collection="userIds" item="userId" open="(" separator="," close=")">
+              #{userId}
+          </foreach>
+          AND user.status = 1 AND user.deleted = 0
+    </select>
+
     <update id="updateOrganizationManager">
         UPDATE organization
         SET manager_user_id = #{managerUserId}, updated_by = #{operatorId},
@@ -493,6 +529,50 @@
           AND id IN
           <foreach collection="menuIds" item="menuId" open="(" separator="," close=")">
               #{menuId}
+          </foreach>
+    </update>
+
+    <select id="findUserIdsByMenuIds" resultType="long">
+        SELECT DISTINCT user.id
+        FROM system_user AS user
+        JOIN system_user_role AS user_role
+          ON user_role.tenant_id = user.tenant_id
+         AND user_role.user_id = user.id
+         AND user_role.deleted = 0
+        JOIN system_role AS role
+          ON role.tenant_id = user_role.tenant_id
+         AND role.id = user_role.role_id
+         AND role.status = 1
+         AND role.deleted = 0
+        WHERE user.tenant_id = #{tenantId}
+          AND user.status = 1
+          AND user.deleted = 0
+          AND (
+              role.role_code IN ('ADMIN', 'SUPER_ADMIN')
+              OR EXISTS (
+                  SELECT 1
+                  FROM system_role_menu AS role_menu
+                  WHERE role_menu.tenant_id = role.tenant_id
+                    AND role_menu.role_id = role.id
+                    AND role_menu.deleted = 0
+                    AND role_menu.menu_id IN
+                    <foreach collection="menuIds" item="menuId" open="(" separator="," close=")">
+                        #{menuId}
+                    </foreach>
+              )
+          )
+        ORDER BY user.id
+    </select>
+
+    <update id="bumpAuthEpochForUsers">
+        UPDATE system_user
+        SET auth_epoch = auth_epoch + 1,
+            updated_by = #{operatorId}
+        WHERE tenant_id = #{tenantId}
+          AND deleted = 0
+          AND id IN
+          <foreach collection="userIds" item="userId" open="(" separator="," close=")">
+              #{userId}
           </foreach>
     </update>
 

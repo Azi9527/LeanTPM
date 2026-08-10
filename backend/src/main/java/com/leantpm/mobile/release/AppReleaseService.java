@@ -117,9 +117,9 @@ public class AppReleaseService {
         return new AppReleaseDtos.AndroidRelease(
                 true,
                 enabled,
-                stringValue(tenantId, VERSION_NAME, "1.0.0"),
-                intValue(tenantId, VERSION_CODE, 1),
-                intValue(tenantId, MINIMUM_VERSION_CODE, 1),
+                stringValue(tenantId, VERSION_NAME, "1.0.1"),
+                intValue(tenantId, VERSION_CODE, 101),
+                intValue(tenantId, MINIMUM_VERSION_CODE, 101),
                 attachment.originalName(),
                 attachment.fileSize(),
                 attachment.sha256(),

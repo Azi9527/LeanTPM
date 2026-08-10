@@ -5,7 +5,7 @@ import com.leantpm.common.exception.BusinessException;
 import com.leantpm.security.SecurityUtils;
 import com.leantpm.security.datascope.DataPermission;
 import com.leantpm.security.datascope.DataPermissionService;
-import com.leantpm.security.session.RedisAuthSessionService;
+import com.leantpm.security.session.AuthSessionService;
 import com.leantpm.system.dto.SystemDtos;
 import com.leantpm.system.mapper.SystemMapper;
 import org.springframework.http.HttpStatus;
@@ -30,13 +30,13 @@ public class SystemService {
     private final SystemMapper mapper;
     private final PasswordEncoder passwordEncoder;
     private final DataPermissionService dataPermissionService;
-    private final RedisAuthSessionService sessionService;
+    private final AuthSessionService sessionService;
 
     public SystemService(
             SystemMapper mapper,
             PasswordEncoder passwordEncoder,
             DataPermissionService dataPermissionService,
-            RedisAuthSessionService sessionService
+            AuthSessionService sessionService
     ) {
         this.mapper = mapper;
         this.passwordEncoder = passwordEncoder;
@@ -105,6 +105,7 @@ public class SystemService {
             throw optimisticConflict();
         }
         replaceUserRoles(current.tenantId(), userId, request.roleIds(), current.userId());
+        sessionService.revokeAllUserSessions(current.tenantId(), userId);
     }
 
     @Transactional
@@ -222,6 +223,7 @@ public class SystemService {
             throw new BusinessException("VERSION_REQUIRED", "缺少数据版本");
         }
         validateDataScope(current.tenantId(), request.dataScope(), request.customOrganizationIds());
+        List<Long> affectedUserIds = mapper.findUserIdsByRole(current.tenantId(), roleId);
         if (mapper.updateRole(current.tenantId(), roleId, request, current.userId()) == 0) {
             throw optimisticConflict();
         }
@@ -229,6 +231,7 @@ public class SystemService {
         replaceRoleDataScopes(
                 current.tenantId(), roleId, request.dataScope(), request.customOrganizationIds(), current.userId()
         );
+        invalidateRoleSessions(current.tenantId(), roleId, affectedUserIds, current.userId());
     }
 
     @Transactional(readOnly = true)
@@ -274,9 +277,10 @@ public class SystemService {
         if (organization == null) {
             throw new BusinessException("ORGANIZATION_NOT_FOUND", "组织不存在", HttpStatus.NOT_FOUND);
         }
-        if (!Set.of("WORKSHOP", "TEAM").contains(organization.organizationType())) {
+        if (!Set.of("WORKSHOP", "LINE", "SECTION", "TEAM")
+                .contains(organization.organizationType())) {
             throw new BusinessException(
-                    "ORGANIZATION_MANAGER_LEVEL_INVALID", "仅车间和班组可以维护本级负责人"
+                    "ORGANIZATION_MANAGER_LEVEL_INVALID", "仅车间、产线/工段和班组可以维护负责人"
             );
         }
         if (!dataPermissionService.current().canCreateIn(organization.id())) {
@@ -285,18 +289,24 @@ public class SystemService {
         List<Long> managerUserIds = new ArrayList<>(
                 new LinkedHashSet<>(request.managerUserIds())
         );
-        String requiredRole = "WORKSHOP".equals(organization.organizationType())
-                ? "WORKSHOP_MANAGER" : "TEAM_LEADER";
-        if (!managerUserIds.isEmpty() && mapper.countActiveUsersWithRole(
-                current.tenantId(), managerUserIds, requiredRole
-        ) != managerUserIds.size()) {
+        if (managerUserIds.size() > 1) {
             throw new BusinessException(
-                    "ORGANIZATION_MANAGER_ROLE_INVALID",
-                    "WORKSHOP".equals(organization.organizationType())
-                            ? "车间负责人必须具有车间主任角色"
-                            : "班组负责人必须具有班组长角色"
+                    "ORGANIZATION_MANAGER_MULTIPLE_NOT_ALLOWED", "每个组织只能设置一名负责人"
             );
         }
+        if (!managerUserIds.isEmpty() && mapper.countActiveUsers(
+                current.tenantId(), managerUserIds
+        ) != managerUserIds.size()) {
+            throw new BusinessException(
+                    "ORGANIZATION_MANAGER_USER_INVALID", "负责人账号不存在或已停用"
+            );
+        }
+        String managerType = switch (organization.organizationType()) {
+            case "WORKSHOP" -> "WORKSHOP_MANAGER";
+            case "LINE", "SECTION" -> "LINE_LEADER";
+            case "TEAM" -> "TEAM_LEADER";
+            default -> "ORGANIZATION_MANAGER";
+        };
         if (mapper.updateOrganizationManager(
                 current.tenantId(), organizationId,
                 managerUserIds.isEmpty() ? null : managerUserIds.getFirst(),
@@ -305,10 +315,10 @@ public class SystemService {
             throw optimisticConflict();
         }
         mapper.deleteOrganizationManagers(current.tenantId(), organizationId, current.userId());
-        for (int index = 0; index < managerUserIds.size(); index++) {
+        if (!managerUserIds.isEmpty()) {
             mapper.insertOrganizationManager(
-                    current.tenantId(), organizationId, managerUserIds.get(index),
-                    requiredRole, index, current.userId()
+                    current.tenantId(), organizationId, managerUserIds.getFirst(),
+                    managerType, 0, current.userId()
             );
         }
     }
@@ -369,6 +379,7 @@ public class SystemService {
     public void updateRoleDataScope(long roleId, SystemDtos.UpdateRoleDataScopeRequest request) {
         var current = SecurityUtils.currentUser();
         validateDataScope(current.tenantId(), request.dataScope(), request.customOrganizationIds());
+        List<Long> affectedUserIds = mapper.findUserIdsByRole(current.tenantId(), roleId);
         if (mapper.updateRoleDataScope(
                 current.tenantId(),
                 roleId,
@@ -385,6 +396,17 @@ public class SystemService {
                 request.customOrganizationIds(),
                 current.userId()
         );
+        invalidateRoleSessions(current.tenantId(), roleId, affectedUserIds, current.userId());
+    }
+
+    private void invalidateRoleSessions(
+            long tenantId,
+            long roleId,
+            List<Long> affectedUserIds,
+            long operatorId
+    ) {
+        mapper.bumpAuthEpochForRole(tenantId, roleId, operatorId);
+        affectedUserIds.forEach(userId -> sessionService.revokeAllUserSessions(tenantId, userId));
     }
 
     @Transactional(readOnly = true)
@@ -411,6 +433,9 @@ public class SystemService {
                 }
             }
         } while (changed);
+        List<Long> affectedUserIds = mapper.findUserIdsByMenuIds(
+                current.tenantId(), List.copyOf(affectedIds)
+        );
         int affected = mapper.updateMenuStatuses(
                 current.tenantId(), List.copyOf(affectedIds), request.enabled(), current.userId()
         );
@@ -419,6 +444,14 @@ public class SystemService {
                     "MENU_STATUS_UPDATE_CONFLICT",
                     "部分菜单状态已发生变化，请刷新后重试",
                     HttpStatus.CONFLICT
+            );
+        }
+        if (!affectedUserIds.isEmpty()) {
+            mapper.bumpAuthEpochForUsers(
+                    current.tenantId(), affectedUserIds, current.userId()
+            );
+            affectedUserIds.forEach(userId ->
+                    sessionService.revokeAllUserSessions(current.tenantId(), userId)
             );
         }
         return affected;

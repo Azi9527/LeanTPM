@@ -1,5 +1,6 @@
 package com.leantpm.system.log;
 
+import com.leantpm.common.web.RequestFailureContext;
 import com.leantpm.security.CurrentUser;
 import com.leantpm.system.mapper.SystemMapper;
 import jakarta.servlet.FilterChain;
@@ -37,12 +38,21 @@ public class OperationLogFilter extends OncePerRequestFilter {
             HttpServletResponse response,
             FilterChain filterChain
     ) throws ServletException, IOException {
+        String correlationId = RequestFailureContext.ensureCorrelationId(request);
+        response.setHeader(RequestFailureContext.RESPONSE_HEADER, correlationId);
         long start = System.currentTimeMillis();
         Throwable failure = null;
         try {
             filterChain.doFilter(request, response);
         } catch (ServletException | IOException | RuntimeException exception) {
             failure = exception;
+            if (RequestFailureContext.operationLogError(request) == null) {
+                RequestFailureContext.record(
+                        request,
+                        "REQUEST_PROCESSING_FAILED",
+                        "请求处理失败"
+                );
+            }
             throw exception;
         } finally {
             record(request, response, start, failure);
@@ -60,7 +70,15 @@ public class OperationLogFilter extends OncePerRequestFilter {
             return;
         }
         try {
-            String error = failure == null ? null : failure.getMessage();
+            String error = RequestFailureContext.operationLogError(request);
+            if (error == null && (failure != null || response.getStatus() >= 400)) {
+                RequestFailureContext.record(
+                        request,
+                        failure == null ? "HTTP_" + response.getStatus() : "REQUEST_PROCESSING_FAILED",
+                        "请求处理失败"
+                );
+                error = RequestFailureContext.operationLogError(request);
+            }
             if (error != null && error.length() > 500) {
                 error = error.substring(0, 500);
             }

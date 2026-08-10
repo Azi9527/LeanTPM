@@ -88,6 +88,17 @@ public interface SystemMapper {
             @Param("operatorId") long operatorId
     );
 
+    List<Long> findUserIdsByRole(
+            @Param("tenantId") long tenantId,
+            @Param("roleId") long roleId
+    );
+
+    int bumpAuthEpochForRole(
+            @Param("tenantId") long tenantId,
+            @Param("roleId") long roleId,
+            @Param("operatorId") long operatorId
+    );
+
     List<SystemDtos.RoleRow> findRoles(@Param("tenantId") long tenantId);
 
     List<Long> findRoleMenuIds(@Param("tenantId") long tenantId, @Param("roleId") long roleId);
@@ -190,6 +201,11 @@ public interface SystemMapper {
             @Param("roleCode") String roleCode
     );
 
+    int countActiveUsers(
+            @Param("tenantId") long tenantId,
+            @Param("userIds") List<Long> userIds
+    );
+
     int updateOrganizationManager(
             @Param("tenantId") long tenantId,
             @Param("organizationId") long organizationId,
@@ -241,6 +257,17 @@ public interface SystemMapper {
             @Param("tenantId") long tenantId,
             @Param("menuIds") List<Long> menuIds,
             @Param("enabled") boolean enabled,
+            @Param("operatorId") long operatorId
+    );
+
+    List<Long> findUserIdsByMenuIds(
+            @Param("tenantId") long tenantId,
+            @Param("menuIds") List<Long> menuIds
+    );
+
+    int bumpAuthEpochForUsers(
+            @Param("tenantId") long tenantId,
+            @Param("userIds") List<Long> userIds,
             @Param("operatorId") long operatorId
     );
 

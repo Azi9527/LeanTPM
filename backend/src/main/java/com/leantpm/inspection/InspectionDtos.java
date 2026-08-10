@@ -61,7 +61,7 @@ public final class InspectionDtos {
             @Pattern(regexp = "^[A-Z][A-Z0-9_-]*$", message = "项目编码格式不正确")
             String itemCode,
             @NotBlank @Size(max = 150) String itemName,
-            @NotNull @Min(1) Long organizationId,
+            @Min(1) Long organizationId,
             @NotBlank @Size(max = 64) String itemCategory,
             @Size(max = 150) String inspectionPart,
             @NotBlank @Size(max = 500) String inspectionContent,

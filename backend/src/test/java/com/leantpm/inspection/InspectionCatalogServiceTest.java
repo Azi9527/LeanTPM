@@ -105,6 +105,34 @@ class InspectionCatalogServiceTest {
         verify(mapper, never()).insertItem(anyLong(), any(), anyString(), anyLong());
     }
 
+    @Test
+    void createsTenantSharedInspectionStandardWithoutOrganizationScope() {
+        InspectionDtos.SaveItemRequest request = request(
+                "NORMAL_ABNORMAL", "NORMAL", null, null, false, List.of()
+        );
+        InspectionDtos.SaveItemRequest shared = new InspectionDtos.SaveItemRequest(
+                request.itemCode(), request.itemName(), null, request.itemCategory(),
+                request.inspectionPart(), request.inspectionContent(),
+                request.inspectionMethod(), request.inspectionTool(),
+                request.inspectionStandard(), request.standardValue(),
+                request.minimumValue(), request.maximumValue(), request.unit(),
+                request.resultType(), request.resultOptions(), request.required(),
+                request.photoRequired(), request.photoMinCount(), request.photoMaxCount(),
+                request.photoMaxSizeMb(), request.photoAllowedTypes(),
+                request.photoCompressionQuality(), request.numericRequired(),
+                request.skipAllowed(), request.abnormalSeverity(), request.abnormalAdvice(),
+                request.abnormalDefaultStop(), request.standardMinutes(), request.safetyNotes(),
+                request.enabled(), request.description(), request.version()
+        );
+
+        service.createItem(shared);
+
+        ArgumentCaptor<InspectionDtos.SaveItemRequest> requestCaptor =
+                ArgumentCaptor.forClass(InspectionDtos.SaveItemRequest.class);
+        verify(mapper).insertItem(anyLong(), requestCaptor.capture(), anyString(), anyLong());
+        assertThat(requestCaptor.getValue().organizationId()).isNull();
+    }
+
     private InspectionDtos.SaveItemRequest request(
             String resultType,
             String standardValue,

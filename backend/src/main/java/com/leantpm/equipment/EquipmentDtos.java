@@ -102,8 +102,8 @@ public final class EquipmentDtos {
     public record SaveEquipmentRequest(
             @Size(max = 64)
             @Pattern(
-                    regexp = "^$|^[A-Z0-9][A-Z0-9_-]*$",
-                    message = "equipmentCode format is invalid"
+                    regexp = "^$|^[\\p{L}\\p{N}][\\p{L}\\p{N}._#-]*$",
+                    message = "设备编码只能包含中文、字母、数字及 . _ # -"
             )
             String equipmentCode,
             @NotBlank @Size(max = 150) String equipmentName,
@@ -262,8 +262,8 @@ public final class EquipmentDtos {
     public record CopyEquipmentRequest(
             @Size(max = 64)
             @Pattern(
-                    regexp = "^$|^[A-Z0-9][A-Z0-9_-]*$",
-                    message = "equipmentCode format is invalid"
+                    regexp = "^$|^[\\p{L}\\p{N}][\\p{L}\\p{N}._#-]*$",
+                    message = "设备编码只能包含中文、字母、数字及 . _ # -"
             )
             String equipmentCode,
             @NotBlank @Size(max = 150) String equipmentName

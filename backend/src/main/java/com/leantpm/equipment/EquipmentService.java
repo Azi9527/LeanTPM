@@ -7,7 +7,11 @@ import com.google.zxing.EncodeHintType;
 import com.google.zxing.MultiFormatWriter;
 import com.google.zxing.WriterException;
 import com.google.zxing.common.BitMatrix;
+import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel;
+import com.google.zxing.qrcode.encoder.ByteMatrix;
+import com.google.zxing.qrcode.encoder.Encoder;
 import com.leantpm.common.api.PageResult;
+import com.leantpm.common.excel.ImportWorkbookSupport;
 import com.leantpm.common.exception.BusinessException;
 import com.leantpm.common.query.TableQuery;
 import com.leantpm.foundation.service.NumberRuleService;
@@ -33,12 +37,16 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.imageio.ImageIO;
+import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Font;
 import java.awt.FontMetrics;
+import java.awt.GradientPaint;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
+import java.awt.geom.Path2D;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -48,6 +56,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -65,11 +74,19 @@ import java.util.zip.ZipOutputStream;
 public class EquipmentService {
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final String DEFAULT_BARCODE_BASE_URL = "http://localhost:15173/m/e";
+    private static final String BARCODE_CENTER_LOGO_KEY = "equipment.barcode.center-logo-url";
+    private static final String DEFAULT_SYSTEM_NAME = "大宝山设备管理系统";
+    private static final String DEFAULT_CENTER_LOGO = "DEFAULT";
+    private static final Color LABEL_DEEP_BLUE = new Color(0x003D91);
+    private static final Color LABEL_TEAL = new Color(0x00A99D);
     private static final List<String> IMPORT_HEADERS = List.of(
             "设备编码", "设备名称", "分类编码", "组织编码", "位置编码",
             "型号", "规格", "品牌", "制造商", "出厂编号", "生产日期", "投产日期",
             "负责人账号", "资产编号", "生命周期阶段", "关键设备", "特种设备",
             "OEE启用", "启用"
+    );
+    private static final Set<String> IMPORT_REQUIRED_HEADERS = Set.of(
+            "设备名称", "分类编码", "组织编码"
     );
     /**
      * 设备运行状态只描述“能否生产”，点检、保养、故障和维修继续由各自工单记录。
@@ -630,26 +647,42 @@ public class EquipmentService {
         BarcodeFormat format = "CODE128".equals(barcode.barcodeType())
                 ? BarcodeFormat.CODE_128
                 : BarcodeFormat.QR_CODE;
-        int effectiveHeight = format == BarcodeFormat.QR_CODE ? width : height;
         try {
-            BitMatrix matrix = new MultiFormatWriter().encode(
-                    content,
-                    format,
-                    width,
-                    effectiveHeight,
-                    Map.of(EncodeHintType.MARGIN, 1)
-            );
-            BufferedImage image = new BufferedImage(
-                    matrix.getWidth(), matrix.getHeight(), BufferedImage.TYPE_INT_RGB
-            );
-            for (int x = 0; x < matrix.getWidth(); x++) {
-                for (int y = 0; y < matrix.getHeight(); y++) {
-                    image.setRGB(x, y, matrix.get(x, y) ? 0xFF111827 : 0xFFFFFFFF);
+            BufferedImage rendered;
+            if (format == BarcodeFormat.QR_CODE) {
+                String logoSetting = parameterService.getString(
+                        current.tenantId(), BARCODE_CENTER_LOGO_KEY, DEFAULT_CENTER_LOGO
+                );
+                BufferedImage qrCode = renderStyledQr(
+                        content,
+                        width,
+                        configuredCenterLogo(logoSetting)
+                );
+                rendered = withPremiumEquipmentLabel(
+                        qrCode,
+                        DEFAULT_SYSTEM_NAME,
+                        barcode.equipmentName(),
+                        barcode.equipmentCode()
+                );
+            } else {
+                BitMatrix matrix = new MultiFormatWriter().encode(
+                        content,
+                        format,
+                        width,
+                        height,
+                        Map.of(EncodeHintType.MARGIN, 1)
+                );
+                rendered = new BufferedImage(
+                        matrix.getWidth(), matrix.getHeight(), BufferedImage.TYPE_INT_RGB
+                );
+                for (int x = 0; x < matrix.getWidth(); x++) {
+                    for (int y = 0; y < matrix.getHeight(); y++) {
+                        rendered.setRGB(
+                                x, y, matrix.get(x, y) ? 0xFF111827 : 0xFFFFFFFF
+                        );
+                    }
                 }
             }
-            BufferedImage rendered = format == BarcodeFormat.QR_CODE
-                    ? withEquipmentCaption(image, barcode.equipmentName(), barcode.equipmentCode())
-                    : image;
             try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
                 ImageIO.write(rendered, "png", output);
                 return output.toByteArray();
@@ -662,54 +695,531 @@ public class EquipmentService {
         }
     }
 
-    static BufferedImage withEquipmentCaption(
+    static BufferedImage renderStyledQr(
+            String content,
+            int size,
+            BufferedImage centerLogo
+    ) throws WriterException {
+        var encoded = Encoder.encode(
+                content,
+                ErrorCorrectionLevel.H,
+                Map.of(EncodeHintType.CHARACTER_SET, StandardCharsets.UTF_8.name())
+        );
+        ByteMatrix modules = encoded.getMatrix();
+        int moduleCount = modules.getWidth();
+        int quietModules = 4;
+        int moduleSize = Math.max(1, size / (moduleCount + quietModules * 2));
+        int renderedSize = moduleSize * (moduleCount + quietModules * 2);
+        int offset = Math.max(0, (size - renderedSize) / 2);
+        int gridStart = offset + quietModules * moduleSize;
+
+        BufferedImage image = new BufferedImage(size, size, BufferedImage.TYPE_INT_RGB);
+        Graphics2D graphics = image.createGraphics();
+        try {
+            enableQualityRendering(graphics);
+            graphics.setColor(Color.WHITE);
+            graphics.fillRect(0, 0, size, size);
+            graphics.setColor(LABEL_DEEP_BLUE);
+
+            int dotInset = Math.max(0, moduleSize / 6);
+            int dotSize = Math.max(1, moduleSize - dotInset * 2);
+            for (int y = 0; y < moduleCount; y++) {
+                for (int x = 0; x < moduleCount; x++) {
+                    if (modules.get(x, y) != 1 || isFinderModule(x, y, moduleCount)) {
+                        continue;
+                    }
+                    graphics.fillOval(
+                            gridStart + x * moduleSize + dotInset,
+                            gridStart + y * moduleSize + dotInset,
+                            dotSize,
+                            dotSize
+                    );
+                }
+            }
+
+            drawFinderPattern(graphics, gridStart, gridStart, moduleSize);
+            drawFinderPattern(
+                    graphics,
+                    gridStart + (moduleCount - 7) * moduleSize,
+                    gridStart,
+                    moduleSize
+            );
+            drawFinderPattern(
+                    graphics,
+                    gridStart,
+                    gridStart + (moduleCount - 7) * moduleSize,
+                    moduleSize
+            );
+
+            int plateSize = moduleSize * 7;
+            int plateX = (size - plateSize) / 2;
+            int plateY = (size - plateSize) / 2;
+            int arc = Math.max(8, moduleSize * 2);
+            graphics.setColor(Color.WHITE);
+            graphics.fillRoundRect(plateX, plateY, plateSize, plateSize, arc, arc);
+            drawContainedImage(
+                    graphics,
+                    centerLogo == null ? defaultCenterLogo() : centerLogo,
+                    plateX + moduleSize,
+                    plateY + moduleSize,
+                    plateSize - moduleSize * 2,
+                    plateSize - moduleSize * 2
+            );
+        } finally {
+            graphics.dispose();
+        }
+        return image;
+    }
+
+    static BufferedImage withPremiumEquipmentLabel(
             BufferedImage qrCode,
+            String systemName,
             String equipmentName,
             String equipmentCode
     ) {
         int width = qrCode.getWidth();
-        int padding = Math.max(12, width / 40);
-        int captionHeight = Math.max(68, width / 7);
-        BufferedImage label = new BufferedImage(
-                width,
-                qrCode.getHeight() + captionHeight,
-                BufferedImage.TYPE_INT_RGB
-        );
+        int height = width * 4 / 3;
+        double scale = width / 600.0;
+        BufferedImage label = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
         Graphics2D graphics = label.createGraphics();
         try {
+            enableQualityRendering(graphics);
             graphics.setColor(Color.WHITE);
-            graphics.fillRect(0, 0, label.getWidth(), label.getHeight());
-            graphics.drawImage(qrCode, 0, 0, null);
-            graphics.setColor(new Color(17, 24, 39));
-            graphics.setRenderingHint(
-                    RenderingHints.KEY_TEXT_ANTIALIASING,
-                    RenderingHints.VALUE_TEXT_ANTIALIAS_ON
+            graphics.fillRect(0, 0, width, height);
+
+            Path2D.Double blueBody = new Path2D.Double();
+            blueBody.moveTo(0, scaled(118, scale));
+            blueBody.curveTo(
+                    scaled(135, scale), scaled(210, scale),
+                    scaled(330, scale), scaled(225, scale),
+                    width, scaled(145, scale)
             );
-            String name = equipmentName == null ? "" : equipmentName.trim();
-            String code = equipmentCode == null ? "" : equipmentCode.trim();
-            String codeLabel = "（" + code + "）";
-            String caption = name + codeLabel;
-            Font font = new Font("Microsoft YaHei", Font.BOLD, Math.max(18, width / 24));
-            graphics.setFont(font);
-            FontMetrics metrics = graphics.getFontMetrics();
-            while (metrics.stringWidth(caption) > width - padding * 2 && font.getSize() > 12) {
-                font = font.deriveFont((float) font.getSize() - 1);
-                graphics.setFont(font);
-                metrics = graphics.getFontMetrics();
-            }
-            int nameLength = name.length();
-            while (metrics.stringWidth(caption) > width - padding * 2 && nameLength > 1) {
-                nameLength--;
-                caption = name.substring(0, nameLength) + "…" + codeLabel;
-            }
-            int x = Math.max(padding, (width - metrics.stringWidth(caption)) / 2);
-            int captionTop = qrCode.getHeight();
-            int y = captionTop + (captionHeight - metrics.getHeight()) / 2 + metrics.getAscent();
-            graphics.drawString(caption, x, y);
+            blueBody.lineTo(width, height);
+            blueBody.lineTo(0, height);
+            blueBody.closePath();
+            graphics.setPaint(new GradientPaint(
+                    0, scaled(180, scale), new Color(0x0877E3),
+                    width, height, new Color(0x00327F)
+            ));
+            graphics.fill(blueBody);
+            drawWaveAccents(graphics, width, scale);
+            drawCircuitAccents(graphics, width, height, scale);
+
+            drawCenteredText(
+                    graphics,
+                    cleanLabel(systemName, DEFAULT_SYSTEM_NAME),
+                    width / 2,
+                    scaled(88, scale),
+                    scaled(510, scale),
+                    new Font("Microsoft YaHei", Font.BOLD, scaled(42, scale)),
+                    LABEL_DEEP_BLUE
+            );
+
+            int cardX = scaled(91, scale);
+            int cardY = scaled(174, scale);
+            int cardSize = scaled(418, scale);
+            int cardArc = scaled(34, scale);
+            graphics.setColor(new Color(255, 255, 255, 245));
+            graphics.fillRoundRect(cardX, cardY, cardSize, cardSize, cardArc, cardArc);
+            graphics.setColor(new Color(0x55B8FF));
+            graphics.setStroke(new BasicStroke(Math.max(1f, scaled(2, scale))));
+            graphics.drawRoundRect(cardX, cardY, cardSize, cardSize, cardArc, cardArc);
+            int qrPadding = scaled(25, scale);
+            graphics.drawImage(
+                    qrCode,
+                    cardX + qrPadding,
+                    cardY + qrPadding,
+                    cardSize - qrPadding * 2,
+                    cardSize - qrPadding * 2,
+                    null
+            );
+
+            drawInfoPanel(
+                    graphics,
+                    scaled(73, scale), scaled(611, scale),
+                    scaled(454, scale), scaled(48, scale),
+                    "设备名称：", cleanLabel(equipmentName, "未命名设备"),
+                    false, scale
+            );
+            drawInfoPanel(
+                    graphics,
+                    scaled(73, scale), scaled(669, scale),
+                    scaled(454, scale), scaled(48, scale),
+                    "设备编号：", cleanLabel(equipmentCode, "—"),
+                    true, scale
+            );
+            drawCallToAction(graphics, scale);
         } finally {
             graphics.dispose();
         }
         return label;
+    }
+
+    private static BufferedImage configuredCenterLogo(String setting) {
+        if (setting == null || setting.isBlank() || DEFAULT_CENTER_LOGO.equals(setting)) {
+            return defaultCenterLogo();
+        }
+        try {
+            int comma = setting.indexOf(',');
+            if (comma < 0) {
+                return defaultCenterLogo();
+            }
+            String header = setting.substring(0, comma).toLowerCase(Locale.ROOT);
+            if (!"data:image/png;base64".equals(header)
+                    && !"data:image/jpeg;base64".equals(header)) {
+                return defaultCenterLogo();
+            }
+            byte[] bytes = Base64.getDecoder().decode(setting.substring(comma + 1));
+            if (bytes.length > 512 * 1024) {
+                return defaultCenterLogo();
+            }
+            try (var input = ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))) {
+                var readers = ImageIO.getImageReaders(input);
+                if (!readers.hasNext()) {
+                    return defaultCenterLogo();
+                }
+                var reader = readers.next();
+                try {
+                    reader.setInput(input, true, true);
+                    int width = reader.getWidth(0);
+                    int height = reader.getHeight(0);
+                    if (width <= 0 || height <= 0 || width > 2048 || height > 2048
+                            || (long) width * height > 4_000_000L) {
+                        return defaultCenterLogo();
+                    }
+                    BufferedImage decoded = reader.read(0);
+                    return decoded == null ? defaultCenterLogo() : decoded;
+                } finally {
+                    reader.dispose();
+                }
+            }
+        } catch (IllegalArgumentException | IOException exception) {
+            return defaultCenterLogo();
+        }
+    }
+
+    private static BufferedImage defaultCenterLogo() {
+        int size = 180;
+        BufferedImage logo = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D graphics = logo.createGraphics();
+        try {
+            enableQualityRendering(graphics);
+            Path2D.Double shield = new Path2D.Double();
+            shield.moveTo(size * 0.5, size * 0.06);
+            shield.lineTo(size * 0.86, size * 0.22);
+            shield.lineTo(size * 0.82, size * 0.68);
+            shield.curveTo(
+                    size * 0.78, size * 0.82,
+                    size * 0.63, size * 0.92,
+                    size * 0.5, size * 0.98
+            );
+            shield.curveTo(
+                    size * 0.37, size * 0.92,
+                    size * 0.22, size * 0.82,
+                    size * 0.18, size * 0.68
+            );
+            shield.lineTo(size * 0.14, size * 0.22);
+            shield.closePath();
+            graphics.setPaint(new GradientPaint(
+                    0, 0, new Color(0x12BFA6), size, size, new Color(0x007D74)
+            ));
+            graphics.fill(shield);
+            graphics.setColor(Color.WHITE);
+            graphics.setStroke(new BasicStroke(8f));
+            graphics.draw(shield);
+            graphics.setFont(new Font("Arial", Font.BOLD, 68));
+            FontMetrics metrics = graphics.getFontMetrics();
+            graphics.drawString(
+                    "LT",
+                    (size - metrics.stringWidth("LT")) / 2,
+                    size / 2 + metrics.getAscent() / 2 - 4
+            );
+        } finally {
+            graphics.dispose();
+        }
+        return logo;
+    }
+
+    private static void drawFinderPattern(
+            Graphics2D graphics,
+            int x,
+            int y,
+            int moduleSize
+    ) {
+        int outer = moduleSize * 7;
+        int arc = Math.max(4, moduleSize * 2);
+        graphics.setColor(LABEL_DEEP_BLUE);
+        graphics.fillRoundRect(x, y, outer, outer, arc, arc);
+        graphics.setColor(Color.WHITE);
+        graphics.fillRoundRect(
+                x + moduleSize,
+                y + moduleSize,
+                moduleSize * 5,
+                moduleSize * 5,
+                arc,
+                arc
+        );
+        graphics.setColor(LABEL_DEEP_BLUE);
+        graphics.fillRoundRect(
+                x + moduleSize * 2,
+                y + moduleSize * 2,
+                moduleSize * 3,
+                moduleSize * 3,
+                Math.max(3, moduleSize),
+                Math.max(3, moduleSize)
+        );
+    }
+
+    private static boolean isFinderModule(int x, int y, int moduleCount) {
+        return (x < 7 && y < 7)
+                || (x >= moduleCount - 7 && y < 7)
+                || (x < 7 && y >= moduleCount - 7);
+    }
+
+    private static void drawContainedImage(
+            Graphics2D graphics,
+            BufferedImage image,
+            int x,
+            int y,
+            int width,
+            int height
+    ) {
+        double ratio = Math.min(
+                (double) width / image.getWidth(),
+                (double) height / image.getHeight()
+        );
+        int drawWidth = Math.max(1, (int) Math.round(image.getWidth() * ratio));
+        int drawHeight = Math.max(1, (int) Math.round(image.getHeight() * ratio));
+        graphics.drawImage(
+                image,
+                x + (width - drawWidth) / 2,
+                y + (height - drawHeight) / 2,
+                drawWidth,
+                drawHeight,
+                null
+        );
+    }
+
+    private static void drawWaveAccents(Graphics2D graphics, int width, double scale) {
+        graphics.setStroke(new BasicStroke(Math.max(1f, scaled(2, scale))));
+        for (int index = 0; index < 4; index++) {
+            int shift = scaled(index * 8, scale);
+            Path2D.Double line = new Path2D.Double();
+            line.moveTo(0, scaled(108, scale) + shift);
+            line.curveTo(
+                    scaled(160, scale), scaled(215, scale) + shift,
+                    scaled(370, scale), scaled(185, scale) + shift,
+                    width, scaled(128, scale) + shift
+            );
+            graphics.setColor(new Color(120, 194, 255, 135 - index * 20));
+            graphics.draw(line);
+        }
+    }
+
+    private static void drawCircuitAccents(
+            Graphics2D graphics,
+            int width,
+            int height,
+            double scale
+    ) {
+        graphics.setColor(new Color(73, 166, 255, 80));
+        graphics.setStroke(new BasicStroke(Math.max(1f, scaled(1, scale))));
+        int baseY = height - scaled(18, scale);
+        for (int side : new int[]{1, -1}) {
+            for (int index = 0; index < 5; index++) {
+                int distance = scaled(14 + index * 24, scale);
+                int x = side > 0 ? distance : width - distance;
+                int rise = scaled(34 + index * 8, scale);
+                graphics.drawLine(x, baseY, x, baseY - rise);
+                graphics.drawLine(
+                        x, baseY - rise,
+                        x + side * scaled(20, scale), baseY - rise - scaled(20, scale)
+                );
+                graphics.fillOval(
+                        x - scaled(3, scale), baseY - scaled(4, scale),
+                        scaled(7, scale), scaled(7, scale)
+                );
+            }
+        }
+    }
+
+    private static void drawInfoPanel(
+            Graphics2D graphics,
+            int x,
+            int y,
+            int width,
+            int height,
+            String label,
+            String value,
+            boolean gearIcon,
+            double scale
+    ) {
+        int arc = scaled(18, scale);
+        graphics.setColor(new Color(0, 63, 151, 190));
+        graphics.fillRoundRect(x, y, width, height, arc, arc);
+        graphics.setColor(new Color(255, 255, 255, 215));
+        graphics.setStroke(new BasicStroke(Math.max(1f, scaled(2, scale))));
+        graphics.drawRoundRect(x, y, width, height, arc, arc);
+        int dividerX = x + scaled(78, scale);
+        graphics.drawLine(dividerX, y + scaled(5, scale), dividerX, y + height - scaled(5, scale));
+
+        graphics.setColor(Color.WHITE);
+        graphics.setFont(new Font("Microsoft YaHei", Font.BOLD, scaled(18, scale)));
+        FontMetrics metrics = graphics.getFontMetrics();
+        String text = label + fitText(graphics, value, width - scaled(210, scale));
+        graphics.drawString(
+                text,
+                x + scaled(96, scale),
+                y + (height - metrics.getHeight()) / 2 + metrics.getAscent()
+        );
+
+        drawPanelIcon(
+                graphics,
+                x + scaled(39, scale),
+                y + height / 2,
+                scaled(25, scale),
+                gearIcon
+        );
+    }
+
+    private static void drawPanelIcon(
+            Graphics2D graphics,
+            int centerX,
+            int centerY,
+            int size,
+            boolean gearIcon
+    ) {
+        graphics.setColor(Color.WHITE);
+        graphics.setStroke(new BasicStroke(Math.max(1.5f, size / 8f)));
+        if (gearIcon) {
+            int outerRadius = size / 2;
+            int innerRadius = Math.max(2, size / 5);
+            graphics.drawOval(
+                    centerX - outerRadius,
+                    centerY - outerRadius,
+                    outerRadius * 2,
+                    outerRadius * 2
+            );
+            graphics.drawOval(
+                    centerX - innerRadius,
+                    centerY - innerRadius,
+                    innerRadius * 2,
+                    innerRadius * 2
+            );
+            for (int index = 0; index < 8; index++) {
+                double angle = Math.PI * index / 4.0;
+                graphics.drawLine(
+                        centerX + (int) Math.round(Math.cos(angle) * outerRadius),
+                        centerY + (int) Math.round(Math.sin(angle) * outerRadius),
+                        centerX + (int) Math.round(Math.cos(angle) * (outerRadius + size / 5.0)),
+                        centerY + (int) Math.round(Math.sin(angle) * (outerRadius + size / 5.0))
+                );
+            }
+            return;
+        }
+
+        int half = size / 2;
+        graphics.drawRoundRect(
+                centerX - half,
+                centerY - half / 2,
+                size,
+                half,
+                Math.max(2, size / 5),
+                Math.max(2, size / 5)
+        );
+        graphics.drawLine(centerX - half, centerY + half / 2, centerX - half, centerY + half);
+        graphics.drawLine(centerX + half, centerY + half / 2, centerX + half, centerY + half);
+        graphics.drawLine(centerX - half - size / 6, centerY + half,
+                centerX + half + size / 6, centerY + half);
+        graphics.drawLine(centerX, centerY - half / 2, centerX, centerY - half);
+        graphics.drawLine(centerX, centerY - half, centerX + size / 3, centerY - half);
+    }
+
+    private static void drawCallToAction(Graphics2D graphics, double scale) {
+        int x = scaled(73, scale);
+        int y = scaled(730, scale);
+        int width = scaled(454, scale);
+        int height = scaled(54, scale);
+        int arc = scaled(22, scale);
+        graphics.setColor(Color.WHITE);
+        graphics.fillRoundRect(x, y, width, height, arc, arc);
+        graphics.setColor(LABEL_TEAL);
+        graphics.fillRoundRect(x, y, scaled(105, scale), height, arc, arc);
+        graphics.fillRect(x + scaled(55, scale), y, scaled(60, scale), height);
+        graphics.setColor(Color.WHITE);
+        graphics.setStroke(new BasicStroke(Math.max(1.5f, scaled(4, scale))));
+        int iconX = x + scaled(28, scale);
+        int iconY = y + scaled(15, scale);
+        int iconSize = scaled(24, scale);
+        int corner = scaled(8, scale);
+        graphics.drawLine(iconX, iconY + corner, iconX, iconY);
+        graphics.drawLine(iconX, iconY, iconX + corner, iconY);
+        graphics.drawLine(iconX + iconSize - corner, iconY, iconX + iconSize, iconY);
+        graphics.drawLine(iconX + iconSize, iconY, iconX + iconSize, iconY + corner);
+        graphics.drawLine(iconX, iconY + iconSize - corner, iconX, iconY + iconSize);
+        graphics.drawLine(iconX, iconY + iconSize, iconX + corner, iconY + iconSize);
+        graphics.drawLine(iconX + iconSize - corner, iconY + iconSize,
+                iconX + iconSize, iconY + iconSize);
+        graphics.drawLine(iconX + iconSize, iconY + iconSize,
+                iconX + iconSize, iconY + iconSize - corner);
+        drawCenteredText(
+                graphics,
+                "扫码查看设备档案",
+                x + scaled(105, scale) + (width - scaled(105, scale)) / 2,
+                y + scaled(37, scale),
+                width - scaled(130, scale),
+                new Font("Microsoft YaHei", Font.BOLD, scaled(25, scale)),
+                LABEL_DEEP_BLUE
+        );
+    }
+
+    private static void drawCenteredText(
+            Graphics2D graphics,
+            String text,
+            int centerX,
+            int baseline,
+            int maxWidth,
+            Font font,
+            Color color
+    ) {
+        graphics.setFont(font);
+        FontMetrics metrics = graphics.getFontMetrics();
+        while (metrics.stringWidth(text) > maxWidth && font.getSize() > 11) {
+            font = font.deriveFont((float) font.getSize() - 1);
+            graphics.setFont(font);
+            metrics = graphics.getFontMetrics();
+        }
+        graphics.setColor(color);
+        graphics.drawString(text, centerX - metrics.stringWidth(text) / 2, baseline);
+    }
+
+    private static String fitText(Graphics2D graphics, String text, int maxWidth) {
+        String fitted = text;
+        FontMetrics metrics = graphics.getFontMetrics();
+        while (fitted.length() > 1 && metrics.stringWidth(fitted) > maxWidth) {
+            fitted = fitted.substring(0, fitted.length() - 1);
+        }
+        return fitted.equals(text) ? fitted : fitted + "…";
+    }
+
+    private static String cleanLabel(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value.trim();
+    }
+
+    private static int scaled(int value, double scale) {
+        return Math.max(1, (int) Math.round(value * scale));
+    }
+
+    private static void enableQualityRendering(Graphics2D graphics) {
+        graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        graphics.setRenderingHint(
+                RenderingHints.KEY_TEXT_ANTIALIASING,
+                RenderingHints.VALUE_TEXT_ANTIALIAS_ON
+        );
+        graphics.setRenderingHint(
+                RenderingHints.KEY_INTERPOLATION,
+                RenderingHints.VALUE_INTERPOLATION_BICUBIC
+        );
     }
 
     @Transactional(readOnly = true)
@@ -818,7 +1328,9 @@ public class EquipmentService {
     public byte[] importTemplate() {
         try (Workbook workbook = new XSSFWorkbook()) {
             Sheet sheet = workbook.createSheet("设备导入模板");
-            writeHeader(sheet, IMPORT_HEADERS);
+            writeHeader(sheet, ImportWorkbookSupport.displayHeaders(
+                    IMPORT_HEADERS, IMPORT_REQUIRED_HEADERS
+            ));
             Row example = sheet.createRow(1);
             List<String> values = List.of(
                     "", "示例设备", "PUMP", "FACTORY", "", "M-100",
@@ -1347,7 +1859,10 @@ public class EquipmentService {
         for (Cell cell : row) {
             String value = clean(formatter.formatCellValue(cell));
             if (value != null) {
-                result.put(value, cell.getColumnIndex());
+                result.put(
+                        ImportWorkbookSupport.canonicalHeader(value),
+                        cell.getColumnIndex()
+                );
             }
         }
         return result;

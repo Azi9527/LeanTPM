@@ -36,7 +36,6 @@
         SELECT COUNT(*) FROM organization
         WHERE tenant_id = #{tenantId}
           AND organization_code = #{code}
-          AND deleted = 0
           <if test="excludeId != null">AND id != #{excludeId}</if>
     </select>
 

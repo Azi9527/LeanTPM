@@ -863,6 +863,9 @@ public class InspectionCatalogService {
     }
 
     private void requireOrganizationAccess(Long organizationId) {
+        if (organizationId == null) {
+            return;
+        }
         if (!dataPermissionService.current().canCreateIn(organizationId)) {
             throw new BusinessException(
                     "DATA_SCOPE_FORBIDDEN", "无权维护所选部门的点检项目", HttpStatus.FORBIDDEN

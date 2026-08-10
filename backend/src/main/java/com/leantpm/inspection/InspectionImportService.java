@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leantpm.common.exception.BusinessException;
+import com.leantpm.common.excel.ImportWorkbookSupport;
 import com.leantpm.equipment.EquipmentMapper;
 import com.leantpm.masterdata.MasterDataDtos;
 import com.leantpm.masterdata.MasterDataMapper;
@@ -72,6 +73,56 @@ public class InspectionImportService {
     private static final List<String> APPLICABILITY_HEADERS = List.of(
             "方案编码", "设备编码", "分类编码"
     );
+    private static final Map<String, Set<String>> REQUIRED_HEADERS = Map.of(
+            ITEM_SHEET, Set.of(
+                    "项目编码", "项目名称", "点检内容", "点检标准", "结果类型"
+            ),
+            SCHEME_SHEET, Set.of(
+                    "方案编码", "方案名称", "周期类型", "生效日期"
+            ),
+            SCHEME_ITEM_SHEET, Set.of("方案编码", "项目编码"),
+            APPLICABILITY_SHEET, Set.of("方案编码")
+    );
+    private static final Map<String, String> ITEM_CATEGORY_CODES = Map.ofEntries(
+            Map.entry("操作", "OPERATION"), Map.entry("OPERATION", "OPERATION"),
+            Map.entry("润滑", "LUBRICATION"), Map.entry("LUBRICATION", "LUBRICATION"),
+            Map.entry("安全", "SAFETY"), Map.entry("SAFETY", "SAFETY"),
+            Map.entry("质量", "QUALITY"), Map.entry("QUALITY", "QUALITY"),
+            Map.entry("清洁", "CLEANING"), Map.entry("CLEANING", "CLEANING"),
+            Map.entry("其他", "OTHER"), Map.entry("OTHER", "OTHER")
+    );
+    private static final Map<String, String> RESULT_TYPE_CODES = Map.ofEntries(
+            Map.entry("正常/异常", "NORMAL_ABNORMAL"), Map.entry("NORMAL_ABNORMAL", "NORMAL_ABNORMAL"),
+            Map.entry("合格/不合格", "PASS_FAIL"), Map.entry("PASS_FAIL", "PASS_FAIL"),
+            Map.entry("数值", "NUMBER"), Map.entry("NUMBER", "NUMBER"),
+            Map.entry("文本", "TEXT"), Map.entry("TEXT", "TEXT"),
+            Map.entry("单选", "SINGLE_CHOICE"), Map.entry("SINGLE_CHOICE", "SINGLE_CHOICE"),
+            Map.entry("多选", "MULTIPLE_CHOICE"), Map.entry("MULTIPLE_CHOICE", "MULTIPLE_CHOICE"),
+            Map.entry("图片", "IMAGE"), Map.entry("IMAGE", "IMAGE"),
+            Map.entry("附件", "ATTACHMENT"), Map.entry("ATTACHMENT", "ATTACHMENT")
+    );
+    private static final Map<String, String> SEVERITY_CODES = Map.ofEntries(
+            Map.entry("低", "LOW"), Map.entry("LOW", "LOW"),
+            Map.entry("中", "MEDIUM"), Map.entry("MEDIUM", "MEDIUM"),
+            Map.entry("高", "HIGH"), Map.entry("HIGH", "HIGH"),
+            Map.entry("紧急", "CRITICAL"), Map.entry("严重", "CRITICAL"),
+            Map.entry("CRITICAL", "CRITICAL")
+    );
+    private static final Map<String, String> INSPECTION_TYPE_CODES = Map.ofEntries(
+            Map.entry("日常点检", "DAILY"), Map.entry("DAILY", "DAILY"),
+            Map.entry("班前点检", "PRE_SHIFT"), Map.entry("PRE_SHIFT", "PRE_SHIFT"),
+            Map.entry("班后点检", "POST_SHIFT"), Map.entry("POST_SHIFT", "POST_SHIFT"),
+            Map.entry("专业点检", "PROFESSIONAL"), Map.entry("PROFESSIONAL", "PROFESSIONAL"),
+            Map.entry("精密点检", "PRECISION"), Map.entry("PRECISION", "PRECISION"),
+            Map.entry("安全点检", "SAFETY"), Map.entry("SAFETY", "SAFETY"),
+            Map.entry("专项点检", "SPECIAL"), Map.entry("SPECIAL", "SPECIAL")
+    );
+    private static final Map<String, String> CYCLE_TYPE_CODES = Map.ofEntries(
+            Map.entry("每日", "DAILY"), Map.entry("DAILY", "DAILY"),
+            Map.entry("每周", "WEEKLY"), Map.entry("WEEKLY", "WEEKLY"),
+            Map.entry("每月", "MONTHLY"), Map.entry("MONTHLY", "MONTHLY"),
+            Map.entry("间隔天数", "INTERVAL_DAYS"), Map.entry("INTERVAL_DAYS", "INTERVAL_DAYS")
+    );
     private static final Set<String> RESULT_TYPES = Set.of(
             "NORMAL_ABNORMAL", "PASS_FAIL", "NUMBER", "TEXT", "SINGLE_CHOICE",
             "MULTIPLE_CHOICE", "IMAGE", "ATTACHMENT"
@@ -124,23 +175,24 @@ public class InspectionImportService {
              var output = new ByteArrayOutputStream()) {
             CellStyle header = WorkbookSupport.headerStyle(workbook);
             addSheet(workbook, ITEM_SHEET, ITEM_HEADERS, List.of(
-                    "IMP-LUB-001", "润滑油液位", "OPERATION", "主轴润滑箱",
+                    "IMP-LUB-001", "润滑油液位", "操作", "主轴润滑箱",
                     "检查润滑油液位", "目视", "", "液位处于刻度范围内",
-                    "", "30", "80", "%", "NUMBER", "", "是", "否", "是",
-                    "否", "MEDIUM", "补充润滑油", "5", "设备运转时不得打开油箱",
+                    "", "30", "80", "%", "数值", "", "是", "否", "是",
+                    "否", "中", "补充润滑油", "2", "设备运转时不得打开油箱",
                     "是", "导入示例"
-            ), header);
+            ), REQUIRED_HEADERS.get(ITEM_SHEET), header);
             addSheet(workbook, SCHEME_SHEET, SCHEME_HEADERS, List.of(
-                    "IMP-SCHEME-001", "导入示例日常点检", "DAILY", "DAILY", "1",
+                    "IMP-SCHEME-001", "导入示例日常点检", "日常点检", "每日", "1",
                     "", "", "08:00", "", "planner", "TEAM-A-1", "是",
                     LocalDate.now().toString(), "", "是", "导入示例", "首次导入"
-            ), header);
+            ), REQUIRED_HEADERS.get(SCHEME_SHEET), header);
             addSheet(workbook, SCHEME_ITEM_SHEET, SCHEME_ITEM_HEADERS, List.of(
                     "IMP-SCHEME-001", "IMP-LUB-001", "10", "", "", ""
-            ), header);
+            ), REQUIRED_HEADERS.get(SCHEME_ITEM_SHEET), header);
             addSheet(workbook, APPLICABILITY_SHEET, APPLICABILITY_HEADERS, List.of(
                     "IMP-SCHEME-001", "VIZ-PUMP-01", ""
-            ), header);
+            ), REQUIRED_HEADERS.get(APPLICABILITY_SHEET), header);
+            addGuideSheet(workbook, header);
             workbook.write(output);
             return output.toByteArray();
         } catch (IOException exception) {
@@ -338,7 +390,7 @@ public class InspectionImportService {
                 input.inspectionTool(), input.inspectionStandard(), input.standardValue(),
                 input.minimumValue(), input.maximumValue(), input.unit(), input.resultType(),
                 input.resultOptions(), input.required(), input.photoRequired(),
-                Boolean.TRUE.equals(input.photoRequired()) ? 1 : 0, 9, 10,
+                Boolean.TRUE.equals(input.photoRequired()) ? 1 : 0, 2, 5,
                 "image/jpeg,image/png", 82,
                 input.numericRequired(), input.skipAllowed(), input.abnormalSeverity(),
                 input.abnormalAdvice(), true, input.standardMinutes(), input.safetyNotes(),
@@ -459,8 +511,10 @@ public class InspectionImportService {
                         row.getRowNum() + 1,
                         required(row, columns, formatter, "项目编码").toUpperCase(Locale.ROOT),
                         required(row, columns, formatter, "项目名称"),
-                        value(row, columns, formatter, "项目分类", "OPERATION")
-                                .toUpperCase(Locale.ROOT),
+                        localizedCodeOrUpper(
+                                value(row, columns, formatter, "项目分类", "操作"),
+                                ITEM_CATEGORY_CODES
+                        ),
                         optional(row, columns, formatter, "点检部位"),
                         required(row, columns, formatter, "点检内容"),
                         optional(row, columns, formatter, "点检方法"),
@@ -470,16 +524,21 @@ public class InspectionImportService {
                         decimal(row, columns, formatter, "下限"),
                         decimal(row, columns, formatter, "上限"),
                         optional(row, columns, formatter, "单位"),
-                        required(row, columns, formatter, "结果类型").toUpperCase(Locale.ROOT),
+                        localizedCode(
+                                required(row, columns, formatter, "结果类型"),
+                                RESULT_TYPE_CODES, "结果类型"
+                        ),
                         split(optional(row, columns, formatter, "结果选项"), "[,，;；|\\n]"),
                         bool(row, columns, formatter, "必填", true),
                         bool(row, columns, formatter, "必拍", false),
                         bool(row, columns, formatter, "必须数值", false),
                         bool(row, columns, formatter, "允许跳过", false),
-                        value(row, columns, formatter, "异常等级", "MEDIUM")
-                                .toUpperCase(Locale.ROOT),
+                        localizedCode(
+                                value(row, columns, formatter, "异常等级", "中"),
+                                SEVERITY_CODES, "异常等级"
+                        ),
                         optional(row, columns, formatter, "异常建议"),
-                        integer(row, columns, formatter, "标准分钟", 5),
+                        integer(row, columns, formatter, "标准分钟", 2),
                         optional(row, columns, formatter, "安全说明"),
                         bool(row, columns, formatter, "启用", true),
                         optional(row, columns, formatter, "描述")
@@ -509,9 +568,14 @@ public class InspectionImportService {
                         row.getRowNum() + 1,
                         required(row, columns, formatter, "方案编码").toUpperCase(Locale.ROOT),
                         required(row, columns, formatter, "方案名称"),
-                        value(row, columns, formatter, "点检类型", "DAILY")
-                                .toUpperCase(Locale.ROOT),
-                        required(row, columns, formatter, "周期类型").toUpperCase(Locale.ROOT),
+                        localizedCodeOrUpper(
+                                value(row, columns, formatter, "点检类型", "日常点检"),
+                                INSPECTION_TYPE_CODES
+                        ),
+                        localizedCode(
+                                required(row, columns, formatter, "周期类型"),
+                                CYCLE_TYPE_CODES, "周期类型"
+                        ),
                         integer(row, columns, formatter, "周期间隔", 1),
                         optional(row, columns, formatter, "星期"),
                         optional(row, columns, formatter, "月日期"),
@@ -908,7 +972,9 @@ public class InspectionImportService {
         DataFormatter formatter = new DataFormatter(Locale.SIMPLIFIED_CHINESE);
         Map<String, Integer> columns = new LinkedHashMap<>();
         for (int index = 0; index < header.getLastCellNum(); index++) {
-            String name = formatter.formatCellValue(header.getCell(index)).trim();
+            String name = ImportWorkbookSupport.canonicalHeader(
+                    formatter.formatCellValue(header.getCell(index))
+            );
             if (!name.isEmpty()) {
                 columns.put(name, index);
             }
@@ -1065,15 +1131,41 @@ public class InspectionImportService {
         return value == null ? null : value.toUpperCase(Locale.ROOT);
     }
 
+    private String localizedCode(
+            String value,
+            Map<String, String> aliases,
+            String column
+    ) {
+        String normalized = value.trim().toUpperCase(Locale.ROOT);
+        String code = aliases.get(normalized);
+        if (code == null) {
+            throw new RowError(column, "填写值不正确，请查看“填写规范”工作表");
+        }
+        return code;
+    }
+
+    private String localizedCodeOrUpper(
+            String value,
+            Map<String, String> aliases
+    ) {
+        String normalized = value.trim().toUpperCase(Locale.ROOT);
+        return aliases.getOrDefault(normalized, normalized);
+    }
+
     private void addSheet(
             Workbook workbook,
             String name,
             List<String> headers,
             List<String> example,
+            Set<String> requiredHeaders,
             CellStyle headerStyle
     ) {
         Sheet sheet = workbook.createSheet(name);
-        WorkbookSupport.writeHeader(sheet, headers, headerStyle);
+        WorkbookSupport.writeHeader(
+                sheet,
+                ImportWorkbookSupport.displayHeaders(headers, requiredHeaders),
+                headerStyle
+        );
         Row row = sheet.createRow(1);
         for (int index = 0; index < example.size(); index++) {
             row.createCell(index).setCellValue(example.get(index));
@@ -1082,6 +1174,45 @@ public class InspectionImportService {
         for (int index = 0; index < headers.size(); index++) {
             sheet.autoSizeColumn(index);
             sheet.setColumnWidth(index, Math.min(sheet.getColumnWidth(index) + 512, 10_000));
+        }
+    }
+
+    private void addGuideSheet(Workbook workbook, CellStyle headerStyle) {
+        Sheet sheet = workbook.createSheet("填写规范");
+        List<String> headers = List.of("工作表", "字段", "是否必填", "填写规范", "示例");
+        WorkbookSupport.writeHeader(sheet, headers, headerStyle);
+        String[][] rules = {
+                {ITEM_SHEET, "项目编码", "必填", "唯一编码；使用大写英文字母开头，可含数字、下划线和短横线", "IMP-LUB-001"},
+                {ITEM_SHEET, "项目名称", "必填", "点检项目中文名称", "润滑油液位"},
+                {ITEM_SHEET, "项目分类", "选填", "中文填写：操作、润滑、安全、质量、清洁、其他；不填默认为操作", "操作"},
+                {ITEM_SHEET, "点检内容", "必填", "说明需要检查的内容", "检查润滑油液位"},
+                {ITEM_SHEET, "点检标准", "必填", "说明合格或正常标准", "液位处于刻度范围内"},
+                {ITEM_SHEET, "结果类型", "必填", "中文填写：正常/异常、合格/不合格、数值、文本、单选、多选、图片、附件", "数值"},
+                {ITEM_SHEET, "结果选项", "条件必填", "单选/多选时必填，多个选项用逗号分隔", "正常,异常"},
+                {ITEM_SHEET, "必填/必拍/必须数值/允许跳过/启用", "选填", "填写“是”或“否”", "是"},
+                {ITEM_SHEET, "异常等级", "选填", "中文填写：低、中、高、紧急；不填默认为中", "中"},
+                {ITEM_SHEET, "标准分钟", "选填", "非负整数；不填默认为 2", "2"},
+                {SCHEME_SHEET, "方案编码", "必填", "唯一编码；使用大写英文字母开头，可含数字、下划线和短横线", "IMP-SCHEME-001"},
+                {SCHEME_SHEET, "方案名称", "必填", "点检方案中文名称", "日常点检"},
+                {SCHEME_SHEET, "点检类型", "选填", "中文填写：日常点检、班前点检、班后点检、专业点检、精密点检、安全点检、专项点检", "日常点检"},
+                {SCHEME_SHEET, "周期类型", "必填", "中文填写：每日、每周、每月、间隔天数", "每日"},
+                {SCHEME_SHEET, "生效日期", "必填", "日期格式 yyyy-MM-dd", "2026-08-10"},
+                {SCHEME_ITEM_SHEET, "方案编码/项目编码", "必填", "必须与前两个工作表中的编码一致", "IMP-SCHEME-001 / IMP-LUB-001"},
+                {APPLICABILITY_SHEET, "方案编码", "必填", "必须与点检方案工作表中的编码一致", "IMP-SCHEME-001"},
+                {APPLICABILITY_SHEET, "设备编码/分类编码", "二选一必填", "每行只能填写设备编码或分类编码中的一个", "VIZ-PUMP-01"},
+                {"通用", "带 * 的列", "必填", "表头带 * 表示该行必须填写；未带 * 的列可按规则选填", "*项目名称"},
+                {"通用", "自动编码", "说明", "点检项目和方案编码当前不自动生成，必须填写；设备导入模板的设备编码留空时由系统自动生成", ""}
+        };
+        for (int rowIndex = 0; rowIndex < rules.length; rowIndex++) {
+            Row row = sheet.createRow(rowIndex + 1);
+            for (int column = 0; column < rules[rowIndex].length; column++) {
+                row.createCell(column).setCellValue(rules[rowIndex][column]);
+            }
+        }
+        sheet.createFreezePane(0, 1);
+        int[] widths = {18, 30, 16, 72, 34};
+        for (int index = 0; index < widths.length; index++) {
+            sheet.setColumnWidth(index, widths[index] * 256);
         }
     }
 
