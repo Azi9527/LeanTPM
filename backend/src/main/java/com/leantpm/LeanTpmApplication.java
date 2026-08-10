@@ -3,6 +3,7 @@ package com.leantpm;
 import com.leantpm.security.JwtProperties;
 import com.leantpm.common.idempotency.IdempotencyProperties;
 import com.leantpm.system.attachment.StorageProperties;
+import org.apache.ibatis.annotations.Mapper;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -23,8 +24,13 @@ import org.springframework.scheduling.annotation.EnableScheduling;
         "com.leantpm.oee",
         "com.leantpm.visualization",
         "com.leantpm.mobile",
-        "com.leantpm.security.datascope"
+        "com.leantpm.security.datascope",
+        "com.leantpm.security.session.mapper"
 })
+@MapperScan(
+        value = "com.leantpm.common.idempotency",
+        annotationClass = Mapper.class
+)
 @EnableConfigurationProperties({
         JwtProperties.class,
         StorageProperties.class,

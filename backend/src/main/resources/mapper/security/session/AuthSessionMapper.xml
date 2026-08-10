@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.leantpm.security.session.mapper.AuthSessionMapper">
+    <insert id="insertSession">
+        INSERT INTO auth_session
+            (session_id, tenant_id, user_id, user_version, username, real_name, login_ip, user_agent,
+             login_time, last_active_time, expires_at, refresh_jti_hash, status,
+             revoked_at, revocation_reason, version)
+        VALUES
+            (#{sessionId}, #{tenantId}, #{userId}, #{userVersion}, #{username}, #{realName}, #{loginIp},
+             #{userAgent}, #{loginTime}, #{lastActiveTime}, #{expiresAt}, #{refreshJtiHash},
+             #{status}, #{revokedAt}, #{revocationReason}, #{version})
+    </insert>
+
+    <select id="findActiveUserVersionForUpdate" resultType="long">
+        SELECT auth_epoch
+        FROM system_user
+        WHERE tenant_id = #{tenantId}
+          AND id = #{userId}
+          AND status = 1
+          AND deleted = 0
+        LIMIT 1
+        FOR UPDATE
+    </select>
+
+    <select id="findSession" resultType="com.leantpm.security.session.domain.AuthSessionRecord">
+        SELECT session_id, tenant_id, user_id, user_version, username, real_name, login_ip, user_agent,
+               login_time, last_active_time, expires_at, refresh_jti_hash, status,
+               revoked_at, revocation_reason, version
+        FROM auth_session
+        WHERE session_id = #{sessionId}
+        LIMIT 1
+    </select>
+
+    <select id="findSessionForUpdate"
+            resultType="com.leantpm.security.session.domain.AuthSessionRecord">
+        SELECT session_id, tenant_id, user_id, user_version, username, real_name, login_ip, user_agent,
+               login_time, last_active_time, expires_at, refresh_jti_hash, status,
+               revoked_at, revocation_reason, version
+        FROM auth_session
+        WHERE session_id = #{sessionId}
+        LIMIT 1
+        FOR UPDATE
+    </select>
+
+    <update id="touchActiveSession">
+        UPDATE auth_session AS session
+        JOIN system_user AS u
+          ON u.tenant_id = session.tenant_id
+         AND u.id = session.user_id
+        SET session.last_active_time = #{now}, session.version = session.version + 1
+        WHERE session.session_id = #{sessionId}
+          AND session.tenant_id = #{tenantId}
+          AND session.user_id = #{userId}
+          AND session.user_version = #{userVersion}
+          AND u.auth_epoch = #{userVersion}
+          AND u.status = 1
+          AND u.deleted = 0
+          AND session.status = 'ACTIVE'
+          AND session.expires_at &gt; #{now}
+    </update>
+
+    <update id="rotateRefresh">
+        UPDATE auth_session
+        SET refresh_jti_hash = #{refreshJtiHash},
+            last_active_time = #{now},
+            expires_at = #{expiresAt},
+            version = version + 1
+        WHERE session_id = #{sessionId}
+          AND status = 'ACTIVE'
+          AND version = #{version}
+    </update>
+
+    <update id="revokeSession">
+        UPDATE auth_session
+        SET status = 'REVOKED',
+            revoked_at = #{now},
+            revocation_reason = #{reason},
+            version = version + 1
+        WHERE session_id = #{sessionId}
+          AND status = 'ACTIVE'
+          AND version = #{version}
+    </update>
+
+    <update id="revokeSessionById">
+        UPDATE auth_session
+        SET status = 'REVOKED',
+            revoked_at = #{now},
+            revocation_reason = #{reason},
+            version = version + 1
+        WHERE session_id = #{sessionId}
+          AND status = 'ACTIVE'
+    </update>
+
+    <update id="revokeAllUserSessions">
+        UPDATE auth_session
+        SET status = 'REVOKED',
+            revoked_at = #{now},
+            revocation_reason = #{reason},
+            version = version + 1
+        WHERE tenant_id = #{tenantId}
+          AND user_id = #{userId}
+          AND status = 'ACTIVE'
+    </update>
+
+    <update id="revokeTenantSession">
+        UPDATE auth_session
+        SET status = 'REVOKED',
+            revoked_at = #{now},
+            revocation_reason = #{reason},
+            version = version + 1
+        WHERE tenant_id = #{tenantId}
+          AND session_id = #{sessionId}
+          AND status = 'ACTIVE'
+          AND expires_at &gt; #{now}
+    </update>
+
+    <select id="findActiveTenantSessions"
+            resultType="com.leantpm.security.session.domain.AuthSessionRecord">
+        SELECT session_id, tenant_id, user_id, user_version, username, real_name, login_ip, user_agent,
+               login_time, last_active_time, expires_at, refresh_jti_hash, status,
+               revoked_at, revocation_reason, version
+        FROM auth_session
+        WHERE tenant_id = #{tenantId}
+          AND status = 'ACTIVE'
+          AND expires_at &gt; #{now}
+        ORDER BY last_active_time DESC, session_id
+    </select>
+
+    <select id="findLoginSecurityState"
+            resultType="com.leantpm.security.session.domain.LoginSecurityState">
+        SELECT tenant_id, principal_key, user_id, failure_count, window_started_at,
+               locked_until, last_failure_at, version
+        FROM auth_login_security_state
+        WHERE tenant_id = #{tenantId}
+          AND principal_key = #{principalKey}
+        LIMIT 1
+    </select>
+
+    <insert id="ensureLoginSecurityState">
+        INSERT IGNORE INTO auth_login_security_state
+            (tenant_id, principal_key, user_id, failure_count, window_started_at,
+             locked_until, last_failure_at, version)
+        VALUES
+            (#{tenantId}, #{principalKey}, #{userId}, 0, #{now}, NULL, #{now}, 0)
+    </insert>
+
+    <select id="findLoginSecurityStateForUpdate"
+            resultType="com.leantpm.security.session.domain.LoginSecurityState">
+        SELECT tenant_id, principal_key, user_id, failure_count, window_started_at,
+               locked_until, last_failure_at, version
+        FROM auth_login_security_state
+        WHERE tenant_id = #{tenantId}
+          AND principal_key = #{principalKey}
+        LIMIT 1
+        FOR UPDATE
+    </select>
+
+    <insert id="upsertLoginFailure">
+        INSERT INTO auth_login_security_state
+            (tenant_id, principal_key, user_id, failure_count, window_started_at,
+             locked_until, last_failure_at, version)
+        VALUES
+            (#{tenantId}, #{principalKey}, #{userId}, 1, #{now},
+             CASE WHEN #{maxFailures} &lt;= 1 THEN #{windowEnd} ELSE NULL END,
+             #{now}, 0)
+        ON DUPLICATE KEY UPDATE
+            user_id = COALESCE(VALUES(user_id), user_id),
+            locked_until = CASE
+                WHEN window_started_at &lt;= #{staleBefore}
+                    THEN CASE WHEN #{maxFailures} &lt;= 1 THEN #{windowEnd} ELSE NULL END
+                WHEN failure_count + 1 &gt;= #{maxFailures}
+                    THEN COALESCE(locked_until, #{windowEnd})
+                ELSE locked_until
+            END,
+            failure_count = CASE
+                WHEN window_started_at &lt;= #{staleBefore} THEN 1
+                ELSE failure_count + 1
+            END,
+            window_started_at = CASE
+                WHEN window_started_at &lt;= #{staleBefore} THEN #{now}
+                ELSE window_started_at
+            END,
+            last_failure_at = #{now},
+            version = version + 1
+    </insert>
+
+    <delete id="deleteLoginSecurityState">
+        DELETE FROM auth_login_security_state
+        WHERE tenant_id = #{tenantId}
+          AND principal_key = #{principalKey}
+    </delete>
+
+    <delete id="deleteStaleUnlockedLoginSecurityState">
+        DELETE FROM auth_login_security_state
+        WHERE (locked_until IS NULL OR locked_until &lt;= #{now})
+          AND last_failure_at &lt; #{staleBefore}
+        ORDER BY last_failure_at, tenant_id, principal_key
+        LIMIT #{batchSize}
+    </delete>
+
+    <delete id="deleteExpiredAuthSessions">
+        DELETE FROM auth_session
+        WHERE expires_at &lt; #{staleBefore}
+           OR (status = 'REVOKED' AND revoked_at &lt; #{staleBefore})
+        ORDER BY expires_at, session_id
+        LIMIT #{batchSize}
+    </delete>
+</mapper>

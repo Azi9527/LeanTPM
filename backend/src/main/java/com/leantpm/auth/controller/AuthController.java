@@ -1,14 +1,12 @@
 package com.leantpm.auth.controller;
 
 import com.leantpm.auth.dto.ChangePasswordRequest;
-import com.leantpm.auth.dto.CaptchaChallenge;
 import com.leantpm.auth.dto.LoginRequest;
 import com.leantpm.auth.dto.LoginResponse;
 import com.leantpm.auth.dto.RefreshTokenRequest;
 import com.leantpm.auth.dto.TokenPair;
 import com.leantpm.auth.dto.UserProfile;
 import com.leantpm.auth.service.AuthService;
-import com.leantpm.auth.service.CaptchaService;
 import com.leantpm.common.api.ApiResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -23,19 +21,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/auth")
 public class AuthController {
     private final AuthService authService;
-    private final CaptchaService captchaService;
 
-    public AuthController(
-            AuthService authService,
-            CaptchaService captchaService
-    ) {
+    public AuthController(AuthService authService) {
         this.authService = authService;
-        this.captchaService = captchaService;
-    }
-
-    @GetMapping("/captcha")
-    public ApiResponse<CaptchaChallenge> captcha() {
-        return ApiResponse.success(captchaService.create());
     }
 
     @PostMapping("/login")

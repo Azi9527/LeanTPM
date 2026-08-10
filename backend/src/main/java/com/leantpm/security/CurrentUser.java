@@ -10,11 +10,29 @@ public record CurrentUser(
         boolean mustChangePassword,
         Set<String> roles,
         Set<String> permissions,
+        long authEpoch,
         String sessionId
 ) {
+    public CurrentUser(
+            long userId,
+            long tenantId,
+            String username,
+            String realName,
+            boolean mustChangePassword,
+            Set<String> roles,
+            Set<String> permissions,
+            String sessionId
+    ) {
+        this(
+                userId, tenantId, username, realName, mustChangePassword,
+                roles, permissions, 0L, sessionId
+        );
+    }
+
     public CurrentUser withSessionId(String value) {
         return new CurrentUser(
-                userId, tenantId, username, realName, mustChangePassword, roles, permissions, value
+                userId, tenantId, username, realName, mustChangePassword,
+                roles, permissions, authEpoch, value
         );
     }
 }

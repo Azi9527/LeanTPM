@@ -2,6 +2,7 @@ package com.leantpm.common.openapi;
 
 import com.leantpm.auth.controller.AuthController;
 import com.leantpm.common.idempotency.Idempotent;
+import com.leantpm.foundation.controller.BrandingController;
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Contact;
@@ -47,9 +48,12 @@ public class OpenApiConfig {
         return (operation, handlerMethod) -> {
             boolean publicAuthOperation =
                     AuthController.class.isAssignableFrom(handlerMethod.getBeanType())
-                            && Set.of("captcha", "login", "refresh")
+                            && Set.of("login", "refresh")
                             .contains(handlerMethod.getMethod().getName());
-            if (!publicAuthOperation) {
+            boolean publicBrandingOperation =
+                    BrandingController.class.isAssignableFrom(handlerMethod.getBeanType())
+                            && "settings".equals(handlerMethod.getMethod().getName());
+            if (!publicAuthOperation && !publicBrandingOperation) {
                 operation.addSecurityItem(new SecurityRequirement().addList(BEARER_SCHEME));
             }
             if (handlerMethod.hasMethodAnnotation(Idempotent.class)) {
@@ -64,7 +68,7 @@ public class OpenApiConfig {
             addResponse(operation, "403", "功能权限或数据范围不足");
             addResponse(operation, "409", "乐观锁冲突、重复资源或幂等冲突");
             addResponse(operation, "500", "服务器内部错误");
-            addResponse(operation, "503", "Redis 等必要依赖暂不可用");
+            addResponse(operation, "503", "必要的持久化依赖暂不可用");
             return operation;
         };
     }

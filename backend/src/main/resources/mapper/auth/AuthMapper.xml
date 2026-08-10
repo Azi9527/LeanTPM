@@ -14,12 +14,14 @@
         <result property="status" column="status"/>
         <result property="mobileEnabled" column="mobile_enabled"/>
         <result property="mustChangePassword" column="must_change_password"/>
+        <result property="authEpoch" column="auth_epoch"/>
         <result property="lastLoginTime" column="last_login_time"/>
     </resultMap>
 
     <select id="findByUsername" resultMap="userAccountMap">
         SELECT id, tenant_id, username, password_hash, real_name, employee_no, mobile, email,
-               organization_id, status, mobile_enabled, must_change_password, last_login_time
+               organization_id, status, mobile_enabled, must_change_password, auth_epoch,
+               last_login_time
         FROM system_user
         WHERE tenant_id = #{tenantId} AND username = #{username} AND deleted = 0
         LIMIT 1
@@ -27,7 +29,8 @@
 
     <select id="findById" resultMap="userAccountMap">
         SELECT id, tenant_id, username, password_hash, real_name, employee_no, mobile, email,
-               organization_id, status, mobile_enabled, must_change_password, last_login_time
+               organization_id, status, mobile_enabled, must_change_password, auth_epoch,
+               last_login_time
         FROM system_user
         WHERE tenant_id = #{tenantId} AND id = #{userId} AND deleted = 0
         LIMIT 1
@@ -138,7 +141,7 @@
     <update id="updatePassword">
         UPDATE system_user
         SET password_hash = #{passwordHash}, must_change_password = 0,
-            updated_by = #{userId}, version = version + 1
+            updated_by = #{userId}, version = version + 1, auth_epoch = auth_epoch + 1
         WHERE tenant_id = #{tenantId} AND id = #{userId} AND deleted = 0
     </update>
 

@@ -30,8 +30,6 @@ import static org.assertj.core.api.Assertions.assertThat;
                 "spring.datasource.url=${LEANTPM_TEST_DB_URL}",
                 "spring.datasource.username=${LEANTPM_TEST_DB_USERNAME:root}",
                 "spring.datasource.password=${LEANTPM_TEST_DB_PASSWORD:}",
-                "spring.data.redis.repositories.enabled=false",
-                "management.health.redis.enabled=false",
                 "leantpm.security.jwt-secret=integration-test-secret-at-least-32-characters",
                 "leantpm.bootstrap.admin-password="
         }
@@ -124,7 +122,7 @@ class SystemUserImportMySqlIntegrationTest {
     }
 
     @Test
-    void importsTeamLeaderAndManagedOrganizationRelationship() {
+    void importsOneTeamLeaderIntoUnifiedOrganizationManagerField() {
         byte[] content;
         try (var input = new ByteArrayInputStream(importService.template());
              var workbook = new XSSFWorkbook(input);
@@ -140,15 +138,6 @@ class SystemUserImportMySqlIntegrationTest {
             row.getCell(10).setCellValue("");
             row.getCell(11).setCellValue("");
             row.createCell(12).setCellValue("TEAM-A-2");
-            var second = sheet.createRow(2);
-            for (int index = 0; index < 13; index++) {
-                if (row.getCell(index) != null) {
-                    second.createCell(index).setCellValue(row.getCell(index).toString());
-                }
-            }
-            second.getCell(0).setCellValue("import_team_leader_02");
-            second.getCell(1).setCellValue("导入班组长02");
-            second.getCell(2).setCellValue("TL-IT-002");
             workbook.write(output);
             content = output.toByteArray();
         } catch (Exception exception) {
@@ -161,9 +150,20 @@ class SystemUserImportMySqlIntegrationTest {
         assertThat(validated.status())
                 .withFailMessage("validation errors: %s", validated.errors())
                 .isEqualTo("VALIDATED");
-        assertThat(validated.validRows()).isEqualTo(2);
+        assertThat(validated.validRows()).isEqualTo(1);
         importService.commit(validated.batchId());
 
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*)
+                FROM organization organization
+                JOIN system_user manager
+                  ON manager.tenant_id = organization.tenant_id
+                 AND manager.id = organization.manager_user_id
+                 AND manager.deleted = 0
+                WHERE organization.tenant_id = 1
+                  AND organization.organization_code = 'TEAM-A-2'
+                  AND manager.username = 'import_team_leader_01'
+                """, Long.class)).isEqualTo(1L);
         assertThat(jdbc.queryForObject("""
                 SELECT COUNT(*)
                 FROM organization_manager_relation relation
@@ -173,12 +173,13 @@ class SystemUserImportMySqlIntegrationTest {
                  AND organization.deleted = 0
                 JOIN system_user manager
                   ON manager.tenant_id = relation.tenant_id
-                 AND manager.id = relation.user_id AND manager.deleted = 0
+                 AND manager.id = relation.user_id
+                 AND manager.deleted = 0
                 WHERE organization.tenant_id = 1
                   AND organization.organization_code = 'TEAM-A-2'
-                  AND manager.username IN ('import_team_leader_01', 'import_team_leader_02')
+                  AND manager.username = 'import_team_leader_01'
                   AND relation.deleted = 0
-                """, Long.class)).isEqualTo(2L);
+                """, Long.class)).isEqualTo(1L);
     }
 
     @Test

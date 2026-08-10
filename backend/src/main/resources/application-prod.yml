@@ -1,0 +1,23 @@
+spring:
+  datasource:
+    url: ${LEANTPM_DB_URL}
+    username: ${LEANTPM_DB_USERNAME}
+    password: ${LEANTPM_DB_PASSWORD}
+  flyway:
+    enabled: false
+    baseline-on-migrate: false
+server:
+  address: 127.0.0.1
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+leantpm:
+  security:
+    jwt-secret: ${LEANTPM_JWT_SECRET}
+    cors-allowed-origins: ${LEANTPM_CORS_ALLOWED_ORIGINS}
+  storage:
+    upload-dir: ${LEANTPM_UPLOAD_DIR}

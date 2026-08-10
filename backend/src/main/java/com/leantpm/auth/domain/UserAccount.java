@@ -15,6 +15,7 @@ public class UserAccount {
     private Integer status;
     private Boolean mobileEnabled;
     private Boolean mustChangePassword;
+    private Long authEpoch;
     private LocalDateTime lastLoginTime;
 
     public Long getId() {
@@ -111,6 +112,14 @@ public class UserAccount {
 
     public void setMustChangePassword(Boolean mustChangePassword) {
         this.mustChangePassword = mustChangePassword;
+    }
+
+    public Long getAuthEpoch() {
+        return authEpoch;
+    }
+
+    public void setAuthEpoch(Long authEpoch) {
+        this.authEpoch = authEpoch;
     }
 
     public LocalDateTime getLastLoginTime() {

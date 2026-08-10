@@ -22,6 +22,7 @@ class JwtTokenServiceTest {
                 false,
                 Set.of("PLANNER"),
                 Set.of("equipment:asset:view", "equipment:asset:update"),
+                42L,
                 null
         );
 
@@ -30,6 +31,8 @@ class JwtTokenServiceTest {
         CurrentUser actual = service.toCurrentUser(service.parse(pair.accessToken(), "access"));
 
         assertThat(actual).isEqualTo(expected.withSessionId(issued.sessionId()));
+        assertThat(service.parse(pair.accessToken(), "access").get("uv", Number.class).longValue())
+                .isEqualTo(42L);
         assertThat(service.parse(pair.accessToken(), "access").getId()).isEqualTo(issued.accessTokenId());
         assertThat(service.parse(pair.refreshToken(), "refresh").getId()).isEqualTo(issued.refreshTokenId());
         assertThat(pair.accessExpiresAt()).isBefore(pair.refreshExpiresAt());

@@ -3,7 +3,7 @@ package com.leantpm.security;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leantpm.common.api.ApiResponse;
 import com.leantpm.common.exception.BusinessException;
-import com.leantpm.security.session.RedisAuthSessionService;
+import com.leantpm.security.session.AuthSessionService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -22,12 +22,12 @@ import java.util.ArrayList;
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtTokenService tokenService;
-    private final RedisAuthSessionService sessionService;
+    private final AuthSessionService sessionService;
     private final ObjectMapper objectMapper;
 
     public JwtAuthenticationFilter(
             JwtTokenService tokenService,
-            RedisAuthSessionService sessionService,
+            AuthSessionService sessionService,
             ObjectMapper objectMapper
     ) {
         this.tokenService = tokenService;
@@ -54,16 +54,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             } catch (BusinessException exception) {
                 SecurityContextHolder.clearContext();
-                if (exception.getStatus() == org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE) {
-                    response.setStatus(exception.getStatus().value());
-                    response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-                    response.setCharacterEncoding("UTF-8");
-                    objectMapper.writeValue(
-                            response.getWriter(),
-                            ApiResponse.error(exception.getCode(), exception.getMessage())
-                    );
-                    return;
-                }
+                response.setStatus(exception.getStatus().value());
+                response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+                response.setCharacterEncoding("UTF-8");
+                objectMapper.writeValue(
+                        response.getWriter(),
+                        ApiResponse.error(exception.getCode(), exception.getMessage())
+                );
+                return;
             }
         }
         filterChain.doFilter(request, response);

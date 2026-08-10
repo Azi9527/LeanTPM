@@ -1,17 +1,17 @@
 package com.leantpm.system.online;
 
 import com.leantpm.security.SecurityUtils;
+import com.leantpm.security.session.AuthSessionService;
 import com.leantpm.security.session.OnlineSession;
-import com.leantpm.security.session.RedisAuthSessionService;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 
 @Service
 public class OnlineUserService {
-    private final RedisAuthSessionService sessionService;
+    private final AuthSessionService sessionService;
 
-    public OnlineUserService(RedisAuthSessionService sessionService) {
+    public OnlineUserService(AuthSessionService sessionService) {
         this.sessionService = sessionService;
     }
 

@@ -1,18 +1,26 @@
 package com.leantpm.integration;
 
 import org.flywaydb.core.Flyway;
+import org.flywaydb.core.api.FlywayException;
+import org.flywaydb.core.api.MigrationVersion;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.Statement;
 
+import java.util.Comparator;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @EnabledIfEnvironmentVariable(named = "LEANTPM_TEST_DB_URL", matches = ".+")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -20,12 +28,73 @@ class MySqlMigrationIntegrationTest {
     private String url;
     private String username;
     private String password;
+    private String preUpgradePlannerHash;
+    private long preUpgradeEquipmentCount;
+    private long preUpgradeInspectionTaskCount;
+    private long preUpgradeOrganizationCount;
 
     @BeforeAll
     void migrateFreshDatabase() {
         url = System.getenv("LEANTPM_TEST_DB_URL");
         username = environment("LEANTPM_TEST_DB_USERNAME", "root");
         password = environment("LEANTPM_TEST_DB_PASSWORD", "");
+        Flyway.configure()
+                .dataSource(url, username, password)
+                .locations("classpath:db/migration")
+                .target(MigrationVersion.fromVersion("48"))
+                .cleanDisabled(true)
+                .load()
+                .migrate();
+        try {
+            if (number("""
+                    SELECT MAX(CAST(version AS UNSIGNED))
+                    FROM flyway_schema_history WHERE success = 1
+                    """) != 48L) {
+                throw new IllegalStateException("The upgrade fixture did not stop at V48");
+            }
+            if (number("""
+                    SELECT COUNT(*) FROM system_parameter
+                    WHERE tenant_id = 1 AND parameter_key = 'security.captcha.enabled'
+                    """) != 1L) {
+                throw new IllegalStateException("The V48 fixture is missing the legacy login challenge key");
+            }
+            if (Long.parseLong(text("""
+                    SELECT parameter_value FROM system_parameter
+                    WHERE tenant_id = 1 AND parameter_key = 'mobile.android-min-version-code'
+                    """)) >= 101L) {
+                throw new IllegalStateException("The V48 fixture already has the V50 mobile contract");
+            }
+            executeUpdate("""
+                    INSERT INTO system_login_log
+                        (tenant_id, username, login_ip, success, failure_reason, created_by)
+                    VALUES
+                        (1, 'v48_upgrade_fixture', '127.0.0.1', 0, 'FIXTURE', 0)
+                    """);
+            executeUpdate("""
+                    INSERT INTO system_attachment
+                        (tenant_id, business_type, business_id, original_name, stored_name,
+                         storage_path, content_type, extension, file_size, sha256, created_by)
+                    VALUES
+                        (1, 'UPGRADE_FIXTURE', 1, 'fixture.txt', 'v48-upgrade-fixture.txt',
+                         'fixtures/v48-upgrade-fixture.txt', 'text/plain', 'txt', 7,
+                         'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 0)
+                    """);
+            preUpgradePlannerHash = text("""
+                    SELECT password_hash FROM system_user
+                    WHERE tenant_id = 1 AND username = 'planner' AND deleted = 0
+                    """);
+            preUpgradeEquipmentCount = number("""
+                    SELECT COUNT(*) FROM equipment WHERE tenant_id = 1 AND deleted = 0
+                    """);
+            preUpgradeInspectionTaskCount = number("""
+                    SELECT COUNT(*) FROM inspection_task WHERE tenant_id = 1 AND deleted = 0
+                    """);
+            preUpgradeOrganizationCount = number("""
+                    SELECT COUNT(*) FROM organization WHERE tenant_id = 1 AND deleted = 0
+                    """);
+        } catch (Exception exception) {
+            throw new IllegalStateException("Could not capture the V48 compatibility fixture", exception);
+        }
         Flyway.configure()
                 .dataSource(url, username, password)
                 .locations("classpath:db/migration")
@@ -37,7 +106,7 @@ class MySqlMigrationIntegrationTest {
     @Test
     void appliesEveryMigrationAndFoundationTable() throws Exception {
         assertThat(number("SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1"))
-                .isEqualTo(34);
+                .isEqualTo(50);
         assertThat(number("""
                 SELECT COUNT(*)
                 FROM information_schema.tables
@@ -109,9 +178,162 @@ class MySqlMigrationIntegrationTest {
                     'equipment_repair_material',
                     'equipment_repair_event',
                     'equipment_fault_attachment',
-                    'mobile_photo_evidence'
+                    'mobile_photo_evidence',
+                    'auth_session',
+                    'auth_login_security_state',
+                    'request_idempotency'
                   )
-                """)).isEqualTo(67);
+                """)).isEqualTo(70);
+    }
+
+    @Test
+    void rerunningMigrationsIsANoOp() {
+        var result = Flyway.configure()
+                .dataSource(url, username, password)
+                .locations("classpath:db/migration")
+                .cleanDisabled(true)
+                .load()
+                .migrate();
+
+        assertThat(result.migrationsExecuted).isZero();
+    }
+
+    @Test
+    void rejectsTamperedFlywayChecksumAndRestoresKnownHistory() throws Exception {
+        long expectedChecksum = number("""
+                SELECT checksum FROM flyway_schema_history
+                WHERE version = '50' AND success = 1
+                """);
+        executeUpdate("""
+                UPDATE flyway_schema_history
+                SET checksum = checksum + 1
+                WHERE version = '50' AND success = 1
+                """);
+        try {
+            Flyway flyway = Flyway.configure()
+                    .dataSource(url, username, password)
+                    .locations("classpath:db/migration")
+                    .cleanDisabled(true)
+                    .load();
+            assertThat(flyway.validateWithResult().validationSuccessful).isFalse();
+            assertThatThrownBy(flyway::validate).isInstanceOf(FlywayException.class);
+        } finally {
+            executeUpdate("""
+                    UPDATE flyway_schema_history
+                    SET checksum = %d
+                    WHERE version = '50' AND success = 1
+                    """.formatted(expectedChecksum));
+        }
+
+        assertThat(Flyway.configure()
+                .dataSource(url, username, password)
+                .locations("classpath:db/migration")
+                .cleanDisabled(true)
+                .load()
+                .validateWithResult()
+                .validationSuccessful).isTrue();
+    }
+
+    @Test
+    void recoversAnInterruptedNonTransactionalMigrationBeforeForwardCompletion() throws Exception {
+        Path migrationRoot = Files.createTempDirectory("leantpm-flyway-failure-");
+        Path migrationFile = migrationRoot.resolve("V1__failure_probe.sql");
+        String location = "filesystem:" + migrationRoot.toAbsolutePath().toString().replace('\\', '/');
+        try {
+            Files.writeString(migrationFile, """
+                    CREATE TABLE migration_failure_probe (id BIGINT PRIMARY KEY);
+                    THIS_IS_AN_INTENTIONAL_MIGRATION_FAILURE;
+                    """, StandardCharsets.UTF_8);
+            Flyway failedFlyway = Flyway.configure()
+                    .dataSource(url, username, password)
+                    .locations(location)
+                    .table("flyway_failure_probe_history")
+                    .cleanDisabled(true)
+                    .load();
+
+            assertThatThrownBy(failedFlyway::migrate).isInstanceOf(FlywayException.class);
+            assertThat(number("""
+                    SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1
+                    """)).isEqualTo(50L);
+            assertThat(number("""
+                    SELECT COUNT(*) FROM information_schema.tables
+                    WHERE table_schema = DATABASE()
+                      AND table_name = 'migration_failure_probe'
+                    """)).isEqualTo(1L);
+
+            executeUpdate("DROP TABLE migration_failure_probe");
+            failedFlyway.repair();
+            Files.writeString(migrationFile, """
+                    CREATE TABLE migration_failure_probe (id BIGINT PRIMARY KEY);
+                    INSERT INTO migration_failure_probe (id) VALUES (1);
+                    """, StandardCharsets.UTF_8);
+            var recoveryResult = Flyway.configure()
+                    .dataSource(url, username, password)
+                    .locations(location)
+                    .table("flyway_failure_probe_history")
+                    .cleanDisabled(true)
+                    .load()
+                    .migrate();
+
+            assertThat(recoveryResult.migrationsExecuted).isEqualTo(1);
+            assertThat(number("SELECT COUNT(*) FROM migration_failure_probe")).isEqualTo(1L);
+            assertThat(number("""
+                    SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1
+                    """)).isEqualTo(50L);
+        } finally {
+            executeUpdate("DROP TABLE IF EXISTS migration_failure_probe");
+            executeUpdate("DROP TABLE IF EXISTS flyway_failure_probe_history");
+            try (var files = Files.walk(migrationRoot)) {
+                files.sorted(Comparator.reverseOrder()).forEach(path -> {
+                    try {
+                        Files.deleteIfExists(path);
+                    } catch (Exception exception) {
+                        throw new IllegalStateException("Could not clean the Flyway failure fixture", exception);
+                    }
+                });
+            }
+        }
+    }
+
+    @Test
+    void upgradesRepresentativeV48DataAndAppliesTheRemovedLoginChallengeContract() throws Exception {
+        assertThat(text("""
+                SELECT password_hash FROM system_user
+                WHERE tenant_id = 1 AND username = 'planner' AND deleted = 0
+                """)).isEqualTo(preUpgradePlannerHash);
+        assertThat(number("""
+                SELECT COUNT(*) FROM equipment WHERE tenant_id = 1 AND deleted = 0
+                """)).isEqualTo(preUpgradeEquipmentCount);
+        assertThat(number("""
+                SELECT COUNT(*) FROM inspection_task WHERE tenant_id = 1 AND deleted = 0
+                """)).isEqualTo(preUpgradeInspectionTaskCount);
+        assertThat(number("""
+                SELECT COUNT(*) FROM organization WHERE tenant_id = 1 AND deleted = 0
+                """)).isEqualTo(preUpgradeOrganizationCount);
+        assertThat(number("""
+                SELECT COUNT(*) FROM system_login_log
+                WHERE tenant_id = 1 AND username = 'v48_upgrade_fixture'
+                """)).isEqualTo(1L);
+        assertThat(number("""
+                SELECT COUNT(*) FROM system_attachment
+                WHERE tenant_id = 1 AND stored_name = 'v48-upgrade-fixture.txt'
+                  AND sha256 = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+                """)).isEqualTo(1L);
+        assertThat(number("""
+                SELECT COUNT(*) FROM system_parameter
+                WHERE tenant_id = 1 AND parameter_key = 'security.captcha.enabled'
+                """)).isZero();
+        assertThat(Long.parseLong(text("""
+                SELECT parameter_value FROM system_parameter
+                WHERE tenant_id = 1 AND parameter_key = 'mobile.android-min-version-code'
+                """))).isGreaterThanOrEqualTo(101L);
+        assertThat(number("""
+                SELECT COUNT(*) FROM information_schema.columns
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'system_user'
+                  AND column_name = 'auth_epoch'
+                  AND data_type = 'bigint'
+                """)).isEqualTo(1L);
     }
 
     @Test
@@ -626,6 +848,12 @@ class MySqlMigrationIntegrationTest {
 
     private Connection connection() throws Exception {
         return DriverManager.getConnection(url, username, password);
+    }
+
+    private void executeUpdate(String sql) throws Exception {
+        try (Connection connection = connection(); Statement statement = connection.createStatement()) {
+            statement.executeUpdate(sql);
+        }
     }
 
     private String environment(String name, String defaultValue) {

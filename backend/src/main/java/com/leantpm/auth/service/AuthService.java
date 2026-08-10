@@ -11,7 +11,7 @@ import com.leantpm.common.exception.BusinessException;
 import com.leantpm.security.CurrentUser;
 import com.leantpm.security.JwtTokenService;
 import com.leantpm.security.SecurityUtils;
-import com.leantpm.security.session.RedisAuthSessionService;
+import com.leantpm.security.session.AuthSessionService;
 import io.jsonwebtoken.Claims;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
@@ -28,59 +28,51 @@ public class AuthService {
     private final AuthMapper authMapper;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenService tokenService;
-    private final RedisAuthSessionService sessionService;
-    private final CaptchaService captchaService;
+    private final AuthSessionService sessionService;
+    private final DatabaseLoginAttemptService loginAttemptService;
 
     public AuthService(
             AuthMapper authMapper,
             PasswordEncoder passwordEncoder,
             JwtTokenService tokenService,
-            RedisAuthSessionService sessionService,
-            CaptchaService captchaService
+            AuthSessionService sessionService,
+            DatabaseLoginAttemptService loginAttemptService
     ) {
         this.authMapper = authMapper;
         this.passwordEncoder = passwordEncoder;
         this.tokenService = tokenService;
         this.sessionService = sessionService;
-        this.captchaService = captchaService;
+        this.loginAttemptService = loginAttemptService;
     }
 
-    @Transactional
     public LoginResponse login(LoginRequest request, HttpServletRequest servletRequest) {
         String username = request.username().trim();
-        captchaService.verify(request);
-        sessionService.assertLoginAllowed(DEFAULT_TENANT_ID, username);
-
-        UserAccount user = authMapper.findByUsername(DEFAULT_TENANT_ID, username);
-        if (user == null || user.getStatus() == null || user.getStatus() != 1
-                || !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
-            authMapper.insertLoginLog(
+        LoginAttemptResult attempt;
+        try {
+            attempt = loginAttemptService.verify(
                     DEFAULT_TENANT_ID,
-                    user == null ? null : user.getId(),
                     username,
+                    request.password(),
                     clientIp(servletRequest),
-                    safeUserAgent(servletRequest),
-                    false,
-                    "用户名、密码错误或账号已停用"
+                    safeUserAgent(servletRequest)
             );
-            sessionService.recordLoginFailure(DEFAULT_TENANT_ID, username);
+        } catch (BusinessException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            throw new BusinessException(
+                    "AUTH_STATE_UNAVAILABLE",
+                    "认证安全状态暂不可用，请稍后重试",
+                    HttpStatus.SERVICE_UNAVAILABLE
+            );
+        }
+        if (attempt.decision() != LoginAttemptDecision.AUTHENTICATED) {
             throw new BusinessException("LOGIN_FAILED", "用户名或密码错误", HttpStatus.UNAUTHORIZED);
         }
+        UserAccount user = attempt.user();
 
-        sessionService.clearLoginFailures(user.getTenantId(), username);
-        authMapper.updateLastLogin(user.getTenantId(), user.getId());
-        authMapper.insertLoginLog(
-                user.getTenantId(),
-                user.getId(),
-                username,
-                clientIp(servletRequest),
-                safeUserAgent(servletRequest),
-                true,
-                null
-        );
         CurrentUser currentUser = loadCurrentUser(user);
         var issued = tokenService.issue(currentUser);
-        sessionService.register(
+        sessionService.registerLogin(
                 currentUser,
                 issued,
                 clientIp(servletRequest),
@@ -89,12 +81,20 @@ public class AuthService {
         return new LoginResponse(issued.tokens(), toProfile(currentUser));
     }
 
-    @Transactional(readOnly = true)
     public TokenPair refresh(String refreshToken) {
         Claims claims = tokenService.parse(refreshToken, "refresh");
         long tenantId = claims.get("tid", Number.class).longValue();
         long userId = claims.get("uid", Number.class).longValue();
+        Number claimedEpoch = claims.get("uv", Number.class);
         UserAccount account = requireActiveUser(tenantId, userId);
+        if (claimedEpoch == null || account.getAuthEpoch() == null
+                || claimedEpoch.longValue() != account.getAuthEpoch()) {
+            throw new BusinessException(
+                    "TOKEN_SESSION_INVALID",
+                    "The account security state changed after this refresh token was issued",
+                    HttpStatus.UNAUTHORIZED
+            );
+        }
         String sessionId = claims.get("sid", String.class);
         if (sessionId == null || sessionId.isBlank()) {
             throw new BusinessException("INVALID_REFRESH_TOKEN", "刷新令牌缺少会话标识", HttpStatus.UNAUTHORIZED);
@@ -161,6 +161,7 @@ public class AuthService {
                 Boolean.TRUE.equals(user.getMustChangePassword()),
                 roles,
                 permissions,
+                user.getAuthEpoch() == null ? 0L : user.getAuthEpoch(),
                 null
         );
     }

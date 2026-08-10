@@ -6,6 +6,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class IdempotencyProperties {
     private int processingSeconds = 300;
     private int completedHours = 24;
+    private int maxResponseBytes = 8 * 1024 * 1024;
+    private int cleanupBatchSize = 500;
 
     public int getProcessingSeconds() {
         return processingSeconds;
@@ -21,5 +23,21 @@ public class IdempotencyProperties {
 
     public void setCompletedHours(int completedHours) {
         this.completedHours = completedHours;
+    }
+
+    public int getMaxResponseBytes() {
+        return maxResponseBytes;
+    }
+
+    public void setMaxResponseBytes(int maxResponseBytes) {
+        this.maxResponseBytes = maxResponseBytes;
+    }
+
+    public int getCleanupBatchSize() {
+        return cleanupBatchSize;
+    }
+
+    public void setCleanupBatchSize(int cleanupBatchSize) {
+        this.cleanupBatchSize = cleanupBatchSize;
     }
 }
