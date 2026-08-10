@@ -9,7 +9,7 @@
 			<text class="eyebrow">企业服务配置</text>
 			<text class="title">连接 LeanTPM 服务</text>
 			<text class="description">
-				请输入企业部署的后端地址。开发环境可以使用局域网地址，生产环境必须使用 HTTPS。
+				请输入企业部署的后端地址。当前正式云服务可使用 HTTP；配置公共域名和证书后应切换为 HTTPS。
 			</text>
 
 			<view class="field">

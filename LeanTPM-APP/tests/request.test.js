@@ -15,7 +15,7 @@ globalThis.uni = {
 		requests.push(options)
 		if (options.url.endsWith('/auth/refresh')) {
 			if (refreshFailureStatus) {
-				options.success({ statusCode: refreshFailureStatus, data: { code: 'REDIS_UNAVAILABLE' } })
+				options.success({ statusCode: refreshFailureStatus, data: { code: 'AUTH_STATE_UNAVAILABLE' } })
 				return
 			}
 			options.success({

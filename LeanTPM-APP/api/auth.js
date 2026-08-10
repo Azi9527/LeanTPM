@@ -1,12 +1,11 @@
 import { apiRequest } from './request.js'
 
 export const authApi = Object.freeze({
-	captcha: () => apiRequest({ path: '/auth/captcha', auth: false }),
-	login: (username, password, captchaId, captchaCode) => apiRequest({
+	login: (username, password) => apiRequest({
 		path: '/auth/login',
 		method: 'POST',
 		auth: false,
-		data: { username, password, captchaId, captchaCode }
+		data: { username, password }
 	}),
 	currentUser: () => apiRequest({ path: '/auth/me' }),
 	changePassword: (currentPassword, newPassword) => apiRequest({
