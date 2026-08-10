@@ -30,6 +30,8 @@ $gmsaPattern = '^[A-Za-z0-9_.-]+\\[A-Za-z0-9_.-]+\$$'
 $ServiceAccountMode = $ServiceAccountMode.ToUpperInvariant()
 $requiredToolkitPaths = @(
     'deploy/windows/Invoke-LeanTpmReleaseAgent.ps1',
+    'release/deployment-bundle.schema.json',
+    'release/toolchain-lock.json',
     'scripts/Invoke-LeanTpmDeployment.ps1',
     'scripts/Test-LeanTpmReleaseApproval.ps1',
     'scripts/Test-ReleasePackage.ps1'
@@ -185,7 +187,7 @@ function Test-ToolkitLock {
             Assert-ExactProperties -Value $entry -Expected @('path', 'sha256') `
                 -Label 'toolkit file entry'
             $relative = [string]$entry.path
-            if ($relative -notmatch '^(?:scripts|deploy/windows)/[A-Za-z0-9._/-]+$' -or
+            if ($relative -notmatch '^(?:(?:scripts|deploy/windows)/[A-Za-z0-9._/-]+\.ps1|release/(?:deployment-bundle\.schema|toolchain-lock)\.json)$' -or
                     $relative.Contains('..') -or -not $seen.Add($relative) -or
                     [string]$entry.sha256 -notmatch '^[a-f0-9]{64}$') {
                 throw 'toolkit lock contains an unsafe or duplicate file entry'

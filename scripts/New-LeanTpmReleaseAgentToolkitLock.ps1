@@ -73,6 +73,12 @@ $windowsRoot = Get-FixedDirectory -Path (Join-Path $root 'deploy\windows') `
     -Label 'toolkit Windows root'
 $releaseRoot = Get-FixedDirectory -Path (Join-Path $root 'release') `
     -Label 'toolkit release root'
+$bundleSchemaPath = Assert-ContainedRegularFile -Root $root `
+    -Path (Join-Path $releaseRoot 'deployment-bundle.schema.json') `
+    -Label 'deployment bundle schema'
+$toolchainLockPath = Assert-ContainedRegularFile -Root $root `
+    -Path (Join-Path $releaseRoot 'toolchain-lock.json') `
+    -Label 'toolchain lock'
 $expectedOutputPath = Join-Path $releaseRoot 'release-agent-toolkit-lock.json'
 $outputFull = [IO.Path]::GetFullPath($OutputPath)
 if (-not $outputFull.Equals(
@@ -102,6 +108,12 @@ foreach ($scanRoot in @($scriptsRoot, $windowsRoot)) {
         $sourceByRelativePath.Add($relative, $fixed)
     }
 }
+$bundleSchemaRelative = 'release/deployment-bundle.schema.json'
+$relativePaths.Add($bundleSchemaRelative)
+$sourceByRelativePath.Add($bundleSchemaRelative, $bundleSchemaPath)
+$toolchainLockRelative = 'release/toolchain-lock.json'
+$relativePaths.Add($toolchainLockRelative)
+$sourceByRelativePath.Add($toolchainLockRelative, $toolchainLockPath)
 $relativePaths.Sort([StringComparer]::Ordinal)
 if ($relativePaths.Count -lt 1 -or $relativePaths.Count -gt 256 -or
     -not $sourceByRelativePath.ContainsKey(

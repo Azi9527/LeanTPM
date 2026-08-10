@@ -4927,6 +4927,9 @@ test('runs the release agent through verify-only and pinned signed deployment mo
     const deploymentExecutorPath = path.join(
       toolkitScriptsRoot, 'Invoke-LeanTpmDeployment.ps1',
     )
+    const rapidDeploymentExecutorPath = path.join(
+      toolkitScriptsRoot, 'Invoke-LeanTpmWorkgroupRapidDeployment.ps1',
+    )
     const toolkitLockPath = path.join(
       toolkitReleaseRoot, 'release-agent-toolkit-lock.json',
     )
@@ -4943,6 +4946,12 @@ test('runs the release agent through verify-only and pinned signed deployment mo
     fs.mkdirSync(toolkitScriptsRoot, { recursive: true })
     fs.mkdirSync(toolkitWindowsRoot, { recursive: true })
     fs.mkdirSync(toolkitReleaseRoot, { recursive: true })
+    const bundleSchemaPath = path.join(
+      toolkitReleaseRoot, 'deployment-bundle.schema.json',
+    )
+    const toolchainLockDataPath = path.join(toolkitReleaseRoot, 'toolchain-lock.json')
+    fs.writeFileSync(bundleSchemaPath, '{"type":"object"}\r\n', 'utf8')
+    fs.writeFileSync(toolchainLockDataPath, '{"schemaVersion":1}\r\n', 'utf8')
     fs.writeFileSync(packagePath, Buffer.from('signed-release-fixture', 'utf8'))
     fs.writeFileSync(releaseTrustPath, '{"schemaVersion":1}', 'utf8')
     const packageSha256 = crypto.createHash('sha256')
@@ -4993,14 +5002,44 @@ test('runs the release agent through verify-only and pinned signed deployment mo
         '',
       ].join('\r\n'),
     )
+    fs.writeFileSync(
+      rapidDeploymentExecutorPath,
+      [
+        '[CmdletBinding(SupportsShouldProcess)]',
+        'param([string]$PlanPath,[switch]$ConfirmDeployment,[string]$OutputFormat)',
+        "if (-not $ConfirmDeployment) { throw 'confirmation was not forwarded' }",
+        `Add-Content -LiteralPath ${quotePowerShell(deploymentInvocationLog)} -Value ('RAPID:' + $PlanPath)`,
+        "$plan = Get-Content -LiteralPath $PlanPath -Encoding utf8 -Raw | ConvertFrom-Json",
+        "[pscustomobject]@{ status='SUCCEEDED'; releaseId=[string]$plan.releaseId; approvalId=[string]$plan.approvalId; environmentName=[string]$plan.environmentName; environmentKind=[string]$plan.environmentKind; packageSha256=[string]$plan.packageSha256; hostLayoutSha256=[string]$plan.hostLayoutSha256; proxyBindingSha256=[string]$plan.proxyBindingSha256; steps=@('LOCK','BACKUP','ACTIVATE','VERIFY'); backupId='rapid-backup-001' } | ConvertTo-Json -Depth 5 -Compress",
+        '',
+      ].join('\r\n'),
+    )
     const deploymentExecutorSha256 = crypto.createHash('sha256')
       .update(fs.readFileSync(deploymentExecutorPath)).digest('hex')
+    const rapidDeploymentExecutorSha256 = crypto.createHash('sha256')
+      .update(fs.readFileSync(rapidDeploymentExecutorPath)).digest('hex')
     const toolkitLock = {
       executorRelativePath: 'scripts/Invoke-LeanTpmDeployment.ps1',
-      files: [{
-        path: 'scripts/Invoke-LeanTpmDeployment.ps1',
-        sha256: deploymentExecutorSha256,
-      }],
+      files: [
+        {
+          path: 'release/deployment-bundle.schema.json',
+          sha256: crypto.createHash('sha256')
+            .update(fs.readFileSync(bundleSchemaPath)).digest('hex'),
+        },
+        {
+          path: 'release/toolchain-lock.json',
+          sha256: crypto.createHash('sha256')
+            .update(fs.readFileSync(toolchainLockDataPath)).digest('hex'),
+        },
+        {
+          path: 'scripts/Invoke-LeanTpmDeployment.ps1',
+          sha256: deploymentExecutorSha256,
+        },
+        {
+          path: 'scripts/Invoke-LeanTpmWorkgroupRapidDeployment.ps1',
+          sha256: rapidDeploymentExecutorSha256,
+        },
+      ],
       schemaVersion: 1,
       toolkitId: 'leantpm-release-agent-toolkit',
     }
@@ -5085,6 +5124,7 @@ test('runs the release agent through verify-only and pinned signed deployment mo
     )
     fs.writeFileSync(deploymentPlanPath, JSON.stringify({
       schemaVersion: 1,
+      deploymentMode: 'WORKGROUP_RAPID',
       environmentName: 'LeanTPM Production',
       environmentKind: 'PRODUCTION',
       environmentId: 'leantpm-production-cn',
@@ -5158,6 +5198,7 @@ test('runs the release agent through verify-only and pinned signed deployment mo
       fs.readFileSync(deploymentInvocationLog, 'utf8').trim().split(/\r?\n/u).length,
       1,
     )
+    assert.match(fs.readFileSync(deploymentInvocationLog, 'utf8'), /^RAPID:/u)
     assert.equal(fs.existsSync(signedJobPath), false)
     assert.equal(
       fs.existsSync(path.join(queueRoot, 'completed', `${signedCommandId}.json`)),
@@ -5288,6 +5329,7 @@ test('runs the release agent through verify-only and pinned signed deployment mo
     const source = fs.readFileSync(agentPath, 'utf8')
     assert.match(source, /ExecuteSignedDeployment/)
     assert.match(source, /Invoke-LeanTpmDeployment\.ps1/)
+    assert.match(source, /Invoke-LeanTpmWorkgroupRapidDeployment\.ps1/)
     assert.doesNotMatch(source, /Invoke-LeanTpmRollback/)
   } finally {
     fs.rmSync(temporaryRoot, { recursive: true, force: true })
@@ -5310,8 +5352,12 @@ test('builds a canonical complete release agent PowerShell toolkit lock', () => 
     fs.mkdirSync(releaseRoot, { recursive: true })
     const executorPath = path.join(scriptsRoot, 'Invoke-LeanTpmDeployment.ps1')
     const helperPath = path.join(windowsRoot, 'Helper.ps1')
+    const bundleSchemaPath = path.join(releaseRoot, 'deployment-bundle.schema.json')
+    const toolchainLockPath = path.join(releaseRoot, 'toolchain-lock.json')
     fs.writeFileSync(executorPath, 'param()\r\n', 'utf8')
     fs.writeFileSync(helperPath, 'param()\r\n', 'utf8')
+    fs.writeFileSync(bundleSchemaPath, '{"type":"object"}\r\n', 'utf8')
+    fs.writeFileSync(toolchainLockPath, '{"schemaVersion":1}\r\n', 'utf8')
 
     const result = invokePowerShell(generatorPath, [
       '-ToolkitRoot', toolkitRoot,
@@ -5321,7 +5367,7 @@ test('builds a canonical complete release agent PowerShell toolkit lock', () => 
     assert.equal(result.status, 0, combinedOutput(result))
     const report = JSON.parse(result.stdout.trim())
     assert.equal(report.status, 'CREATED')
-    assert.equal(report.fileCount, 2)
+    assert.equal(report.fileCount, 4)
     const lockBytes = fs.readFileSync(outputPath)
     assert.equal(
       report.lockSha256,
@@ -5333,7 +5379,12 @@ test('builds a canonical complete release agent PowerShell toolkit lock', () => 
     assert.equal(lock.executorRelativePath, 'scripts/Invoke-LeanTpmDeployment.ps1')
     assert.deepEqual(
       lock.files.map((entry) => entry.path),
-      ['deploy/windows/Helper.ps1', 'scripts/Invoke-LeanTpmDeployment.ps1'],
+      [
+        'deploy/windows/Helper.ps1',
+        'release/deployment-bundle.schema.json',
+        'release/toolchain-lock.json',
+        'scripts/Invoke-LeanTpmDeployment.ps1',
+      ],
     )
     for (const entry of lock.files) {
       const sourcePath = path.join(toolkitRoot, ...entry.path.split('/'))
@@ -6013,6 +6064,503 @@ test('plans isolated OpsControl and ReleaseAgent Windows services without side e
   }
 })
 
+test('plans an existing WORKGROUP host rapid bootstrap without side effects', () => {
+  const plannerPath = path.join(
+    repositoryRoot,
+    'deploy',
+    'windows',
+    'New-LeanTpmWorkgroupRapidBootstrapPlan.ps1',
+  )
+  assert.ok(fs.existsSync(plannerPath), 'missing WORKGROUP rapid bootstrap planner')
+
+  const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'leantpm-rapid-bootstrap-'))
+  try {
+    const discoveryPath = path.join(temporaryRoot, 'discovery.json')
+    const artifactsPath = path.join(temporaryRoot, 'artifacts.json')
+    const fixedMissingPaths = [
+      'C:\\ProgramData\\LeanTPM-bootstrap',
+      'C:\\ProgramData\\LeanTPM-bootstrap\\host-layout.json',
+      'D:\\LeanTPM\\Runtime\\config\\release-trust.json',
+      'D:\\LeanTPM\\Runtime\\config\\external-caddy-binding.json',
+      'D:\\LeanTPM\\App\\ops-services',
+      'D:\\LeanTPM\\Runtime\\ops-control-plane',
+      'D:\\LeanTPM\\Runtime\\release-agent',
+    ]
+    const discovery = {
+      Status: 'OPS_BOOTSTRAP_READ_ONLY_DISCOVERY',
+      ComputerName: 'IZ4UH8P0YPYK9ZZ',
+      PartOfDomain: false,
+      Domain: 'WORKGROUP',
+      Paths: fixedMissingPaths.map((Path) => ({
+        Path,
+        Exists: false,
+        Type: 'MISSING',
+        IsReparse: false,
+        SHA256: null,
+      })),
+      Services: [
+        {
+          Name: 'LeanTPM.Backend',
+          State: 'Running',
+          StartMode: 'Auto',
+          StartName: 'NT AUTHORITY\\NetworkService',
+          ProcessId: 8072,
+          PathName: '"D:\\LeanTPM\\App\\service\\LeanTPM.Backend.exe"',
+        },
+        {
+          Name: 'caddy',
+          State: 'Running',
+          StartMode: 'Auto',
+          StartName: 'LocalSystem',
+          ProcessId: 4820,
+          PathName: 'D:\\LeanTPM\\tools\\caddy\\caddy.exe run --environ '
+            + '--config D:\\LeanTPM\\shared\\config\\Caddyfile --adapter caddyfile',
+        },
+        {
+          Name: 'LeanTPM.OpsControl', State: 'NOT_INSTALLED', ProcessId: 0,
+        },
+        {
+          Name: 'LeanTPM.ReleaseAgent', State: 'NOT_INSTALLED', ProcessId: 0,
+        },
+      ],
+      HostLayout: null,
+      ReleaseTrust: null,
+    }
+    const artifacts = {
+      schemaVersion: 1,
+      productVersion: '1.0.2',
+      mainCommit: '22a2496'.padEnd(40, '0'),
+      opsControlJarSha256: '1'.repeat(64),
+      winSWSha256: '2'.repeat(64),
+      javaSha256: '3'.repeat(64),
+      deploymentToolkitLockSha256: '4'.repeat(64),
+      caddySha256: '5'.repeat(64),
+    }
+    fs.writeFileSync(discoveryPath, JSON.stringify(discovery), 'utf8')
+    fs.writeFileSync(artifactsPath, JSON.stringify(artifacts), 'utf8')
+
+    const before = snapshotTree(temporaryRoot)
+    const planned = invokePowerShell(plannerPath, [
+      '-DiscoveryPath', discoveryPath,
+      '-ArtifactManifestPath', artifactsPath,
+      '-ExpectedComputerName', 'IZ4UH8P0YPYK9ZZ',
+      '-PlanOnly',
+      '-OutputFormat', 'Json',
+    ])
+    assert.equal(planned.status, 0, combinedOutput(planned))
+    const report = JSON.parse(planned.stdout.trim())
+    assert.equal(report.status, 'PLAN')
+    assert.equal(report.executable, false)
+    assert.equal(report.bootstrapMode, 'WORKGROUP_RAPID')
+    assert.equal(report.computerName, 'IZ4UH8P0YPYK9ZZ')
+    assert.equal(report.productVersion, '1.0.2')
+    assert.equal(report.webConfirmationCount, 1)
+    assert.deepEqual(report.serviceIds, [
+      'LeanTPM.OpsControl',
+      'LeanTPM.ReleaseAgent',
+    ])
+    assert.deepEqual(report.actions, [
+      'CREATE_FIXED_HOST_POLICY',
+      'CREATE_FIXED_RELEASE_TRUST',
+      'STAGE_OPS_ARTIFACTS',
+      'INSTALL_DISABLED_OPS_SERVICES',
+      'VERIFY_LOOPBACK_CONTROL_PLANE',
+    ])
+    assert.deepEqual(snapshotTree(temporaryRoot), before)
+
+    const joined = { ...discovery, PartOfDomain: true, Domain: 'CONTOSO' }
+    fs.writeFileSync(discoveryPath, JSON.stringify(joined), 'utf8')
+    const domainJoined = invokePowerShell(plannerPath, [
+      '-DiscoveryPath', discoveryPath,
+      '-ArtifactManifestPath', artifactsPath,
+      '-ExpectedComputerName', 'IZ4UH8P0YPYK9ZZ',
+      '-PlanOnly',
+      '-OutputFormat', 'Json',
+    ])
+    assert.notEqual(domainJoined.status, 0)
+    assert.match(combinedOutput(domainJoined), /WORKGROUP|domain/i)
+
+    const occupied = structuredClone(discovery)
+    occupied.Paths[0] = {
+      ...occupied.Paths[0], Exists: true, Type: 'DIRECTORY', SHA256: '6'.repeat(64),
+    }
+    fs.writeFileSync(discoveryPath, JSON.stringify(occupied), 'utf8')
+    const unexpectedTarget = invokePowerShell(plannerPath, [
+      '-DiscoveryPath', discoveryPath,
+      '-ArtifactManifestPath', artifactsPath,
+      '-ExpectedComputerName', 'IZ4UH8P0YPYK9ZZ',
+      '-PlanOnly',
+      '-OutputFormat', 'Json',
+    ])
+    assert.notEqual(unexpectedTarget.status, 0)
+    assert.match(combinedOutput(unexpectedTarget), /already exists|pre-existing|target/i)
+  } finally {
+    fs.rmSync(temporaryRoot, { recursive: true, force: true })
+  }
+})
+
+test('plans automatic WORKGROUP release signing identities without changing the certificate store', () => {
+  const initializerPath = path.join(
+    repositoryRoot,
+    'scripts',
+    'Initialize-LeanTpmWorkgroupSigning.ps1',
+  )
+  assert.ok(fs.existsSync(initializerPath), 'missing automatic WORKGROUP signing initializer')
+
+  const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'leantpm-signing-plan-'))
+  try {
+    const before = snapshotTree(temporaryRoot)
+    const planned = invokePowerShell(initializerPath, [
+      '-OutputDirectory', temporaryRoot,
+      '-PlanOnly',
+      '-OutputFormat', 'Json',
+    ])
+    assert.equal(planned.status, 0, combinedOutput(planned))
+    const report = JSON.parse(planned.stdout.trim())
+    assert.equal(report.status, 'PLAN')
+    assert.equal(report.executable, false)
+    assert.equal(report.identityMode, 'WORKGROUP_LOCAL_AUTOMATED')
+    assert.equal(report.identityCount, 2)
+    assert.equal(report.operatorCertificateSteps, 0)
+    assert.deepEqual(report.actions, [
+      'CREATE_REQUESTER_CODE_SIGNING_IDENTITY',
+      'CREATE_APPROVER_CODE_SIGNING_IDENTITY',
+      'TRUST_PUBLIC_CERTIFICATES_FOR_LOCAL_BUILD',
+      'WRITE_NON_SECRET_IDENTITY_RECEIPT',
+    ])
+    assert.deepEqual(snapshotTree(temporaryRoot), before)
+
+    const executableWithoutConfirmation = invokePowerShell(initializerPath, [
+      '-OutputDirectory', temporaryRoot,
+      '-OutputFormat', 'Json',
+    ])
+    assert.notEqual(executableWithoutConfirmation.status, 0)
+    assert.match(combinedOutput(executableWithoutConfirmation), /PlanOnly|ConfirmInitialization/i)
+    assert.deepEqual(snapshotTree(temporaryRoot), before)
+  } finally {
+    fs.rmSync(temporaryRoot, { recursive: true, force: true })
+  }
+})
+
+test('plans one WORKGROUP bootstrap ZIP with one operator token and one web confirmation', () => {
+  const builderPath = path.join(
+    repositoryRoot,
+    'scripts',
+    'New-LeanTpmWorkgroupRapidBootstrapKit.ps1',
+  )
+  assert.ok(fs.existsSync(builderPath), 'missing WORKGROUP rapid bootstrap kit builder')
+
+  const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'leantpm-bootstrap-kit-'))
+  try {
+    const inputs = path.join(temporaryRoot, 'inputs')
+    const toolkit = path.join(inputs, 'toolkit')
+    const toolkitRelease = path.join(toolkit, 'release')
+    const signing = path.join(inputs, 'signing')
+    fs.mkdirSync(toolkitRelease, { recursive: true })
+    fs.mkdirSync(signing)
+    const jar = path.join(inputs, 'ops.jar')
+    const wrapper = path.join(inputs, 'WinSW.exe')
+    const requesterCertificate = path.join(signing, 'requester-public.cer')
+    const approverCertificate = path.join(signing, 'approver-public.cer')
+    fs.writeFileSync(jar, 'ops-control-plane', 'utf8')
+    fs.writeFileSync(wrapper, 'winsw', 'utf8')
+    fs.writeFileSync(requesterCertificate, 'requester-public', 'utf8')
+    fs.writeFileSync(approverCertificate, 'approver-public', 'utf8')
+    const toolkitFiles = [
+      'deploy/windows/Invoke-LeanTpmReleaseAgent.ps1',
+      'release/deployment-bundle.schema.json',
+      'release/toolchain-lock.json',
+      'scripts/Invoke-LeanTpmDeployment.ps1',
+      'scripts/Invoke-LeanTpmWorkgroupRapidDeployment.ps1',
+      'scripts/Test-LeanTpmReleaseApproval.ps1',
+      'scripts/Test-ReleasePackage.ps1',
+      'scripts/Test-LeanTpmDeploymentBundle.ps1',
+    ]
+    const toolkitEntries = toolkitFiles.map((relativePath) => {
+      const source = path.join(toolkit, ...relativePath.split('/'))
+      fs.mkdirSync(path.dirname(source), { recursive: true })
+      fs.writeFileSync(source, `toolkit-${relativePath}`, 'utf8')
+      return {
+        path: relativePath,
+        sha256: crypto.createHash('sha256').update(fs.readFileSync(source)).digest('hex'),
+      }
+    })
+    const lock = path.join(toolkitRelease, 'release-agent-toolkit-lock.json')
+    fs.writeFileSync(lock, JSON.stringify({
+      executorRelativePath: 'scripts/Invoke-LeanTpmDeployment.ps1',
+      files: toolkitEntries,
+      schemaVersion: 1,
+      toolkitId: 'leantpm-release-agent-toolkit',
+    }), 'utf8')
+    const signingReceipt = path.join(signing, 'workgroup-signing-identities.json')
+    fs.writeFileSync(signingReceipt, JSON.stringify({
+      schemaVersion: 1,
+      identityMode: 'WORKGROUP_LOCAL_AUTOMATED',
+      createdAtUtc: '2026-08-11T00:00:00.0000000Z',
+      requester: {
+        identity: 'workgroup-release-requester',
+        subject: 'CN=LeanTPM Workgroup Release Requester',
+        thumbprint: 'A'.repeat(40),
+        publicCertificatePath: requesterCertificate,
+        publicCertificateSha256: crypto.createHash('sha256')
+          .update(fs.readFileSync(requesterCertificate)).digest('hex'),
+      },
+      approver: {
+        identity: 'workgroup-release-approver',
+        subject: 'CN=LeanTPM Workgroup Release Approver',
+        thumbprint: 'B'.repeat(40),
+        publicCertificatePath: approverCertificate,
+        publicCertificateSha256: crypto.createHash('sha256')
+          .update(fs.readFileSync(approverCertificate)).digest('hex'),
+      },
+      planSha256: 'c'.repeat(64),
+      privateKeyExported: false,
+      operatorCertificateSteps: 0,
+    }), 'utf8')
+
+    const output = path.join(temporaryRoot, 'leantpm-workgroup-bootstrap.zip')
+    const before = snapshotTree(temporaryRoot)
+    const planned = invokePowerShell(builderPath, [
+      '-SigningReceiptPath', signingReceipt,
+      '-OpsControlPlaneJarPath', jar,
+      '-WinSWPath', wrapper,
+      '-JavaExecutablePath', 'D:\\tools\\jdk-21.0.1\\bin\\java.exe',
+      '-ExpectedJavaSha256', 'd'.repeat(64),
+      '-ExpectedCaddySha256', 'e'.repeat(64),
+      '-DeploymentToolkitRoot', toolkit,
+      '-DeploymentToolkitLockPath', lock,
+      '-ExpectedComputerName', 'IZ4UH8P0YPYK9ZZ',
+      '-ProductVersion', '1.0.2',
+      '-MainCommit', '2174f34a8713ac93614c9f987907fc00ad6cfe4a',
+      '-OutputPath', output,
+      '-PlanOnly',
+      '-OutputFormat', 'Json',
+    ])
+    assert.equal(planned.status, 0, combinedOutput(planned))
+    const report = JSON.parse(planned.stdout.trim())
+    assert.equal(report.status, 'PLAN')
+    assert.equal(report.executable, false)
+    assert.equal(report.bootstrapMode, 'WORKGROUP_RAPID')
+    assert.equal(report.operatorTokenCount, 1)
+    assert.equal(report.webConfirmationCount, 1)
+    assert.equal(report.operatorCertificateSteps, 0)
+    assert.match(
+      fs.readFileSync(builderPath, 'utf8'),
+      /scripts\/Invoke-LeanTpmWorkgroupRapidDeployment\.ps1/,
+    )
+    assert.deepEqual(report.actions, [
+      'GENERATE_SINGLE_OPERATOR_TOKEN',
+      'COPY_PINNED_OPS_ARTIFACTS',
+      'SIGN_TWO_FIXED_SERVICE_STARTERS',
+      'COPY_LOCKED_DEPLOYMENT_TOOLKIT',
+      'RENDER_FIXED_BOOTSTRAP_TEMPLATES',
+      'CREATE_SINGLE_BOOTSTRAP_ZIP',
+    ])
+    assert.deepEqual(snapshotTree(temporaryRoot), before)
+    assert.equal(fs.existsSync(output), false)
+  } finally {
+    fs.rmSync(temporaryRoot, { recursive: true, force: true })
+  }
+})
+
+test('validates one WORKGROUP bootstrap kit and produces one side-effect-free server plan', () => {
+  const executorPath = path.join(
+    repositoryRoot,
+    'deploy',
+    'windows',
+    'Invoke-LeanTpmWorkgroupRapidBootstrap.ps1',
+  )
+  assert.ok(fs.existsSync(executorPath), 'missing WORKGROUP server bootstrap executor')
+
+  const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'leantpm-server-bootstrap-'))
+  try {
+    const kitRoot = path.join(temporaryRoot, 'kit')
+    const inputs = path.join(kitRoot, 'inputs')
+    const certificates = path.join(kitRoot, 'certificates')
+    const toolkit = path.join(kitRoot, 'toolkit')
+    fs.mkdirSync(inputs, { recursive: true })
+    fs.mkdirSync(certificates)
+    fs.mkdirSync(path.join(toolkit, 'release'), { recursive: true })
+
+    const fixtureFiles = new Map([
+      ['inputs/ops-control-plane.jar', 'ops-control'],
+      ['inputs/WinSW.exe', 'winsw'],
+      ['inputs/Start-LeanTpmOpsControl.ps1', '# signed ops starter'],
+      ['inputs/Start-LeanTpmReleaseAgentService.ps1', '# signed agent starter'],
+      [
+        'inputs/application-production.yml.template',
+        "server:\n  address: 127.0.0.1\n  port: 18090\nlayout: '@HOST_LAYOUT_SHA256@'\n",
+      ],
+      [
+        'inputs/release-trust.json.template',
+        JSON.stringify({ schemaVersion: 1, hostId: '@HOST_ID@' }),
+      ],
+      ['certificates/requester-public.cer', 'requester'],
+      ['certificates/approver-public.cer', 'approver'],
+      ['toolkit/release/release-agent-toolkit-lock.json', '{}'],
+      ['toolkit/scripts/Invoke-LeanTpmWorkgroupRapidDeployment.ps1', 'param()'],
+      ['toolkit/deploy/windows/Install-LeanTpmOpsServices.ps1', 'param()'],
+    ])
+    for (const [relativePath, content] of fixtureFiles) {
+      const target = path.join(kitRoot, ...relativePath.split('/'))
+      fs.mkdirSync(path.dirname(target), { recursive: true })
+      fs.writeFileSync(target, content, 'utf8')
+    }
+    fs.copyFileSync(executorPath, path.join(kitRoot, path.basename(executorPath)))
+    fixtureFiles.set(
+      path.basename(executorPath),
+      fs.readFileSync(executorPath),
+    )
+
+    const entries = [...fixtureFiles.keys()].sort().map((relativePath) => {
+      const bytes = fs.readFileSync(path.join(kitRoot, ...relativePath.split('/')))
+      return {
+        path: relativePath,
+        bytes: bytes.length,
+        sha256: crypto.createHash('sha256').update(bytes).digest('hex'),
+      }
+    })
+    const manifest = {
+      schemaVersion: 1,
+      bootstrapMode: 'WORKGROUP_RAPID',
+      expectedComputerName: 'IZ4UH8P0YPYK9ZZ',
+      productVersion: '1.0.2',
+      mainCommit: '2174f34a8713ac93614c9f987907fc00ad6cfe4a',
+      javaExecutablePath: 'D:\\tools\\jdk-21.0.1\\bin\\java.exe',
+      javaSha256: 'a'.repeat(64),
+      caddySha256: 'b'.repeat(64),
+      requesterThumbprint: 'A'.repeat(40),
+      approverThumbprint: 'B'.repeat(40),
+      operatorTokenSha256: 'c'.repeat(64),
+      webConfirmationCount: 1,
+      entries,
+    }
+    fs.writeFileSync(
+      path.join(kitRoot, 'workgroup-rapid-bootstrap.json'),
+      JSON.stringify(manifest),
+      'utf8',
+    )
+
+    const observationPath = path.join(temporaryRoot, 'observation.json')
+    fs.writeFileSync(observationPath, JSON.stringify({
+      schemaVersion: 1,
+      computerName: 'IZ4UH8P0YPYK9ZZ',
+      partOfDomain: false,
+      domain: 'WORKGROUP',
+      machineGuid: '11111111-2222-3333-4444-555555555555',
+      smbiosUuid: 'AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE',
+      volumeDeviceId: '\\\\?\\Volume{11111111-2222-3333-4444-555555555555}\\',
+      volumeFileSystem: 'NTFS',
+      backend: {
+        state: 'Running', startMode: 'Auto', startName: 'NT AUTHORITY\\NetworkService',
+        processId: 8072,
+        pathName: '"D:\\LeanTPM\\App\\service\\LeanTPM.Backend.exe"',
+      },
+      caddy: {
+        state: 'Running', startMode: 'Auto', startName: 'LocalSystem', processId: 4820,
+        pathName: 'D:\\LeanTPM\\tools\\caddy\\caddy.exe run --environ '
+          + '--config D:\\LeanTPM\\shared\\config\\Caddyfile --adapter caddyfile',
+        imageSha256: 'b'.repeat(64),
+        configSha256: 'd'.repeat(64),
+      },
+      listeners: [
+        { localAddress: '::', port: 80, owningProcess: 4820 },
+        { localAddress: '::', port: 443, owningProcess: 4820 },
+        { localAddress: '127.0.0.1', port: 18080, owningProcess: 9000 },
+      ],
+      bootstrapTargetsMissing: true,
+      opsServicesMissing: true,
+      currentReleaseId: '1.0.1-20260809.1',
+      currentPackageSha256: 'e'.repeat(64),
+    }), 'utf8')
+
+    const before = snapshotTree(temporaryRoot)
+    const planned = invokePowerShell(executorPath, [
+      '-KitRoot', kitRoot,
+      '-ObservationPath', observationPath,
+      '-PlanOnly',
+      '-OutputFormat', 'Json',
+    ])
+    assert.equal(planned.status, 0, combinedOutput(planned))
+    const report = JSON.parse(planned.stdout.trim())
+    assert.equal(report.status, 'PLAN_READY')
+    assert.equal(report.executable, false)
+    assert.equal(report.bootstrapMode, 'WORKGROUP_RAPID')
+    assert.equal(report.webConfirmationCount, 1)
+    assert.equal(report.operatorCertificateSteps, 0)
+    assert.match(report.planSha256, /^[a-f0-9]{64}$/u)
+    assert.deepEqual(report.serviceIds, [
+      'LeanTPM.OpsControl',
+      'LeanTPM.ReleaseAgent',
+    ])
+    assert.deepEqual(report.actions, [
+      'IMPORT_TWO_AUTOMATED_PUBLIC_CERTIFICATES',
+      'INSTALL_TWO_FIXED_LOOPBACK_SERVICES',
+      'WRITE_RAPID_HOST_BINDING',
+      'START_AND_VERIFY_CONTROL_PLANE',
+    ])
+    assert.deepEqual(snapshotTree(temporaryRoot), before)
+
+    const bootstrapSource = fs.readFileSync(executorPath, 'utf8')
+    assert.match(
+      bootstrapSource,
+      /\$fixedHostLayoutPath[\s\S]{0,480}NT SERVICE\\LeanTPM\.OpsControl:RX/i,
+    )
+    assert.match(
+      bootstrapSource,
+      /Grant-FixedPathAccess\s+-Path\s+\$fixedDbSecretPath[\s\S]{0,240}NT SERVICE\\LeanTPM\.ReleaseAgent:R/i,
+    )
+    assert.match(
+      bootstrapSource,
+      /Join-Path\s+\$fixedDataRoot\s+'locks'[\s\S]{0,600}NT SERVICE\\LeanTPM\.ReleaseAgent:\(OI\)\(CI\)M/i,
+    )
+    assert.match(
+      bootstrapSource,
+      /fixedBackendStarterPath[\s\S]{0,2400}releaseMatch[\s\S]{0,900}'releases\\'/i,
+    )
+    assert.match(bootstrapSource, /Grant-FixedServiceControl[\s\S]*LeanTPM\.Backend/)
+    assert.match(bootstrapSource, /Grant-FixedServiceControl[\s\S]*caddy/)
+    assert.match(bootstrapSource, /\(A;;CCLCSWRPWPLOCRRC;;;\$AgentSid\)/)
+
+    const missingConfirmation = invokePowerShell(executorPath, [
+      '-KitRoot', kitRoot,
+      '-ExpectedPlanSha256', report.planSha256,
+      '-OutputFormat', 'Json',
+    ])
+    assert.notEqual(missingConfirmation.status, 0)
+    assert.match(combinedOutput(missingConfirmation), /ConfirmBootstrap|PlanOnly/i)
+    assert.deepEqual(snapshotTree(temporaryRoot), before)
+  } finally {
+    fs.rmSync(temporaryRoot, { recursive: true, force: true })
+  }
+})
+
+test('keeps the WORKGROUP_RAPID release executor fixed to V50 backup activation and rollback', () => {
+  const executorPath = path.join(
+    repositoryRoot,
+    'scripts',
+    'Invoke-LeanTpmWorkgroupRapidDeployment.ps1',
+  )
+  assert.ok(fs.existsSync(executorPath), 'missing WORKGROUP_RAPID release executor')
+  const source = fs.readFileSync(executorPath, 'utf8')
+  assert.match(source, /deploymentMode[\s\S]{0,160}WORKGROUP_RAPID/)
+  assert.match(source, /databaseSchemaVersion[\s\S]{0,160}50/)
+  assert.match(source, /nonce[\s\S]{0,500}expiresAtUtc/)
+  assert.match(source, /expiresAtUtc[\s\S]{0,900}AddHours\(24\)/)
+  assert.match(source, /flyway_schema_history/)
+  assert.match(source, /mysqldump\.exe/)
+  assert.match(source, /db-password\.bin/)
+  assert.match(source, /ProtectedData[\s\S]{0,160}LocalMachine/)
+  assert.match(source, /Test-ReleasePackage\.ps1/)
+  assert.match(source, /Test-LeanTpmReleaseApproval\.ps1/)
+  assert.match(source, /BACKUP[\s\S]*ACTIVATE[\s\S]*VERIFY/)
+  assert.match(source, /catch[\s\S]*ROLLBACK[\s\S]*Start-Service/i)
+  assert.match(source, /LeanTPM\.Backend[\s\S]{0,800}Running/)
+  assert.match(source, /caddy[\s\S]{0,800}Running/i)
+  assert.match(source, /workgroup-rapid-deployment\.lock/)
+  assert.doesNotMatch(source, /Invoke-Expression|Start-Job|ScriptBlock::Create/)
+})
+
 test('discovers Ops service installation readiness and builds only a side-effect-free plan', () => {
   const readinessPath = path.join(
     repositoryRoot,
@@ -6048,6 +6596,8 @@ test('discovers Ops service installation readiness and builds only a side-effect
 
     const toolkitFiles = [
       'deploy/windows/Invoke-LeanTpmReleaseAgent.ps1',
+      'release/deployment-bundle.schema.json',
+      'release/toolchain-lock.json',
       'scripts/Invoke-LeanTpmDeployment.ps1',
       'scripts/Test-LeanTpmReleaseApproval.ps1',
       'scripts/Test-ReleasePackage.ps1',

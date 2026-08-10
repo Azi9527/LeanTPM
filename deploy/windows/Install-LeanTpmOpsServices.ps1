@@ -441,7 +441,7 @@ $normalizedToolkitPaths = New-Object Collections.Generic.HashSet[string] `
     ([StringComparer]::OrdinalIgnoreCase)
 foreach ($entry in @($toolkitLock.files)) {
     $relative = [string]$entry.path
-    if ($relative -notmatch '^(?:scripts|deploy/windows)/[A-Za-z0-9._/-]+$' -or
+    if ($relative -notmatch '^(?:(?:scripts|deploy/windows)/[A-Za-z0-9._/-]+\.ps1|release/(?:deployment-bundle\.schema|toolchain-lock)\.json)$' -or
             $relative.Contains('..') -or
             -not $normalizedToolkitPaths.Add($relative) -or
             [string]$entry.sha256 -notmatch '^[a-f0-9]{64}$') {
@@ -459,6 +459,8 @@ foreach ($entry in @($toolkitLock.files)) {
 }
 foreach ($required in @(
         'deploy/windows/Invoke-LeanTpmReleaseAgent.ps1',
+        'release/deployment-bundle.schema.json',
+        'release/toolchain-lock.json',
         'scripts/Invoke-LeanTpmDeployment.ps1',
         'scripts/Test-ReleasePackage.ps1',
         'scripts/Test-LeanTpmReleaseApproval.ps1'

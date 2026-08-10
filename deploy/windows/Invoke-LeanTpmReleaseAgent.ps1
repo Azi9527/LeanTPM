@@ -729,7 +729,7 @@ function Invoke-PinnedDeploymentExecutor {
             )
         $relativePath = [string]$entry.path
         if ($relativePath -notmatch `
-                '^(?:scripts|deploy/windows)/[A-Za-z0-9._/-]+\.ps1$' -or
+                '^(?:(?:scripts|deploy/windows)/[A-Za-z0-9._/-]+\.ps1|release/(?:deployment-bundle\.schema|toolchain-lock)\.json)$' -or
             $relativePath.Contains('..') -or
             [IO.Path]::IsPathRooted($relativePath)) {
             throw 'Release deployment toolkit relative path is invalid'
@@ -762,6 +762,15 @@ function Invoke-PinnedDeploymentExecutor {
             $discovered.Add($relative)
         }
     }
+    foreach ($releaseFile in @(
+            'release/deployment-bundle.schema.json',
+            'release/toolchain-lock.json'
+        )) {
+        $releasePath = Join-Path $toolkitRootFull $releaseFile.Replace('/', '\')
+        $null = Assert-ContainedFile -Root $toolkitRootFull -Path $releasePath `
+            -Label 'release deployment toolkit data file'
+        $discovered.Add($releaseFile)
+    }
     $discovered.Sort([StringComparer]::Ordinal)
     if ($discovered.Count -ne $manifestEntries.Count) {
         throw 'Release deployment toolkit file set differs from its lock'
@@ -772,12 +781,25 @@ function Invoke-PinnedDeploymentExecutor {
         }
     }
 
+    $executorRelativePath = [string]$lock.executorRelativePath
+    if ($null -ne $Plan.PSObject.Properties['deploymentMode']) {
+        if ([string]$Plan.deploymentMode -cne 'WORKGROUP_RAPID') {
+            throw 'Signed deployment plan contains an unsupported deploymentMode'
+        }
+        $executorRelativePath =
+            'scripts/Invoke-LeanTpmWorkgroupRapidDeployment.ps1'
+        if (-not $manifestEntries.ContainsKey($executorRelativePath)) {
+            throw 'Pinned toolkit does not contain the WORKGROUP_RAPID executor'
+        }
+    }
     $executorPath = Join-Path $toolkitRootFull `
-        ([string]$lock.executorRelativePath).Replace('/', '\')
+        $executorRelativePath.Replace('/', '\')
     $executorPath = Assert-ContainedFile -Root $toolkitRootFull `
         -Path $executorPath -Label 'release deployment executor'
-    if ((Split-Path -Leaf $executorPath) -cne
-        'Invoke-LeanTpmDeployment.ps1') {
+    if ((Split-Path -Leaf $executorPath) -cnotin @(
+            'Invoke-LeanTpmDeployment.ps1',
+            'Invoke-LeanTpmWorkgroupRapidDeployment.ps1'
+        )) {
         throw 'Release deployment executor file name is not approved'
     }
 
