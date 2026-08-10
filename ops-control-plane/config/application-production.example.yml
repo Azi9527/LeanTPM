@@ -1,0 +1,75 @@
+# Example only. Do not start production with placeholder digests.
+# Store the completed file under an Administrators/SYSTEM protected path.
+server:
+  address: 127.0.0.1
+  port: 18090
+
+leantpm:
+  ops:
+    data-root: 'D:\LeanTPM\Runtime\ops-control-plane'
+    maximum-upload-bytes: 536870912
+    required-approvals: 2
+    powershell-executable: 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'
+    verifier-script: 'D:\LeanTPM\App\ops-control-plane\scripts\Test-ReleasePackage.ps1'
+    verifier-script-sha256: 'REPLACE_WITH_64_HEX_SHA256'
+    bundle-verifier-script: 'D:\LeanTPM\App\ops-control-plane\scripts\Test-LeanTpmDeploymentBundle.ps1'
+    bundle-verifier-script-sha256: 'REPLACE_WITH_64_HEX_SHA256'
+    deployment-bundle-schema-sha256: 'REPLACE_WITH_64_HEX_SHA256'
+    approval-verifier-script-sha256: 'REPLACE_WITH_64_HEX_SHA256'
+    release-trust-config-path: 'D:\LeanTPM\Runtime\config\release-trust.json'
+    trusted-certificate-thumbprint: 'REPLACE_WITH_40_HEX_THUMBPRINT'
+    verifier-timeout: 2m
+    verifier-maximum-output-bytes: 262144
+    agent-heartbeat-maximum-age: 30s
+    host-layout-path: 'C:\ProgramData\LeanTPM-bootstrap\host-layout.json'
+    host-layout-sha256: 'REPLACE_WITH_64_HEX_SHA256'
+    current-release-pointer: 'D:\LeanTPM\Runtime\pointers\current-release.json'
+    operator-token-sha256:
+      release_requester: 'REPLACE_WITH_64_HEX_SHA256'
+      release_approver: 'REPLACE_WITH_DIFFERENT_64_HEX_SHA256'
+    monitoring:
+      # Always refers to the Windows host running this process.
+      host-resources-enabled: true
+      # First deploy with this false, verify all fixed paths/identities, then enable.
+      enabled: false
+      interval: 30s
+      initial-delay: 10s
+      disk-path: 'D:\LeanTPM\Runtime'
+      disk-degraded-percent: 85
+      disk-down-percent: 95
+      sc-executable: 'C:\Windows\System32\sc.exe'
+      service-timeout: 5s
+      backend-readiness-uri: 'http://127.0.0.1:18080/actuator/health/readiness'
+      backend-readiness-timeout: 5s
+      database-url: 'jdbc:mysql://127.0.0.1:3306/leantpm?sslMode=DISABLED&allowPublicKeyRetrieval=true&connectTimeout=5000&socketTimeout=5000'
+      database-username: '${LEANTPM_OPS_DB_USERNAME}'
+      database-password: '${LEANTPM_OPS_DB_PASSWORD}'
+      database-timeout-seconds: 5
+      log-root: 'D:\LeanTPM\Runtime\logs'
+      log-files:
+        - 'LeanTPM.Backend.wrapper.log'
+        - 'LeanTPM.Backend.err.log'
+      maximum-log-tail-bytes: 262144
+    remediation:
+      # Only START_BACKEND / START_CADDY / START_RELEASE_AGENT are implemented.
+      enabled: false
+      failure-threshold: 3
+      cooldown: 10m
+      maximum-attempts-per-hour: 2
+    notifications:
+      pushplus:
+        enabled: false
+        allow-paid-channels: false
+        timeout: 8s
+        # Add or remove entries as needed. Tokens are read only from environment.
+        recipients:
+          - id: owner
+            name: '系统负责人'
+            token: '${LEANTPM_OPS_PUSHPLUS_TOKEN_OWNER}'
+            channel: wechat
+            enabled: true
+          - id: operations
+            name: '运维值班'
+            token: '${LEANTPM_OPS_PUSHPLUS_TOKEN_OPERATIONS}'
+            channel: wechat
+            enabled: true
