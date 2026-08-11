@@ -108,6 +108,20 @@ foreach ($scanRoot in @($scriptsRoot, $windowsRoot)) {
         $sourceByRelativePath.Add($relative, $fixed)
     }
 }
+foreach ($templateName in @(
+        'LeanTPM.OpsControl.xml.template',
+        'LeanTPM.ReleaseAgent.xml.template'
+    )) {
+    $fixed = Assert-ContainedRegularFile -Root $root `
+        -Path (Join-Path $windowsRoot $templateName) `
+        -Label "toolkit template $templateName"
+    $relative = $fixed.Substring($root.Length + 1).Replace('\', '/')
+    if ($sourceByRelativePath.ContainsKey($relative)) {
+        throw 'Toolkit contains a duplicate template path'
+    }
+    $relativePaths.Add($relative)
+    $sourceByRelativePath.Add($relative, $fixed)
+}
 $bundleSchemaRelative = 'release/deployment-bundle.schema.json'
 $relativePaths.Add($bundleSchemaRelative)
 $sourceByRelativePath.Add($bundleSchemaRelative, $bundleSchemaPath)

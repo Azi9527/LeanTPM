@@ -169,7 +169,7 @@ foreach ($entry in @($lock.files)) {
     Assert-ExactProperties $entry @('path', 'sha256') 'Deployment toolkit entry'
     $relative = [string]$entry.path
         if ($relative -notmatch
-            '^(?:(?:scripts|deploy/windows)/[A-Za-z0-9._/-]+\.ps1|release/(?:deployment-bundle\.schema|toolchain-lock)\.json)$' -or
+            '^(?:(?:scripts|deploy/windows)/[A-Za-z0-9._/-]+\.ps1|deploy/windows/LeanTPM\.(?:OpsControl|ReleaseAgent)\.xml\.template|release/(?:deployment-bundle\.schema|toolchain-lock)\.json)$' -or
             $relative.Contains('..') -or -not $seen.Add($relative) -or
             [string]$entry.sha256 -cnotmatch '^[a-f0-9]{64}$') {
         throw 'Deployment toolkit lock contains an unsafe entry'
@@ -182,6 +182,8 @@ foreach ($entry in @($lock.files)) {
 }
 foreach ($required in @(
         'deploy/windows/Invoke-LeanTpmReleaseAgent.ps1',
+        'deploy/windows/LeanTPM.OpsControl.xml.template',
+        'deploy/windows/LeanTPM.ReleaseAgent.xml.template',
         'release/deployment-bundle.schema.json',
         'release/toolchain-lock.json',
         'scripts/Invoke-LeanTpmDeployment.ps1',

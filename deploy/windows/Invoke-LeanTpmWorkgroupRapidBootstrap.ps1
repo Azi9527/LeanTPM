@@ -545,6 +545,8 @@ foreach ($required in @(
         'certificates/requester-public.cer',
         'certificates/approver-public.cer',
         'toolkit/deploy/windows/Install-LeanTpmOpsServices.ps1',
+        'toolkit/deploy/windows/LeanTPM.OpsControl.xml.template',
+        'toolkit/deploy/windows/LeanTPM.ReleaseAgent.xml.template',
         'toolkit/release/release-agent-toolkit-lock.json',
         'toolkit/scripts/Invoke-LeanTpmWorkgroupRapidDeployment.ps1',
         'Invoke-LeanTpmWorkgroupRapidBootstrap.ps1'

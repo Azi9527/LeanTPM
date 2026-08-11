@@ -5352,10 +5352,18 @@ test('builds a canonical complete release agent PowerShell toolkit lock', () => 
     fs.mkdirSync(releaseRoot, { recursive: true })
     const executorPath = path.join(scriptsRoot, 'Invoke-LeanTpmDeployment.ps1')
     const helperPath = path.join(windowsRoot, 'Helper.ps1')
+    const opsServiceTemplatePath = path.join(
+      windowsRoot, 'LeanTPM.OpsControl.xml.template',
+    )
+    const releaseAgentTemplatePath = path.join(
+      windowsRoot, 'LeanTPM.ReleaseAgent.xml.template',
+    )
     const bundleSchemaPath = path.join(releaseRoot, 'deployment-bundle.schema.json')
     const toolchainLockPath = path.join(releaseRoot, 'toolchain-lock.json')
     fs.writeFileSync(executorPath, 'param()\r\n', 'utf8')
     fs.writeFileSync(helperPath, 'param()\r\n', 'utf8')
+    fs.writeFileSync(opsServiceTemplatePath, '<service>ops</service>\r\n', 'utf8')
+    fs.writeFileSync(releaseAgentTemplatePath, '<service>agent</service>\r\n', 'utf8')
     fs.writeFileSync(bundleSchemaPath, '{"type":"object"}\r\n', 'utf8')
     fs.writeFileSync(toolchainLockPath, '{"schemaVersion":1}\r\n', 'utf8')
 
@@ -5367,7 +5375,7 @@ test('builds a canonical complete release agent PowerShell toolkit lock', () => 
     assert.equal(result.status, 0, combinedOutput(result))
     const report = JSON.parse(result.stdout.trim())
     assert.equal(report.status, 'CREATED')
-    assert.equal(report.fileCount, 4)
+    assert.equal(report.fileCount, 6)
     const lockBytes = fs.readFileSync(outputPath)
     assert.equal(
       report.lockSha256,
@@ -5381,6 +5389,8 @@ test('builds a canonical complete release agent PowerShell toolkit lock', () => 
       lock.files.map((entry) => entry.path),
       [
         'deploy/windows/Helper.ps1',
+        'deploy/windows/LeanTPM.OpsControl.xml.template',
+        'deploy/windows/LeanTPM.ReleaseAgent.xml.template',
         'release/deployment-bundle.schema.json',
         'release/toolchain-lock.json',
         'scripts/Invoke-LeanTpmDeployment.ps1',
@@ -6268,6 +6278,8 @@ test('plans one WORKGROUP bootstrap ZIP with one operator token and one web conf
     fs.writeFileSync(approverCertificate, 'approver-public', 'utf8')
     const toolkitFiles = [
       'deploy/windows/Invoke-LeanTpmReleaseAgent.ps1',
+      'deploy/windows/LeanTPM.OpsControl.xml.template',
+      'deploy/windows/LeanTPM.ReleaseAgent.xml.template',
       'release/deployment-bundle.schema.json',
       'release/toolchain-lock.json',
       'scripts/Invoke-LeanTpmDeployment.ps1',
@@ -6358,6 +6370,35 @@ test('plans one WORKGROUP bootstrap ZIP with one operator token and one web conf
     ])
     assert.deepEqual(snapshotTree(temporaryRoot), before)
     assert.equal(fs.existsSync(output), false)
+
+    const unknownTemplate = 'deploy/windows/LeanTPM.Unknown.xml.template'
+    const unknownTemplatePath = path.join(toolkit, ...unknownTemplate.split('/'))
+    fs.writeFileSync(unknownTemplatePath, '<service>unknown</service>', 'utf8')
+    const unsafeLock = JSON.parse(fs.readFileSync(lock, 'utf8'))
+    unsafeLock.files.push({
+      path: unknownTemplate,
+      sha256: crypto.createHash('sha256')
+        .update(fs.readFileSync(unknownTemplatePath)).digest('hex'),
+    })
+    fs.writeFileSync(lock, JSON.stringify(unsafeLock), 'utf8')
+    const rejected = invokePowerShell(builderPath, [
+      '-SigningReceiptPath', signingReceipt,
+      '-OpsControlPlaneJarPath', jar,
+      '-WinSWPath', wrapper,
+      '-JavaExecutablePath', 'D:\\tools\\jdk-21.0.1\\bin\\java.exe',
+      '-ExpectedJavaSha256', 'd'.repeat(64),
+      '-ExpectedCaddySha256', 'e'.repeat(64),
+      '-DeploymentToolkitRoot', toolkit,
+      '-DeploymentToolkitLockPath', lock,
+      '-ExpectedComputerName', 'IZ4UH8P0YPYK9ZZ',
+      '-ProductVersion', '1.0.2',
+      '-MainCommit', '2174f34a8713ac93614c9f987907fc00ad6cfe4a',
+      '-OutputPath', output,
+      '-PlanOnly',
+      '-OutputFormat', 'Json',
+    ])
+    assert.notEqual(rejected.status, 0, 'unknown toolkit XML template was accepted')
+    assert.match(combinedOutput(rejected), /unsafe entry/i)
   } finally {
     fs.rmSync(temporaryRoot, { recursive: true, force: true })
   }
@@ -6400,6 +6441,14 @@ test('validates one WORKGROUP bootstrap kit and produces one side-effect-free se
       ['toolkit/release/release-agent-toolkit-lock.json', '{}'],
       ['toolkit/scripts/Invoke-LeanTpmWorkgroupRapidDeployment.ps1', 'param()'],
       ['toolkit/deploy/windows/Install-LeanTpmOpsServices.ps1', 'param()'],
+      [
+        'toolkit/deploy/windows/LeanTPM.OpsControl.xml.template',
+        '<service>ops</service>',
+      ],
+      [
+        'toolkit/deploy/windows/LeanTPM.ReleaseAgent.xml.template',
+        '<service>agent</service>',
+      ],
     ])
     for (const [relativePath, content] of fixtureFiles) {
       const target = path.join(kitRoot, ...relativePath.split('/'))
@@ -6489,6 +6538,12 @@ test('validates one WORKGROUP bootstrap kit and produces one side-effect-free se
     assert.equal(report.webConfirmationCount, 1)
     assert.equal(report.operatorCertificateSteps, 0)
     assert.match(report.planSha256, /^[a-f0-9]{64}$/u)
+    const executorSource = fs.readFileSync(executorPath, 'utf8')
+    assert.match(executorSource, /toolkit\/deploy\/windows\/LeanTPM\.OpsControl\.xml\.template/u)
+    assert.match(
+      executorSource,
+      /toolkit\/deploy\/windows\/LeanTPM\.ReleaseAgent\.xml\.template/u,
+    )
     assert.deepEqual(report.serviceIds, [
       'LeanTPM.OpsControl',
       'LeanTPM.ReleaseAgent',

@@ -182,3 +182,48 @@ Verification:
   relationships. File impact remained LOW with zero indexed callers;
   `detect-changes` reported no indexed symbol/process changes because the
   top-level PowerShell catch expressions are outside its symbol graph.
+
+## Bootstrap toolkit service-template incident
+
+The separately confirmed bootstrap passed server `PlanOnly` but stopped before
+installing either Ops service because the locked toolkit omitted the two WinSW
+XML templates consumed by `Install-LeanTpmOpsServices.ps1`. Failure
+compensation left both Ops services absent and preserved the running Backend,
+Caddy and MySQL services. The affected package and its confirmed plan digest
+are void and must not be reused.
+
+```text
+Given the fixed Ops service installer depends on two sibling WinSW XML templates
+When a release-agent toolkit lock and WORKGROUP bootstrap ZIP are built
+Then both exact templates are hash-pinned, copied, manifest-listed and required
+And missing templates fail during build or PlanOnly before host mutation
+And arbitrary additional XML templates remain rejected
+```
+
+- Scope: the canonical toolkit lock generator, WORKGROUP bootstrap packager,
+  server bootstrap required-file contract and release-platform tests.
+- Risk: L4 because this is a production bootstrap supply-chain boundary.
+- GitNexus file impact is LOW with zero indexed callers or processes; dynamic
+  PowerShell script invocation is outside the symbol graph. The change is
+  therefore constrained to the two exact fixed template paths and verified by
+  executable packaging tests.
+- Failure-first evidence: the canonical toolkit-lock test reported an actual
+  file count of 4 against the required count of 6 before implementation.
+- The lock generator now adds only `LeanTPM.OpsControl.xml.template` and
+  `LeanTPM.ReleaseAgent.xml.template`; the package builder permits and requires
+  those exact paths, while an executable negative test proves an unknown XML
+  template is rejected as an unsafe entry.
+- The server bootstrap required-file list now rejects a kit missing either
+  template during `PlanOnly`, before any certificate, ACL or service mutation.
+- All three focused packaging/PlanOnly tests pass. The final complete
+  `release-platform.test.mjs` suite, including the unknown-template negative
+  case, passes 80/80.
+- PowerShell canonical AST parse: 74/74 PASS. `git diff --check`: PASS.
+  Added-line secret scan: PASS (97 added lines, zero findings).
+- GitNexus `detect-changes` reports LOW risk, five changed files, zero indexed
+  symbols and zero affected execution flows, consistent with its documented
+  lack of top-level PowerShell orchestration modeling.
+- No production host, service, certificate store, database, secret or network
+  configuration was changed by this source repair.
+- Commit, main merge and replacement package evidence will be appended after
+  those steps complete.
