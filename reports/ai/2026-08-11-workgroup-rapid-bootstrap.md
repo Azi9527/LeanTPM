@@ -140,3 +140,45 @@ fixed Backend starter already names the immutable release JAR.
   index the PowerShell `Get-LiveObservation` function and reports UNKNOWN with
   zero known callers; validation therefore uses a failure-first source-order
   contract plus the full release-platform regression suite.
+
+## PowerShell 5.1 rollback collection incident
+
+The first separately confirmed production bootstrap reached its failure
+compensation path, but Windows PowerShell 5.1 replaced the original exception
+with `System.ArgumentException: Argument types do not match` at the conversion
+of `List[object]` service snapshots. The server evidence proved that both Ops
+services, both imported certificates and all bootstrap configuration paths were
+absent after compensation; Backend, Caddy and MySQL remained running.
+
+```text
+Given service-SDDL and ACL rollback journals implemented as List[object]
+When a bootstrap failure enters compensation under Windows PowerShell 5.1
+Then both journals are converted to stable object arrays and replayed in reverse
+And the original bootstrap exception is rethrown instead of being masked
+```
+
+- Scope: the two object-snapshot conversions in the bootstrap catch block and
+  one Windows PowerShell 5.1 regression test. The success path is unchanged.
+- Risk: L3 because this changes production failure compensation, while making
+  no service, ACL, certificate, package or database contract change.
+- GitNexus file impact is LOW with zero indexed callers or processes. The graph
+  does not model the top-level PowerShell catch block, so the primary evidence
+  is a failure-first test that executes the source-selected expressions in
+  Windows PowerShell 5.1.
+- A new bootstrap package and a new PlanOnly digest are required. The prior
+  confirmation for plan `590a7370...f76c77` must not be reused.
+
+Verification:
+
+- The new regression test failed before implementation with the exact Windows
+  PowerShell 5.1 `Argument types do not match` error at the service snapshot
+  conversion, then passed after both object journals used `ToArray()`.
+- `node --test scripts/tests/release-platform.test.mjs`: **80/80 PASS**.
+- PowerShell 5.1 canonical AST parse: **73/73 PASS**.
+- `git diff --check`: **PASS** (line-ending conversion warning only).
+- Added-line secret scan: **PASS**; no key, GitHub token or 64-byte secret
+  literal was added.
+- GitNexus index was repaired and rebuilt to 8,242 symbols and 20,528
+  relationships. File impact remained LOW with zero indexed callers;
+  `detect-changes` reported no indexed symbol/process changes because the
+  top-level PowerShell catch expressions are outside its symbol graph.

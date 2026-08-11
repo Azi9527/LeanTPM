@@ -6547,6 +6547,43 @@ test('validates one WORKGROUP bootstrap kit and produces one side-effect-free se
   }
 })
 
+test('keeps WORKGROUP bootstrap object-snapshot rollback compatible with PowerShell 5.1', () => {
+  const executorPath = path.join(
+    repositoryRoot,
+    'deploy',
+    'windows',
+    'Invoke-LeanTpmWorkgroupRapidBootstrap.ps1',
+  )
+  const source = fs.readFileSync(executorPath, 'utf8')
+  const serviceAssignment = source.match(/^\s*\$serviceRollbacks\s*=\s*(.+)$/mu)
+  const aclAssignment = source.match(/^\s*\$aclRollbacks\s*=\s*(.+)$/mu)
+
+  assert.ok(serviceAssignment, 'missing service rollback snapshot conversion')
+  assert.ok(aclAssignment, 'missing ACL rollback snapshot conversion')
+
+  const harness = [
+    "$ErrorActionPreference = 'Stop'",
+    "$serviceSddlSnapshots = New-Object 'Collections.Generic.List[object]'",
+    "$aclSnapshots = New-Object 'Collections.Generic.List[object]'",
+    "[void]$serviceSddlSnapshots.Add([pscustomobject]@{ serviceName = 'caddy'; sddl = 'D:' })",
+    "[void]$aclSnapshots.Add([pscustomobject]@{ path = 'D:\\\\LeanTPM'; sddl = 'D:' })",
+    `$serviceRollbacks = ${serviceAssignment[1]}`,
+    `$aclRollbacks = ${aclAssignment[1]}`,
+    "if ($serviceRollbacks.Count -ne 1) { throw 'service rollback conversion failed' }",
+    "if ($aclRollbacks.Count -ne 1) { throw 'ACL rollback conversion failed' }",
+  ].join('\r\n')
+
+  const result = spawnSync(
+    powershell,
+    ['-NoProfile', '-Command', harness],
+    { cwd: repositoryRoot, encoding: 'utf8' },
+  )
+
+  assert.equal(result.status, 0, combinedOutput(result))
+  assert.match(serviceAssignment[1], /\.ToArray\(\)/u)
+  assert.match(aclAssignment[1], /\.ToArray\(\)/u)
+})
+
 test('keeps the WORKGROUP_RAPID release executor fixed to V50 backup activation and rollback', () => {
   const executorPath = path.join(
     repositoryRoot,

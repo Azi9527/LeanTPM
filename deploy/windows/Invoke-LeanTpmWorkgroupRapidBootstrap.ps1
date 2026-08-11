@@ -829,13 +829,13 @@ catch {
     foreach ($certificatePath in $importedCertificates) {
         Remove-Item -LiteralPath $certificatePath -Force -ErrorAction SilentlyContinue
     }
-    $serviceRollbacks = @($serviceSddlSnapshots)
+    $serviceRollbacks = $serviceSddlSnapshots.ToArray()
     [array]::Reverse($serviceRollbacks)
     foreach ($snapshot in $serviceRollbacks) {
         & sc.exe sdset ([string]$snapshot.serviceName) `
             ([string]$snapshot.sddl) | Out-Null
     }
-    $aclRollbacks = @($aclSnapshots)
+    $aclRollbacks = $aclSnapshots.ToArray()
     [array]::Reverse($aclRollbacks)
     foreach ($snapshot in $aclRollbacks) {
         if (Test-Path -LiteralPath ([string]$snapshot.path)) {
