@@ -160,6 +160,12 @@ public class InspectionController {
         return ApiResponse.success(catalogService.item(id));
     }
 
+    @GetMapping("/item-categories")
+    @PreAuthorize("hasAuthority('inspection:item:view')")
+    public ApiResponse<List<InspectionDtos.ItemCategoryOption>> itemCategories() {
+        return ApiResponse.success(catalogService.itemCategories());
+    }
+
     @PostMapping("/items")
     @Idempotent
     @PreAuthorize("hasAuthority('inspection:item:manage')")
@@ -278,6 +284,17 @@ public class InspectionController {
             @Valid @RequestBody InspectionDtos.UpdateSchemeStatusRequest request
     ) {
         catalogService.updateSchemeStatus(id, request);
+        return ApiResponse.success();
+    }
+
+    @DeleteMapping("/schemes/{id}")
+    @Idempotent
+    @PreAuthorize("hasAuthority('inspection:scheme:manage')")
+    public ApiResponse<Void> deleteScheme(
+            @PathVariable long id,
+            @RequestParam @Min(0) int version
+    ) {
+        catalogService.deleteScheme(id, version);
         return ApiResponse.success();
     }
 

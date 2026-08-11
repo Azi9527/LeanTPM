@@ -93,6 +93,7 @@ public final class MobileDtos {
 
     public record PhotoPolicy(
             int clockSkewWarningSeconds,
+            boolean allowAlbumSelection,
             boolean watermarkEnabled,
             boolean saveOriginal,
             boolean saveWatermarked,

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { inspectionApi, type ItemRow, type ResultType } from '@/api/inspection'
+import { inspectionApi, type ItemCategoryOption, type ItemRow, type ResultType } from '@/api/inspection'
 import { masterDataApi, type OrganizationRow } from '@/api/masterData'
 import { useAuthStore } from '@/stores/auth'
 import { errorMessage } from '@/utils/http'
@@ -18,6 +18,15 @@ const keyword = ref('')
 const resultType = ref<ResultType>()
 const organizationId = ref<number>()
 const organizations = ref<OrganizationRow[]>([])
+const fallbackCategories: ItemCategoryOption[] = [
+  { value: 'TRANSMISSION', label: '传动系统', defaultFlag: true },
+  { value: 'LUBRICATION', label: '润滑系统', defaultFlag: false },
+  { value: 'FASTENING', label: '紧固系统', defaultFlag: false },
+  { value: 'ELECTRICAL', label: '电气系统', defaultFlag: false },
+  { value: 'SAFETY', label: '安全防护', defaultFlag: false },
+  { value: 'OTHER', label: '其它', defaultFlag: false },
+]
+const itemCategories = ref<ItemCategoryOption[]>(fallbackCategories)
 const dialogVisible = ref(false)
 const importVisible = ref(false)
 const smartTableQuery = reactive({
@@ -31,7 +40,7 @@ const form = reactive({
   itemCode: '',
   itemName: '',
   organizationId: undefined as number | undefined,
-  itemCategory: 'OPERATION',
+  itemCategory: 'TRANSMISSION',
   inspectionPart: '',
   inspectionContent: '',
   inspectionMethod: '',
@@ -83,6 +92,15 @@ const qualitativeOptions = computed(() => {
 })
 const isQualitativeResult = computed(() => qualitativeOptions.value.length > 0)
 const isNumericResult = computed(() => form.resultType === 'NUMBER')
+const categoryOptions = computed(() => {
+  if (!form.itemCategory || itemCategories.value.some((row) => row.value === form.itemCategory)) {
+    return itemCategories.value
+  }
+  return [
+    ...itemCategories.value,
+    { value: form.itemCategory, label: `历史分类（${form.itemCategory}）`, defaultFlag: false },
+  ]
+})
 
 watch(() => form.resultType, (value) => {
   if (value === 'NUMBER') {
@@ -111,10 +129,15 @@ watch(() => form.numericRequired, (required) => {
 })
 
 onMounted(async () => {
-  try {
-    organizations.value = (await masterDataApi.organizations()).filter((row) => row.status === 1)
-  } catch (error) {
-    ElMessage.error(errorMessage(error, '部门数据加载失败'))
+  const [organizationResult, categoryResult] = await Promise.allSettled([
+    masterDataApi.organizations(),
+    inspectionApi.itemCategories(),
+  ])
+  if (organizationResult.status === 'fulfilled') {
+    organizations.value = organizationResult.value.filter((row) => row.status === 1)
+  } else ElMessage.error(errorMessage(organizationResult.reason, '部门数据加载失败'))
+  if (categoryResult.status === 'fulfilled' && categoryResult.value.length) {
+    itemCategories.value = categoryResult.value
   }
   await load()
 })
@@ -185,7 +208,9 @@ function open(row?: ItemRow) {
         itemCode: '',
         itemName: '',
         organizationId: organizations.value[0]?.id,
-        itemCategory: 'OPERATION',
+        itemCategory: itemCategories.value.find((row) => row.defaultFlag)?.value
+          || itemCategories.value[0]?.value
+          || 'TRANSMISSION',
         inspectionPart: '',
         inspectionContent: '',
         inspectionMethod: '',
@@ -358,7 +383,11 @@ function parseOptions(value?: string): string[] {
           </el-select>
           <div class="field-hint">共享标准可被所有组织的点检方案复用。</div>
         </el-form-item>
-        <el-form-item label="项目分类" required><el-input v-model="form.itemCategory" /></el-form-item>
+        <el-form-item label="项目分类" required>
+          <el-select v-model="form.itemCategory" filterable style="width: 100%">
+            <el-option v-for="option in categoryOptions" :key="option.value" :label="option.label" :value="option.value" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="点检部位"><el-input v-model="form.inspectionPart" /></el-form-item>
         <el-form-item label="点检内容" class="full" required><el-input v-model="form.inspectionContent" type="textarea" /></el-form-item>
         <el-form-item label="点检方法"><el-input v-model="form.inspectionMethod" /></el-form-item>

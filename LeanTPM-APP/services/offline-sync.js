@@ -1,8 +1,10 @@
 import { inspectionApi } from '../api/inspection.js'
 import { connected, onNetworkReconnect } from '../platform/network.js'
 import { removeSavedFile } from '../platform/photo.js'
-import { attachQueuedPhotoToDraft, listDraftEnvelopes, listQueuedPhotos, removeDraftEnvelope, removeQueuedPhoto } from '../stores/offline.js'
+import { attachQueuedPhotoToDraft, listDraftEnvelopes, listQueuedPhotos, removeDraftEnvelope, removeQueuedPhoto, saveDraftEnvelope } from '../stores/offline.js'
+import { createIdempotencyKey } from '../utils/idempotency.js'
 import { isConflict } from '../utils/errors.js'
+import { inspectionConflictResolution, rebaseInspectionDraft } from '../utils/inspection-conflict.js'
 import { uploadPhotoEvidence } from './photo-evidence.js'
 
 let syncing = null
@@ -43,7 +45,21 @@ async function doSync() {
 			removeDraftEnvelope(draft.workflow, draft.taskId)
 			draftCount += 1
 		} catch (error) {
-			if (isConflict(error)) { removeDraftEnvelope(draft.workflow, draft.taskId); continue }
+			if (isConflict(error)) {
+				try {
+					const latest = await inspectionApi.task(draft.taskId)
+					if (inspectionConflictResolution(error, latest?.task).completed) {
+						removeDraftEnvelope(draft.workflow, draft.taskId)
+						draftCount += 1
+						continue
+					}
+					const rebased = rebaseInspectionDraft(draft, latest.task.version, latest.items)
+					if (rebased) saveDraftEnvelope({
+						...rebased,
+						idempotencyKey: createIdempotencyKey(`inspection-${draft.taskId}`)
+					})
+				} catch {}
+			}
 			break
 		}
 	}

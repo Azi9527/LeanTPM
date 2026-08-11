@@ -445,12 +445,12 @@ test('accepts the canonical version only when every component and schema agrees'
   assert.equal(result.status, 0, combinedOutput(result))
   const report = JSON.parse(result.stdout.trim())
   assert.equal(report.status, 'PASS')
-  assert.equal(report.productVersion, '1.0.2')
-  assert.equal(report.appVersionName, '1.0.1')
-  assert.equal(report.appVersionCode, 101)
+  assert.equal(report.productVersion, '1.0.3')
+  assert.equal(report.appVersionName, '1.0.3')
+  assert.equal(report.appVersionCode, 102)
   assert.equal(report.minimumSupportedAppVersionCode, 101)
   assert.equal(report.appPackageName, 'com.leantpm.mobile')
-  assert.equal(report.databaseSchemaVersion, 50)
+  assert.equal(report.databaseSchemaVersion, 52)
   const compatibility = JSON.parse(
     fs.readFileSync(path.join(repositoryRoot, 'release', 'compatibility-matrix.json'), 'utf8'),
   )
@@ -499,7 +499,7 @@ test('rejects an unsigned manifest unless the caller explicitly allows a test ma
   assert.equal(accepted.status, 0, combinedOutput(accepted))
   const report = JSON.parse(accepted.stdout.trim())
   assert.equal(report.status, 'PASS')
-  assert.equal(report.artifactCount, 5)
+  assert.equal(report.artifactCount, 7)
 })
 
 test('rejects a tampered artifact and an unexpected package file', () => {
@@ -885,7 +885,7 @@ test('builds byte-for-byte deterministic release bundles and verifies the archiv
     assert.equal(verified.status, 0, combinedOutput(verified))
     const report = JSON.parse(verified.stdout.trim())
     assert.equal(report.status, 'PASS')
-    assert.equal(report.releaseId, 'leantpm-1.0.2-test.1')
+    assert.equal(report.releaseId, 'leantpm-1.0.3-test.1')
 
     const extracted = path.join(temporaryRoot, 'verified-extraction')
     const extractedResult = invokePowerShell('scripts/Test-ReleasePackage.ps1', [
@@ -1117,7 +1117,7 @@ test('builds backup, deployment and rollback plans without touching a database o
       schemaVersion: 1,
       environmentName: 'isolated-test',
       environmentKind: 'NON_PRODUCTION',
-      releaseId: 'leantpm-1.0.2-test.1',
+      releaseId: 'leantpm-1.0.3-test.1',
       approvalId: 'approval-test-001',
       packagePath,
       installRoot: install,
@@ -1125,7 +1125,7 @@ test('builds backup, deployment and rollback plans without touching a database o
       backupRoot: backups,
       serviceId: 'LeanTPM.Backend',
       healthUri: 'http://127.0.0.1:18080/actuator/health/readiness',
-      runtimeConfigId: 'leantpm-1.0.2-test.1-config',
+      runtimeConfigId: 'leantpm-1.0.3-test.1-config',
       runtimeConfigSha256: 'a'.repeat(64),
     }, null, 2))
     beforePlan = snapshotTree(temporaryRoot)
@@ -1151,7 +1151,7 @@ test('builds backup, deployment and rollback plans without touching a database o
       environmentKind: 'NON_PRODUCTION',
       rollbackId: 'rollback-test-001',
       approvalId: 'approval-test-002',
-      failedReleaseId: 'leantpm-1.0.2-test.1',
+      failedReleaseId: 'leantpm-1.0.3-test.1',
       targetReleaseId: 'leantpm-1.0.0',
       installRoot: install,
       dataRoot: temporaryRoot,
@@ -1270,22 +1270,22 @@ test('generates a canonical manifest from payload bytes instead of hand-maintain
     const result = invokePowerShell('scripts/New-ReleaseManifest.ps1', [
       '-PayloadRoot', 'release/sample-package',
       '-OutputPath', output,
-      '-ReleaseId', 'leantpm-1.0.2-generated-test',
+      '-ReleaseId', 'leantpm-1.0.3-generated-test',
       '-ReleaseTier', 'TEST',
       '-SourceCommit', '2185536ea9da0a323b27f53dcf849b818ea19069',
       '-BaselinePath', baselinePath,
       '-AllowSyntheticTestBaseline',
       '-CreatedAtUtc', '2026-08-08T04:00:00Z',
       '-SchemaFrom', '50',
-      '-DatabasePhase', 'NONE',
+      '-DatabasePhase', 'MIGRATE',
       '-AllowUnsignedTestManifest',
       '-OutputFormat', 'Json',
     ])
     assert.equal(result.status, 0, combinedOutput(result))
     const manifest = JSON.parse(fs.readFileSync(output, 'utf8'))
-    assert.equal(manifest.productVersion, '1.0.2')
-    assert.equal(manifest.components.database.schemaTo, 50)
-    assert.equal(manifest.artifacts.length, 5)
+    assert.equal(manifest.productVersion, '1.0.3')
+    assert.equal(manifest.components.database.schemaTo, 52)
+    assert.equal(manifest.artifacts.length, 7)
     for (const artifact of manifest.artifacts) {
       const bytes = fs.readFileSync(path.join(repositoryRoot, 'release', 'sample-package', artifact.path))
       assert.equal(artifact.size, bytes.length)
@@ -1317,9 +1317,9 @@ test('generates and validates a PC API release manifest without an APP artifact'
 
     const matrixPath = path.join(payload, 'operations', 'compatibility-matrix.json')
     const matrix = JSON.parse(fs.readFileSync(matrixPath, 'utf8'))
-    matrix.productVersion = '1.0.2'
-    matrix.combinations[0].backend = '1.0.2'
-    matrix.combinations[0].web = '1.0.2'
+    matrix.productVersion = '1.0.3'
+    matrix.combinations[0].backend = '1.0.3'
+    matrix.combinations[0].web = '1.0.3'
     fs.writeFileSync(matrixPath, JSON.stringify(matrix, null, 2))
 
     const baselinePath = path.join(temporaryRoot, 'baseline.json')
@@ -1335,14 +1335,14 @@ test('generates and validates a PC API release manifest without an APP artifact'
     const generated = invokePowerShell('scripts/New-ReleaseManifest.ps1', [
       '-PayloadRoot', payload,
       '-OutputPath', output,
-      '-ReleaseId', 'leantpm-1.0.2-pc-api-test',
+      '-ReleaseId', 'leantpm-1.0.3-pc-api-test',
       '-ReleaseTier', 'TEST',
       '-SourceCommit', '2185536ea9da0a323b27f53dcf849b818ea19069',
       '-BaselinePath', baselinePath,
       '-AllowSyntheticTestBaseline',
       '-CreatedAtUtc', '2026-08-11T04:00:00Z',
       '-SchemaFrom', '50',
-      '-DatabasePhase', 'NONE',
+      '-DatabasePhase', 'MIGRATE',
       '-ExcludeAppArtifact',
       '-AllowUnsignedTestManifest',
       '-OutputFormat', 'Json',
@@ -1350,9 +1350,9 @@ test('generates and validates a PC API release manifest without an APP artifact'
     assert.equal(generated.status, 0, combinedOutput(generated))
 
     const manifest = JSON.parse(fs.readFileSync(output, 'utf8'))
-    assert.equal(manifest.productVersion, '1.0.2')
-    assert.equal(manifest.components.app.version, '1.0.1')
-    assert.equal(manifest.components.app.versionCode, 101)
+    assert.equal(manifest.productVersion, '1.0.3')
+    assert.equal(manifest.components.app.version, '1.0.3')
+    assert.equal(manifest.components.app.versionCode, 102)
     assert.equal(manifest.components.app.includedInRelease, false)
     assert.equal(manifest.artifacts.some((artifact) => artifact.component === 'app'), false)
 
@@ -1536,7 +1536,7 @@ test('generates a contiguous checksum-locked migration catalog for an explicit u
     const classificationPath = path.join(temporaryRoot, 'classification.json')
     fs.writeFileSync(classificationPath, JSON.stringify({
       schemaVersion: 1,
-      entries: Array.from({ length: 18 }, (_, index) => ({
+      entries: Array.from({ length: 20 }, (_, index) => ({
         version: index + 33,
         phase: 'EXPAND',
         backwardCompatible: true,
@@ -1557,9 +1557,9 @@ test('generates a contiguous checksum-locked migration catalog for an explicit u
     assert.equal(result.status, 0, combinedOutput(result))
     const catalog = JSON.parse(fs.readFileSync(output, 'utf8'))
     assert.equal(catalog.schemaFrom, 32)
-    assert.equal(catalog.schemaTo, 50)
+    assert.equal(catalog.schemaTo, 52)
     assert.deepEqual(catalog.migrations.map((migration) => migration.version),
-      Array.from({ length: 18 }, (_, index) => index + 33))
+      Array.from({ length: 20 }, (_, index) => index + 33))
     for (const migration of catalog.migrations) {
       const bytes = fs.readFileSync(path.join(
         repositoryRoot, 'backend', 'src', 'main', 'resources', 'db', 'migration', migration.script,
@@ -2557,20 +2557,20 @@ test('classifies every historical migration before building a first-install cata
   const classificationPath = path.join(
     repositoryRoot, 'release', 'migration-classification.json',
   )
-  assert.ok(fs.existsSync(classificationPath), 'V1-V50 classification evidence is required')
+  assert.ok(fs.existsSync(classificationPath), 'V1-V52 classification evidence is required')
   const classification = JSON.parse(fs.readFileSync(classificationPath, 'utf8'))
   assert.equal(classification.schemaVersion, 1)
-  assert.equal(classification.entries.length, 50)
+  assert.equal(classification.entries.length, 52)
   assert.deepEqual(
     classification.entries.map((entry) => entry.version),
-    Array.from({ length: 50 }, (_, index) => index + 1),
+    Array.from({ length: 52 }, (_, index) => index + 1),
   )
   for (const entry of classification.entries) {
     assert.equal(entry.reviewStatus, 'APPROVED')
     assert.match(entry.reviewedBy, /^codex-/)
-    assert.match(entry.evidence, /migration-classification-review\.md/)
+    assert.match(entry.evidence, /^reports\/ai\//)
   }
-  for (const version of [15, 31, 33, 36, 38, 39, 42, 43, 50]) {
+  for (const version of [15, 31, 33, 36, 38, 39, 42, 43, 50, 51, 52]) {
     const entry = classification.entries.find((candidate) => candidate.version === version)
     assert.equal(entry.backwardCompatible, false, `V${version} must not claim old-app compatibility`)
   }
@@ -2587,11 +2587,11 @@ test('classifies every historical migration before building a first-install cata
     ])
     assert.equal(result.status, 0, combinedOutput(result))
     const report = JSON.parse(result.stdout.trim())
-    assert.equal(report.migrationCount, 50)
+    assert.equal(report.migrationCount, 52)
     assert.equal(report.phase, 'CONTRACT')
     assert.equal(report.backwardCompatible, false)
     const catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'))
-    assert.equal(catalog.migrations.length, 50)
+    assert.equal(catalog.migrations.length, 52)
 
     const payload = path.join(temporaryRoot, 'payload')
     fs.cpSync(path.join(repositoryRoot, 'release', 'sample-package'), payload, {
@@ -2600,7 +2600,7 @@ test('classifies every historical migration before building a first-install cata
     const payloadCatalog = path.join(payload, 'database', 'migrations.json')
     fs.rmSync(payloadCatalog)
     const payloadMigrations = path.join(payload, 'database', 'migrations')
-    fs.mkdirSync(payloadMigrations)
+    fs.mkdirSync(payloadMigrations, { recursive: true })
     for (const migration of fs.readdirSync(path.join(
       repositoryRoot, 'backend', 'src', 'main', 'resources', 'db', 'migration',
     ))) {
@@ -5595,7 +5595,7 @@ test('verifies one host-bound production deployment bundle without executing it'
         `Add-Content -LiteralPath ${quotePowerShell(invocationLog)} -Value ('PACKAGE:' + $PackagePath)`,
         '$item = Get-Item -LiteralPath $PackagePath -ErrorAction Stop',
         '$sha = (Get-FileHash -LiteralPath $PackagePath -Algorithm SHA256).Hash.ToLowerInvariant()',
-        "[pscustomobject]@{ status='PASS'; releaseId='1.0.2-abcdef123456'; releaseTier='PRODUCTION'; productVersion='1.0.2'; databaseSchemaFrom=50; databaseSchemaVersion=51; artifactCount=4; package=$item.FullName; bytes=$item.Length; expandedBytes=2048; sha256=$sha; manifestSha256=('b' * 64); schemaSha256=('c' * 64) } | ConvertTo-Json -Compress",
+        "[pscustomobject]@{ status='PASS'; releaseId='1.0.2-abcdef123456'; releaseTier='PRODUCTION'; productVersion='1.0.2'; databaseSchemaFrom=50; databaseSchemaVersion=52; artifactCount=4; package=$item.FullName; bytes=$item.Length; expandedBytes=2048; sha256=$sha; manifestSha256=('b' * 64); schemaSha256=('c' * 64) } | ConvertTo-Json -Compress",
         '',
       ].join('\r\n'),
     )
@@ -5736,7 +5736,7 @@ test('verifies one host-bound production deployment bundle without executing it'
     assert.equal(report.releasePackageSha256, valid.packageSha256)
     assert.equal(report.manifestSha256, 'b'.repeat(64))
     assert.equal(report.productVersion, '1.0.2')
-    assert.equal(report.databaseSchemaVersion, 51)
+    assert.equal(report.databaseSchemaVersion, 52)
     assert.equal(report.releasePackageBytes, 'production-release-package'.length)
     assert.equal(report.requesterSignatureSha256,
       crypto.createHash('sha256').update('requester-signature').digest('hex'))

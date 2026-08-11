@@ -25,6 +25,14 @@ import java.util.Set;
 public class InspectionCatalogService {
     private static final Set<String> CHOICE_TYPES =
             Set.of("SINGLE_CHOICE", "MULTIPLE_CHOICE");
+    private static final List<InspectionDtos.ItemCategoryOption> DEFAULT_ITEM_CATEGORIES = List.of(
+            new InspectionDtos.ItemCategoryOption("TRANSMISSION", "传动系统", true),
+            new InspectionDtos.ItemCategoryOption("LUBRICATION", "润滑系统", false),
+            new InspectionDtos.ItemCategoryOption("FASTENING", "紧固系统", false),
+            new InspectionDtos.ItemCategoryOption("ELECTRICAL", "电气系统", false),
+            new InspectionDtos.ItemCategoryOption("SAFETY", "安全防护", false),
+            new InspectionDtos.ItemCategoryOption("OTHER", "其它", false)
+    );
 
     private final InspectionMapper mapper;
     private final InspectionCalendarMapper calendarMapper;
@@ -102,6 +110,14 @@ public class InspectionCatalogService {
     public InspectionDtos.ItemRow item(long id) {
         var current = SecurityUtils.currentUser();
         return requireItem(current.tenantId(), id, dataPermissionService.current());
+    }
+
+    @Transactional(readOnly = true)
+    public List<InspectionDtos.ItemCategoryOption> itemCategories() {
+        List<InspectionDtos.ItemCategoryOption> categories = mapper.findItemCategories(
+                SecurityUtils.currentUser().tenantId()
+        );
+        return categories == null || categories.isEmpty() ? DEFAULT_ITEM_CATEGORIES : categories;
     }
 
     @Transactional
@@ -364,6 +380,30 @@ public class InspectionCatalogService {
     }
 
     @Transactional
+    public void deleteScheme(long schemeId, int version) {
+        var current = SecurityUtils.currentUser();
+        InspectionDtos.SchemeRow before = requireScheme(current.tenantId(), schemeId);
+        if (Integer.valueOf(1).equals(before.status())) {
+            throw new BusinessException(
+                    "INSPECTION_SCHEME_ENABLED", "请先停用点检方案后再删除",
+                    HttpStatus.CONFLICT
+            );
+        }
+        if (before.activePlanCount() != null && before.activePlanCount() > 0) {
+            throw new BusinessException(
+                    "INSPECTION_SCHEME_IN_USE", "点检方案存在启用计划，不能删除",
+                    HttpStatus.CONFLICT
+            );
+        }
+        if (mapper.softDeleteScheme(
+                current.tenantId(), schemeId, version, current.userId()
+        ) == 0) {
+            throw optimisticConflict();
+        }
+        changeLogService.record("INSPECTION_SCHEME", schemeId, "DELETE", before, null);
+    }
+
+    @Transactional
     public void publish(long schemeId, long versionId) {
         var current = SecurityUtils.currentUser();
         InspectionDtos.SchemeRow before = requireScheme(current.tenantId(), schemeId);
@@ -521,6 +561,9 @@ public class InspectionCatalogService {
         InspectionDtos.PlanRow before = requirePlan(
                 current.tenantId(), id, dataPermissionService.current()
         );
+        if ("ACTIVE".equals(request.planStatus())) {
+            requireScheme(current.tenantId(), before.schemeId());
+        }
         if (("PAUSED".equals(request.planStatus()) || "CANCELLED".equals(request.planStatus()))
                 && clean(request.reason()) == null) {
             throw new BusinessException("INSPECTION_PLAN_REASON_REQUIRED", "暂停或取消计划必须填写原因");

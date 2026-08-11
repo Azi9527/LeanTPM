@@ -27,6 +27,7 @@ const barcodeCenterLogoKey = 'equipment.barcode.center-logo-url'
 const barcodeCenterLogoUrl = ref('DEFAULT')
 const brandForm = reactive<BrandingSettings>({ ...DEFAULT_BRANDING })
 const watermarkForm = reactive<PhotoWatermarkSettings>({
+  allowAlbumSelection: false,
   watermarkEnabled: true,
   saveOriginal: true,
   saveWatermarked: true,
@@ -475,6 +476,14 @@ async function remove(row: ParameterRow) {
           <span v-if="!watermarkForm.watermarkEnabled" class="watermark-disabled">当前不生成水印</span>
         </div>
         <el-form label-position="top" class="watermark-form">
+          <el-form-item label="照片来源">
+            <el-switch
+              v-model="watermarkForm.allowAlbumSelection"
+              active-text="允许相册选择"
+              inactive-text="仅允许现场拍照"
+            />
+            <div class="template-help">关闭后，APP 的项目照片和整单现场图片都将直接打开相机。</div>
+          </el-form-item>
           <el-form-item label="是否补充水印">
             <el-switch
               v-model="watermarkForm.watermarkEnabled"

@@ -53,6 +53,24 @@
           AND e.status = 1 AND e.deleted = 0 AND <include refid="equipmentScope"/>
     </select>
 
+    <select id="findItemCategories"
+            resultType="com.leantpm.inspection.InspectionDtos$ItemCategoryOption">
+        SELECT item.item_value AS value,
+               item.item_label AS label,
+               item.is_default AS default_flag
+        FROM system_dictionary_type type
+        JOIN system_dictionary_item item
+          ON item.tenant_id = type.tenant_id
+         AND item.dict_type_id = type.id
+         AND item.status = 1
+         AND item.deleted = 0
+        WHERE type.tenant_id = #{tenantId}
+          AND type.dict_code = 'inspection_item_category'
+          AND type.status = 1
+          AND type.deleted = 0
+        ORDER BY item.sort_order, item.id
+    </select>
+
     <sql id="itemFilters">
         item.tenant_id = #{tenantId} AND item.deleted = 0
         AND (
@@ -324,6 +342,22 @@
         WHERE tenant_id = #{tenantId} AND id = #{id}
           AND deleted = 0
           <if test="version != null">AND version = #{version}</if>
+    </update>
+
+    <update id="softDeleteScheme">
+        UPDATE inspection_scheme
+        SET deleted = 1, status = 0, updated_by = #{operatorId},
+            updated_time = CURRENT_TIMESTAMP(3), version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0
+          AND status = 0 AND version = #{version}
+          AND NOT EXISTS (
+              SELECT 1
+              FROM inspection_plan plan
+              WHERE plan.tenant_id = inspection_scheme.tenant_id
+                AND plan.scheme_id = inspection_scheme.id
+                AND plan.plan_status = 'ACTIVE'
+                AND plan.deleted = 0
+          )
     </update>
 
     <select id="nextSchemeVersionNumber" resultType="int">
@@ -663,6 +697,16 @@
             updated_by = #{operatorId}, version = version + 1
         WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0
           AND version = #{request.version}
+          AND (
+              #{request.planStatus} &lt;&gt; 'ACTIVE'
+              OR EXISTS (
+                  SELECT 1
+                  FROM inspection_scheme scheme
+                  WHERE scheme.tenant_id = inspection_plan.tenant_id
+                    AND scheme.id = inspection_plan.scheme_id
+                    AND scheme.deleted = 0
+              )
+          )
     </update>
 
     <select id="findTaskIdsByPlan" resultType="long">
@@ -2152,38 +2196,55 @@
           )
     </select>
 
-    <select id="countInvalidResultAttachments" resultType="int">
-        SELECT COUNT(*)
+    <select id="findInvalidResultAttachments"
+            resultType="com.leantpm.inspection.InspectionMapper$ResultAttachmentValidationRow">
+        SELECT item.id AS task_item_id,
+               (SELECT COUNT(*)
+                FROM inspection_task_item ordered_item
+                WHERE ordered_item.tenant_id = item.tenant_id
+                  AND ordered_item.task_id = item.task_id
+                  AND ordered_item.deleted = 0
+                  AND (ordered_item.sort_order &lt; item.sort_order
+                       OR (ordered_item.sort_order = item.sort_order
+                           AND ordered_item.id &lt;= item.id))) AS sort_order,
+               item.item_name,
+               COUNT(relation.id) AS actual_count,
+               item.photo_min_count AS minimum_count,
+               item.photo_max_count AS maximum_count,
+               SUM(CASE WHEN attachment.file_size > item.photo_max_size_mb * 1024 * 1024
+                        THEN 1 ELSE 0 END) AS oversized_count,
+               SUM(CASE WHEN relation.id IS NOT NULL
+                             AND FIND_IN_SET(
+                                 LOWER(COALESCE(attachment.content_type, '')),
+                                 item.photo_allowed_types
+                             ) = 0
+                        THEN 1 ELSE 0 END) AS unsupported_type_count,
+               item.photo_max_size_mb AS maximum_size_mb,
+               item.photo_allowed_types AS allowed_types
         FROM inspection_task_item item
         JOIN inspection_task_result result
           ON result.tenant_id = item.tenant_id AND result.task_item_id = item.id
          AND result.deleted = 0
+        LEFT JOIN inspection_attachment relation
+          ON relation.tenant_id = result.tenant_id
+         AND relation.task_result_id = result.id
+         AND relation.deleted = 0
+         AND relation.attachment_type = 'RESULT_PHOTO'
+        LEFT JOIN system_attachment attachment
+          ON attachment.tenant_id = relation.tenant_id
+         AND attachment.id = relation.attachment_id
+         AND attachment.deleted = 0
         WHERE item.tenant_id = #{tenantId} AND item.task_id = #{taskId}
           AND item.deleted = 0
-          AND (
-              (SELECT COUNT(*) FROM inspection_attachment attachment
-               WHERE attachment.tenant_id = result.tenant_id
-                 AND attachment.task_result_id = result.id
-                 AND attachment.deleted = 0
-                 AND attachment.attachment_type = 'RESULT_PHOTO')
-                  NOT BETWEEN item.photo_min_count AND item.photo_max_count
-              OR EXISTS (
-                  SELECT 1
-                  FROM inspection_attachment relation
-                  JOIN system_attachment attachment
-                    ON attachment.tenant_id = relation.tenant_id
-                   AND attachment.id = relation.attachment_id
-                   AND attachment.deleted = 0
-                  WHERE relation.tenant_id = result.tenant_id
-                    AND relation.task_result_id = result.id
-                    AND relation.deleted = 0
-                    AND relation.attachment_type = 'RESULT_PHOTO'
-                    AND (
-                        attachment.file_size > item.photo_max_size_mb * 1024 * 1024
-                        OR FIND_IN_SET(LOWER(COALESCE(attachment.content_type, '')), item.photo_allowed_types) = 0
-                    )
-              )
-          )
+          AND result.skipped_flag = 0
+        GROUP BY item.id, item.sort_order, item.item_name,
+                 item.photo_min_count, item.photo_max_count,
+                 item.photo_max_size_mb, item.photo_allowed_types
+        HAVING actual_count NOT BETWEEN minimum_count AND maximum_count
+            OR oversized_count > 0
+            OR unsupported_type_count > 0
+        ORDER BY item.sort_order, item.id
+        LIMIT 10
     </select>
 
     <select id="countTaskSubmissionPhotos" resultType="int">

@@ -15,8 +15,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 import static com.leantpm.foundation.service.PhotoWatermarkSettingsService.DEFAULT_TEMPLATE;
 
@@ -46,7 +48,9 @@ public class MobileService {
     public MobileDtos.Bootstrap bootstrap() {
         var current = SecurityUtils.currentUser();
         assertMobileEnabled(current.tenantId(), current.userId());
-        DataPermission scope = dataPermissionService.current();
+        DataPermission scope = inspectionScanScope(
+                current.tenantId(), current.userId(), dataPermissionService.current()
+        );
         LocalDate today = LocalDate.now();
         return new MobileDtos.Bootstrap(
                 LocalDateTime.now(),
@@ -60,6 +64,7 @@ public class MobileService {
                 ),
                 new MobileDtos.PhotoPolicy(
                         parameter(current.tenantId(), "mobile.photo-clock-skew-warning-seconds", 300, 0, 86400),
+                        booleanParameter(current.tenantId(), "mobile.photo-allow-album-selection", false),
                         booleanParameter(current.tenantId(), "mobile.photo-watermark-enabled", true),
                         booleanParameter(current.tenantId(), "mobile.photo-save-original", true),
                         booleanParameter(current.tenantId(), "mobile.photo-save-watermarked", true),
@@ -250,10 +255,13 @@ public class MobileService {
                     HttpStatus.CONFLICT
             );
         }
+        DataPermission scanScope = inspectionScanScope(
+                current.tenantId(), current.userId(), dataPermissionService.current()
+        );
         MobileDtos.EquipmentBase equipment = mapper.equipmentByToken(
                 current.tenantId(),
                 normalizedToken,
-                dataPermissionService.current()
+                scanScope
         );
         if (equipment == null) {
             throw new BusinessException(
@@ -291,6 +299,38 @@ public class MobileService {
     private String organizationLabel(MobileDtos.EquipmentAccessProbe probe) {
         return probe.organizationName() == null || probe.organizationName().isBlank()
                 ? "未设置组织" : probe.organizationName().trim();
+    }
+
+    private DataPermission inspectionScanScope(
+            long tenantId,
+            long userId,
+            DataPermission baseScope
+    ) {
+        if (baseScope.allData()) {
+            return baseScope;
+        }
+        return inspectionScanScope(
+                baseScope,
+                mapper.inspectionScanOrganizationIds(tenantId, userId)
+        );
+    }
+
+    static DataPermission inspectionScanScope(
+            DataPermission baseScope,
+            List<Long> inspectionOrganizationIds
+    ) {
+        if (baseScope.allData()) {
+            return baseScope;
+        }
+        Set<Long> organizationIds = new LinkedHashSet<>(baseScope.organizationIds());
+        if (inspectionOrganizationIds != null) {
+            inspectionOrganizationIds.stream()
+                    .filter(java.util.Objects::nonNull)
+                    .forEach(organizationIds::add);
+        }
+        return DataPermission.restricted(
+                baseScope.userId(), baseScope.selfData(), organizationIds
+        );
     }
 
     @Transactional

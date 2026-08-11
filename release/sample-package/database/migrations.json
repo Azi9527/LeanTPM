@@ -1,13 +1,46 @@
 {
-  "schemaVersion": 1,
-  "engine": "mysql",
-  "migrationTool": "flyway",
-  "schemaFrom": 50,
-  "schemaTo": 50,
-  "phase": "NONE",
-  "backwardCompatible": true,
-  "requiresDowntime": false,
-  "classificationConfirmed": true,
-  "classificationSha256": null,
-  "migrations": []
+    "schemaVersion":  1,
+    "engine":  "mysql",
+    "migrationTool":  "flyway",
+    "schemaFrom":  50,
+    "schemaTo":  52,
+    "phase":  "MIGRATE",
+    "backwardCompatible":  false,
+    "requiresDowntime":  false,
+    "classificationConfirmed":  true,
+    "classificationSha256":  "36192261d51be505459bc10515b0939d2a727182a02274e2285118361af67a88",
+    "migrations":  [
+                       {
+                           "version":  51,
+                           "description":  "inspection_item_category_dictionary",
+                           "script":  "V51__inspection_item_category_dictionary.sql",
+                           "sha256":  "697fa0e90983c35fde048218ba20bad13d4a62600524b55925d258f61a553aa4",
+                           "phase":  "MIGRATE",
+                           "backwardCompatible":  false,
+                           "requiresDowntime":  false,
+                           "review":  {
+                                          "status":  "APPROVED",
+                                          "reviewedBy":  "codex-static-review",
+                                          "approvedAtUtc":  "2026-08-11T04:00:00Z",
+                                          "evidence":  "reports/ai/2026-08-11-customer-feedback-inspection-fix.md#数据保护与回滚"
+                                      },
+                           "execution":  "FLYWAY_CHECKSUM_GUARDED_ONCE"
+                       },
+                       {
+                           "version":  52,
+                           "description":  "customer_feedback_defaults",
+                           "script":  "V52__customer_feedback_defaults.sql",
+                           "sha256":  "787028f4e5b038a4ef67de0252cd986e5bd0ec4f59e9a6321daff1f754d78392",
+                           "phase":  "EXPAND",
+                           "backwardCompatible":  false,
+                           "requiresDowntime":  false,
+                           "review":  {
+                                          "status":  "APPROVED",
+                                          "reviewedBy":  "codex-static-review",
+                                          "approvedAtUtc":  "2026-08-11T06:00:00Z",
+                                          "evidence":  "reports/ai/2026-08-11-customer-feedback-round-2-fix.md#数据保护与回滚"
+                                      },
+                           "execution":  "FLYWAY_CHECKSUM_GUARDED_ONCE"
+                       }
+                   ]
 }

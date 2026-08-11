@@ -56,6 +56,13 @@ public final class InspectionDtos {
     ) {
     }
 
+    public record ItemCategoryOption(
+            String value,
+            String label,
+            Boolean defaultFlag
+    ) {
+    }
+
     public record SaveItemRequest(
             @NotBlank @Size(max = 64)
             @Pattern(regexp = "^[A-Z][A-Z0-9_-]*$", message = "项目编码格式不正确")

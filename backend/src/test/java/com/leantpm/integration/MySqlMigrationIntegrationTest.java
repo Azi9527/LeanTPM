@@ -32,6 +32,7 @@ class MySqlMigrationIntegrationTest {
     private long preUpgradeEquipmentCount;
     private long preUpgradeInspectionTaskCount;
     private long preUpgradeOrganizationCount;
+    private long preV51CanonicalCategoryCount;
 
     @BeforeAll
     void migrateFreshDatabase() {
@@ -98,6 +99,61 @@ class MySqlMigrationIntegrationTest {
         Flyway.configure()
                 .dataSource(url, username, password)
                 .locations("classpath:db/migration")
+                .target(MigrationVersion.fromVersion("50"))
+                .cleanDisabled(true)
+                .load()
+                .migrate();
+        try {
+            executeUpdate("""
+                    INSERT INTO system_tenant
+                        (tenant_code, tenant_name, status, created_by, updated_by)
+                    VALUES ('V51_FIXTURE', 'V51 多租户验证', 1, 0, 0)
+                    """);
+            executeUpdate("""
+                    INSERT INTO system_dictionary_type
+                        (tenant_id, dict_code, dict_name, status, created_by, updated_by, deleted)
+                    VALUES (1, 'inspection_item_category', '客户已有点检分类', 0, 0, 0, 1)
+                    """);
+            executeUpdate("""
+                    INSERT INTO system_dictionary_item
+                        (tenant_id, dict_type_id, item_value, item_label, status,
+                         sort_order, is_default, created_by, updated_by, deleted)
+                    SELECT 1, id, 'TRANSMISSION', '客户自定义传动', 0, 5, 0, 0, 0, 1
+                    FROM system_dictionary_type
+                    WHERE tenant_id = 1 AND dict_code = 'inspection_item_category'
+                    """);
+            executeUpdate("""
+                    INSERT INTO system_parameter
+                        (tenant_id, parameter_key, parameter_name, parameter_value,
+                         value_type, group_code, description, built_in, status,
+                         created_by, updated_by, deleted)
+                    VALUES
+                        (1, 'mobile.photo-allow-album-selection', '客户预设相册开关', 'true',
+                         'BOOLEAN', 'MOBILE_WATERMARK', 'V52 兼容性夹具', 0, 0,
+                         0, 0, 1)
+                    """);
+            executeUpdate("""
+                    INSERT INTO equipment_category
+                        (tenant_id, parent_id, category_code, category_name, tree_level,
+                         default_oee_mode, sort_order, status, description,
+                         created_by, updated_by, deleted)
+                    VALUES
+                        (1, 0, 'OTHER_EQUIPMENT', '客户自定义其它设备', 1,
+                         'STANDARD', 99, 0, 'V52 兼容性夹具', 0, 0, 1)
+                    """);
+            preV51CanonicalCategoryCount = number("""
+                    SELECT COUNT(*) FROM inspection_item
+                    WHERE item_category IN (
+                      'TRANSMISSION', 'LUBRICATION', 'FASTENING',
+                      'ELECTRICAL', 'SAFETY', 'OTHER'
+                    )
+                    """);
+        } catch (Exception exception) {
+            throw new IllegalStateException("Could not create the V50 to V51 fixture", exception);
+        }
+        Flyway.configure()
+                .dataSource(url, username, password)
+                .locations("classpath:db/migration")
                 .cleanDisabled(true)
                 .load()
                 .migrate();
@@ -106,7 +162,7 @@ class MySqlMigrationIntegrationTest {
     @Test
     void appliesEveryMigrationAndFoundationTable() throws Exception {
         assertThat(number("SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1"))
-                .isEqualTo(50);
+                .isEqualTo(52);
         assertThat(number("""
                 SELECT COUNT(*)
                 FROM information_schema.tables
@@ -199,15 +255,104 @@ class MySqlMigrationIntegrationTest {
     }
 
     @Test
+    void upgradesV50WithTenantScopedCategoriesAndPreservesExistingDictionaryValues()
+            throws Exception {
+        assertThat(number("""
+                SELECT COUNT(*)
+                FROM system_dictionary_type type
+                JOIN system_tenant tenant ON tenant.id = type.tenant_id
+                WHERE type.dict_code = 'inspection_item_category'
+                  AND type.status = 1
+                  AND type.deleted = 0
+                  AND tenant.status = 1
+                  AND tenant.deleted = 0
+                """)).isEqualTo(2L);
+        assertThat(number("""
+                SELECT COUNT(*)
+                FROM system_dictionary_item item
+                JOIN system_dictionary_type type
+                  ON type.tenant_id = item.tenant_id
+                 AND type.id = item.dict_type_id
+                WHERE type.dict_code = 'inspection_item_category'
+                  AND item.item_value IN (
+                    'TRANSMISSION', 'LUBRICATION', 'FASTENING',
+                    'ELECTRICAL', 'SAFETY', 'OTHER'
+                  )
+                  AND item.status = 1
+                  AND item.deleted = 0
+                """)).isEqualTo(12L);
+        assertThat(text("""
+                SELECT item.item_label
+                FROM system_dictionary_item item
+                JOIN system_dictionary_type type
+                  ON type.tenant_id = item.tenant_id
+                 AND type.id = item.dict_type_id
+                WHERE type.tenant_id = 1
+                  AND type.dict_code = 'inspection_item_category'
+                  AND item.item_value = 'TRANSMISSION'
+                """)).isEqualTo("客户自定义传动");
+        assertThat(number("""
+                SELECT COUNT(*) FROM inspection_item
+                WHERE item_category IN (
+                  'TRANSMISSION', 'LUBRICATION', 'FASTENING',
+                  'ELECTRICAL', 'SAFETY', 'OTHER'
+                )
+                """)).isEqualTo(preV51CanonicalCategoryCount);
+    }
+
+    @Test
+    void upgradesV51WithCameraOnlyDefaultAndFiveTenantScopedEquipmentCategories()
+            throws Exception {
+        assertThat(number("""
+                SELECT COUNT(*)
+                FROM system_parameter parameter_row
+                JOIN system_tenant tenant ON tenant.id = parameter_row.tenant_id
+                WHERE parameter_row.parameter_key = 'mobile.photo-allow-album-selection'
+                  AND parameter_row.status = 1
+                  AND parameter_row.deleted = 0
+                  AND tenant.status = 1
+                  AND tenant.deleted = 0
+                """)).isEqualTo(2L);
+        assertThat(text("""
+                SELECT parameter_value FROM system_parameter
+                WHERE tenant_id = 1
+                  AND parameter_key = 'mobile.photo-allow-album-selection'
+                """)).isEqualTo("true");
+        assertThat(text("""
+                SELECT parameter_value FROM system_parameter
+                WHERE tenant_id = 2
+                  AND parameter_key = 'mobile.photo-allow-album-selection'
+                """)).isEqualTo("false");
+        assertThat(number("""
+                SELECT COUNT(*)
+                FROM equipment_category category
+                JOIN system_tenant tenant ON tenant.id = category.tenant_id
+                WHERE category.category_code IN (
+                    'PRODUCTION', 'ENVIRONMENTAL_EQUIPMENT', 'AUXILIARY_EQUIPMENT',
+                    'TRANSPORT_EQUIPMENT', 'OTHER_EQUIPMENT'
+                )
+                  AND category.parent_id = 0
+                  AND category.status = 1
+                  AND category.deleted = 0
+                  AND tenant.status = 1
+                  AND tenant.deleted = 0
+                """)).isEqualTo(10L);
+        assertThat(text("""
+                SELECT category_name FROM equipment_category
+                WHERE tenant_id = 1 AND category_code = 'OTHER_EQUIPMENT'
+                """)).isEqualTo("客户自定义其它设备");
+    }
+
+    @Test
     void rejectsTamperedFlywayChecksumAndRestoresKnownHistory() throws Exception {
         long expectedChecksum = number("""
                 SELECT checksum FROM flyway_schema_history
-                WHERE version = '50' AND success = 1
+                WHERE version = '52' AND success = 1
                 """);
         executeUpdate("""
                 UPDATE flyway_schema_history
                 SET checksum = checksum + 1
-                WHERE version = '50' AND success = 1
+                WHERE version = '52' AND success = 1
                 """);
         try {
             Flyway flyway = Flyway.configure()
@@ -221,7 +366,7 @@ class MySqlMigrationIntegrationTest {
             executeUpdate("""
                     UPDATE flyway_schema_history
                     SET checksum = %d
-                    WHERE version = '50' AND success = 1
+                    WHERE version = '52' AND success = 1
                     """.formatted(expectedChecksum));
         }
 
@@ -254,7 +399,7 @@ class MySqlMigrationIntegrationTest {
             assertThatThrownBy(failedFlyway::migrate).isInstanceOf(FlywayException.class);
             assertThat(number("""
                     SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1
-                    """)).isEqualTo(50L);
+                    """)).isEqualTo(52L);
             assertThat(number("""
                     SELECT COUNT(*) FROM information_schema.tables
                     WHERE table_schema = DATABASE()
@@ -279,7 +424,7 @@ class MySqlMigrationIntegrationTest {
             assertThat(number("SELECT COUNT(*) FROM migration_failure_probe")).isEqualTo(1L);
             assertThat(number("""
                     SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1
-                    """)).isEqualTo(50L);
+                    """)).isEqualTo(52L);
         } finally {
             executeUpdate("DROP TABLE IF EXISTS migration_failure_probe");
             executeUpdate("DROP TABLE IF EXISTS flyway_failure_probe_history");

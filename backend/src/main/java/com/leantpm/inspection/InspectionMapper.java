@@ -21,6 +21,10 @@ public interface InspectionMapper {
             @Param("scope") DataPermission scope
     );
 
+    List<InspectionDtos.ItemCategoryOption> findItemCategories(
+            @Param("tenantId") long tenantId
+    );
+
     List<InspectionDtos.ItemRow> findItems(
             @Param("tenantId") long tenantId,
             @Param("scope") DataPermission scope,
@@ -125,6 +129,13 @@ public interface InspectionMapper {
             @Param("tenantId") long tenantId,
             @Param("id") long id,
             @Param("enabled") boolean enabled,
+            @Param("version") int version,
+            @Param("operatorId") long operatorId
+    );
+
+    int softDeleteScheme(
+            @Param("tenantId") long tenantId,
+            @Param("id") long id,
             @Param("version") int version,
             @Param("operatorId") long operatorId
     );
@@ -684,7 +695,10 @@ public interface InspectionMapper {
 
     int countMissingRequiredResults(@Param("tenantId") long tenantId, @Param("taskId") long taskId);
 
-    int countInvalidResultAttachments(@Param("tenantId") long tenantId, @Param("taskId") long taskId);
+    List<ResultAttachmentValidationRow> findInvalidResultAttachments(
+            @Param("tenantId") long tenantId,
+            @Param("taskId") long taskId
+    );
 
     int countTaskSubmissionPhotos(@Param("tenantId") long tenantId, @Param("taskId") long taskId);
 
@@ -826,6 +840,20 @@ public interface InspectionMapper {
     }
 
     record EquipmentStatusData(String statusCode, int version) {
+    }
+
+    record ResultAttachmentValidationRow(
+            long taskItemId,
+            int sortOrder,
+            String itemName,
+            int actualCount,
+            int minimumCount,
+            int maximumCount,
+            int oversizedCount,
+            int unsupportedTypeCount,
+            int maximumSizeMb,
+            String allowedTypes
+    ) {
     }
 
     record GenerationPlan(

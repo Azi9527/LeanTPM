@@ -71,9 +71,11 @@
 	import { computed, ref } from 'vue'
 	import { onLoad, onPullDownRefresh } from '@dcloudio/uni-app'
 	import { notificationApi } from '../../api/notification.js'
-	import { navigateTo, routeWithQuery } from '../../constants/routes.js'
+	import { inspectionApi } from '../../api/inspection.js'
+	import { navigateTo } from '../../constants/routes.js'
 	import { can, displayName, sessionState } from '../../stores/session.js'
 	import { errorMessage } from '../../utils/errors.js'
+	import { inspectionTaskTarget } from '../../utils/inspection-navigation.js'
 
 	const rows = ref([])
 	const loading = ref(false)
@@ -135,9 +137,14 @@
 		attachmentPaths.value = Object.fromEntries(entries.filter(Boolean))
 	}
 	function closeDetail() { selectedMessage.value = null; businessDetail.value = null; detailError.value = ''; attachmentPaths.value = {} }
-	function enterOperation() {
+	async function enterOperation() {
 		if (!canEnterOperation.value || !businessDetail.value) return
-		navigateTo(routeWithQuery('/pages/inspection/detail', { id: businessDetail.value.businessId }))
+		try {
+			const detail = await inspectionApi.task(businessDetail.value.businessId)
+			navigateTo(inspectionTaskTarget(detail.task).url)
+		} catch (cause) {
+			uni.showToast({ title: errorMessage(cause, '任务加载失败'), icon: 'none' })
+		}
 	}
 	async function openAttachment(attachment) {
 		let path = attachmentPaths.value[attachment.id]

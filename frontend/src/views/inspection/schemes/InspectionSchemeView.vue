@@ -6,6 +6,7 @@ import { equipmentApi, type EquipmentRow } from '@/api/equipment'
 import { masterDataApi, type EquipmentCategoryRow, type ReferenceUser } from '@/api/masterData'
 import { useAuthStore } from '@/stores/auth'
 import { errorMessage } from '@/utils/http'
+import { schemeItemConfigMap, schemeItemPayload, type SchemeItemConfig } from '@/utils/inspection-scheme'
 import InspectionImportDialog from '@/components/inspection/InspectionImportDialog.vue'
 import { applySmartTableQuery, type SmartTableServerQuery } from '@/components/table/smart-table-context'
 
@@ -20,6 +21,7 @@ const dialogVisible = ref(false)
 const detailVisible = ref(false)
 const importVisible = ref(false)
 const editing = ref<SchemeRow | null>(null)
+const copying = ref(false)
 const detail = ref<SchemeDetail | null>(null)
 const items = ref<ItemRow[]>([])
 const equipment = ref<EquipmentRow[]>([])
@@ -52,6 +54,7 @@ const form = reactive({
   effectiveDate: new Date().toISOString().slice(0, 10),
   expiryDate: '',
   itemIds: [] as number[],
+  itemConfigs: {} as Record<number, SchemeItemConfig>,
   itemStopOverrides: {} as Record<number, boolean | null>,
   categoryIds: [] as number[],
   equipmentIds: [] as number[],
@@ -144,6 +147,7 @@ function resetForm() {
     effectiveDate: new Date().toISOString().slice(0, 10),
     expiryDate: '',
     itemIds: [],
+    itemConfigs: {},
     itemStopOverrides: {},
     categoryIds: [],
     equipmentIds: [],
@@ -153,15 +157,16 @@ function resetForm() {
   })
 }
 
-async function open(row?: SchemeRow) {
-  editing.value = row || null
+async function open(row?: SchemeRow, copy = false) {
+  editing.value = copy ? null : row || null
+  copying.value = Boolean(row && copy)
   resetForm()
   if (row) {
     try {
       const value = await inspectionApi.scheme(row.id)
       Object.assign(form, {
-        schemeCode: value.scheme.schemeCode,
-        schemeName: value.scheme.schemeName,
+        schemeCode: copy ? '' : value.scheme.schemeCode,
+        schemeName: copy ? `${value.scheme.schemeName}（副本）` : value.scheme.schemeName,
         inspectionType: value.scheme.inspectionType,
         cycleType: value.version.cycleType,
         cycleInterval: value.version.cycleInterval,
@@ -182,6 +187,7 @@ async function open(row?: SchemeRow) {
         effectiveDate: value.version.effectiveDate,
         expiryDate: value.version.expiryDate || '',
         itemIds: value.items.map((item) => item.inspectionItemId),
+        itemConfigs: schemeItemConfigMap(value.items),
         itemStopOverrides: Object.fromEntries(
           value.items.map((item) => [item.inspectionItemId, item.abnormalStopFlag ?? null]),
         ),
@@ -189,7 +195,7 @@ async function open(row?: SchemeRow) {
         equipmentIds: value.applicability.equipmentIds,
         enabled: value.scheme.status === 1,
         description: value.scheme.description || '',
-        changeSummary: '',
+        changeSummary: copy ? `复制自方案 ${value.scheme.schemeCode}` : '',
       })
     } catch (error) {
       ElMessage.error(errorMessage(error))
@@ -215,17 +221,13 @@ async function save() {
       expiryDate: form.expiryDate || null,
       defaultAssigneeUserId: form.defaultAssigneeUserIds[0] || null,
       defaultAssigneeUserIds: form.defaultAssigneeUserIds,
-      items: form.itemIds.map((inspectionItemId, index) => ({
-        inspectionItemId,
-        sortOrder: (index + 1) * 10,
-        abnormalStop: form.itemStopOverrides[inspectionItemId] ?? null,
-      })),
+      items: schemeItemPayload(form.itemIds, form.itemConfigs, form.itemStopOverrides),
       version: editing.value?.version,
     }
     if (editing.value) await inspectionApi.createAndPublishSchemeVersion(editing.value.id, payload)
     else await inspectionApi.createAndPublishScheme(payload)
     dialogVisible.value = false
-    ElMessage.success(editing.value ? '方案新版本已发布' : '点检方案已创建并发布')
+    ElMessage.success(editing.value ? '方案新版本已发布' : copying.value ? '方案副本已创建并发布' : '点检方案已创建并发布')
     await load()
   } catch (error) {
     ElMessage.error(errorMessage(error))
@@ -281,6 +283,9 @@ async function restoreVersion(row: SchemeRow, versionId: number, versionNumber: 
       items: value.items.map((item) => ({
         inspectionItemId: item.inspectionItemId,
         sortOrder: item.sortOrder,
+        required: item.requiredFlag,
+        photoRequired: item.photoRequiredFlag,
+        skipAllowed: item.skipAllowedFlag,
         abnormalStop: item.abnormalStopFlag ?? null,
       })),
       categoryIds: value.applicability.categoryIds,
@@ -308,6 +313,25 @@ async function changeSchemeStatus(row: SchemeRow) {
   try {
     await inspectionApi.updateSchemeStatus(row.id, enabled, row.version)
     ElMessage.success(enabled ? '点检方案已启用' : '点检方案已停用')
+    await load()
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  }
+}
+
+async function removeScheme(row: SchemeRow) {
+  if (row.status === 1 || row.activePlanCount > 0) {
+    ElMessage.warning(row.status === 1 ? '请先停用方案后再删除' : '方案存在启用计划，不能删除')
+    return
+  }
+  await ElMessageBox.confirm(
+    `确认删除方案“${row.schemeName}”？方案版本、计划、任务及审计历史将保留。`,
+    '删除点检方案',
+    { type: 'warning', confirmButtonText: '确认删除' },
+  )
+  try {
+    await inspectionApi.deleteScheme(row.id, row.version)
+    ElMessage.success('点检方案已删除')
     await load()
   } catch (error) {
     ElMessage.error(errorMessage(error))
@@ -345,18 +369,20 @@ function csvNumbers(value?: string) {
         <el-table-column prop="status" label="状态" smart-filter="select" width="100">
           <template #default="{ row }"><el-tag :type="row.status === 1 ? 'success' : 'info'">{{ row.status === 1 ? '启用' : '停用' }}</el-tag></template>
         </el-table-column>
-        <el-table-column label="操作" smart-filter="none" width="280" fixed="right">
+        <el-table-column label="操作" smart-filter="none" width="410" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="showDetail(row)">历史版本</el-button>
+            <el-button link type="primary" @click="showDetail(row)">查看明细</el-button>
             <el-button v-if="auth.can('inspection:scheme:manage')" link type="primary" @click="open(row)">新版本</el-button>
+            <el-button v-if="auth.can('inspection:scheme:manage') && auth.can('inspection:scheme:publish')" link type="primary" @click="open(row, true)">复制</el-button>
             <el-button v-if="auth.can('inspection:scheme:manage')" link :type="row.status === 1 ? 'warning' : 'success'" @click="changeSchemeStatus(row)">{{ row.status === 1 ? '停用' : '启用' }}</el-button>
+            <el-button v-if="auth.can('inspection:scheme:manage')" link type="danger" :disabled="row.status === 1 || row.activePlanCount > 0" @click="removeScheme(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
       <el-pagination v-model:current-page="page" :page-size="20" :total="total" layout="total, prev, pager, next" @change="load" />
     </section>
 
-    <el-dialog v-model="dialogVisible" :title="editing ? '创建方案新版本' : '新增点检方案'" width="min(980px, 97vw)">
+    <el-dialog v-model="dialogVisible" :title="editing ? '创建方案新版本' : copying ? '复制点检方案' : '新增点检方案'" width="min(980px, 97vw)">
       <el-form label-position="top" class="form-grid">
         <el-form-item label="方案编码"><el-input v-model="form.schemeCode" :disabled="Boolean(editing)" placeholder="留空自动编号" /></el-form-item>
         <el-form-item label="方案名称" required><el-input v-model="form.schemeName" /></el-form-item>
@@ -405,9 +431,22 @@ function csvNumbers(value?: string) {
           <el-descriptions-item label="生效">{{ detail.version.effectiveDate }} ~ {{ detail.version.expiryDate || '长期' }}</el-descriptions-item>
           <el-descriptions-item label="控制">提交即完成 / {{ detail.version.backfillAllowedFlag ? '可补录' : '不可补录' }}</el-descriptions-item>
           <el-descriptions-item label="提交图片">{{ detail.version.submissionPhotoRequiredFlag ? '必须上传水印图片' : '图片选传' }} / 最多 {{ detail.version.submissionPhotoMaxCount }} 张</el-descriptions-item>
+          <el-descriptions-item label="适用设备分类" :span="2">{{ detail.applicability.categoryIds.map((id) => categories.find((row) => row.id === id)?.categoryName || `分类 #${id}`).join('、') || '未指定' }}</el-descriptions-item>
+          <el-descriptions-item label="指定设备" :span="2">{{ detail.applicability.equipmentIds.map((id) => equipment.find((row) => row.id === id)?.equipmentName || `设备 #${id}`).join('、') || '未指定' }}</el-descriptions-item>
         </el-descriptions>
         <h3>点检项目</h3>
-        <el-table :data="detail.items" size="small"><el-table-column prop="sortOrder" label="#" width="60" /><el-table-column prop="itemCode" label="编码" min-width="150" /><el-table-column prop="itemName" label="名称" min-width="150" /><el-table-column prop="resultType" label="结果类型" width="140" /></el-table>
+        <el-table :data="detail.items" size="small" max-height="420">
+          <el-table-column prop="sortOrder" label="#" width="60" />
+          <el-table-column prop="itemCode" label="编码" min-width="140" />
+          <el-table-column prop="itemName" label="名称" min-width="160" />
+          <el-table-column prop="itemCategory" label="项目分类" min-width="110" />
+          <el-table-column prop="resultType" label="结果类型" width="120" />
+          <el-table-column prop="unit" label="单位" width="80" />
+          <el-table-column label="必填" width="70"><template #default="{ row }">{{ row.requiredFlag ? '是' : '否' }}</template></el-table-column>
+          <el-table-column label="拍照" width="70"><template #default="{ row }">{{ row.photoRequiredFlag ? '是' : '否' }}</template></el-table-column>
+          <el-table-column label="允许跳过" width="90"><template #default="{ row }">{{ row.skipAllowedFlag ? '是' : '否' }}</template></el-table-column>
+          <el-table-column label="异常停机" width="90"><template #default="{ row }">{{ row.abnormalStopFlag ? '是' : '否' }}</template></el-table-column>
+        </el-table>
         <h3>版本历史</h3>
         <el-timeline>
           <el-timeline-item v-for="version in detail.versionHistory" :key="version.id" :timestamp="version.publishedTime || version.effectiveDate">

@@ -29,6 +29,7 @@ export interface MobileBootstrap {
   maxUploadMb: number
   photoPolicy: {
     clockSkewWarningSeconds: number
+    allowAlbumSelection: boolean
     watermarkEnabled: boolean
     saveOriginal: boolean
     saveWatermarked: boolean

@@ -59,6 +59,12 @@ export interface ItemRow {
   version: number
 }
 
+export interface ItemCategoryOption {
+  value: string
+  label: string
+  defaultFlag: boolean
+}
+
 export interface SchemeRow {
   id: number
   schemeCode: string
@@ -485,6 +491,8 @@ export const inspectionApi = {
 
   items: (params: object) =>
     getData<PageResult<ItemRow>>('/inspection/items', params),
+  itemCategories: () =>
+    getData<ItemCategoryOption[]>('/inspection/item-categories'),
   item: (id: number) => getData<ItemRow>(`/inspection/items/${id}`),
   createItem: (data: object) => http.post('/inspection/items', data),
   updateItem: (id: number, data: object) => http.put(`/inspection/items/${id}`, data),
@@ -505,6 +513,8 @@ export const inspectionApi = {
     getData<number[]>(`/inspection/schemes/${id}/applicable-equipment-ids`),
   updateSchemeStatus: (id: number, enabled: boolean, version: number) =>
     http.put(`/inspection/schemes/${id}/status`, { enabled, version }),
+  deleteScheme: (id: number, version: number) =>
+    http.delete(`/inspection/schemes/${id}`, { params: { version } }),
   publishScheme: (id: number, versionId: number) =>
     http.post(`/inspection/schemes/${id}/versions/${versionId}/publish`),
 

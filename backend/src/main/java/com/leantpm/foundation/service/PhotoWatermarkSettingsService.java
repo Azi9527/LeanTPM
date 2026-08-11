@@ -24,6 +24,7 @@ public class PhotoWatermarkSettingsService {
     public FoundationDtos.PhotoWatermarkSettings settings() {
         long tenantId = SecurityUtils.currentUser().tenantId();
         return new FoundationDtos.PhotoWatermarkSettings(
+                parameterService.getBoolean(tenantId, "mobile.photo-allow-album-selection", false),
                 parameterService.getBoolean(tenantId, "mobile.photo-watermark-enabled", true),
                 parameterService.getBoolean(tenantId, "mobile.photo-save-original", true),
                 parameterService.getBoolean(tenantId, "mobile.photo-save-watermarked", true),
@@ -40,6 +41,8 @@ public class PhotoWatermarkSettingsService {
         validate(request);
         Map<String, FoundationDtos.ParameterRow> rows = parameterService.list(null, null).stream()
                 .collect(Collectors.toMap(FoundationDtos.ParameterRow::parameterKey, Function.identity()));
+        save(rows, "mobile.photo-allow-album-selection",
+                Boolean.toString(Boolean.TRUE.equals(request.allowAlbumSelection())));
         save(rows, "mobile.photo-watermark-enabled", Boolean.toString(request.watermarkEnabled()));
         save(rows, "mobile.photo-save-original", Boolean.toString(request.saveOriginal()));
         save(rows, "mobile.photo-save-watermarked", Boolean.toString(request.saveWatermarked()));

@@ -1,15 +1,15 @@
 {
   "schemaVersion": 1,
-  "productVersion": "1.0.2",
-  "databaseSchemaVersion": 50,
+  "productVersion": "1.0.3",
+  "databaseSchemaVersion": 52,
   "combinations": [
     {
-      "backend": "1.0.2",
-      "web": "1.0.2",
-      "appVersionCodeRange": { "minimum": 101, "maximum": 101 },
-      "databaseSchema": 50,
+      "backend": "1.0.3",
+      "web": "1.0.3",
+      "appVersionCodeRange": { "minimum": 101, "maximum": 102 },
+      "databaseSchema": 52,
       "status": "CANDIDATE_UNVERIFIED",
-      "notes": "PC/API 1.0.2 candidate with APP 1.0.1 versionCode 101 compatibility; formal signing, Windows and database drills remain required."
+      "notes": "LeanTPM 1.0.3 candidate with APP versionCode 101-102 and V52 customer-feedback fixes; formal signing, Windows and database drills remain required."
     },
     {
       "backend": "1.0.0",

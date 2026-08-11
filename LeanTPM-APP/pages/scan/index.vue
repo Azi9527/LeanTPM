@@ -3,7 +3,7 @@
 		<view class="scanner-card">
 			<view class="scan-frame"><view/><view/><view/><view/><text>▦</text></view>
 			<text class="title">扫描设备二维码</text>
-			<text class="hint">将每台设备的 LeanTPM 二维码放入取景框，识别后进入设备现场页。</text>
+			<text class="hint">{{ taskId ? `请扫描“${expectedEquipmentName || '任务设备'}”的 LeanTPM 二维码，校验通过后进入点检。` : '将每台设备的 LeanTPM 二维码放入取景框，识别后进入设备现场页。' }}</text>
 			<!-- #ifndef H5 -->
 			<button class="primary" :loading="scanning" @click="scan">打开相机扫码</button>
 			<!-- #endif -->
@@ -22,12 +22,25 @@
 
 <script setup>
 	import { ref } from 'vue'
+	import { onLoad } from '@dcloudio/uni-app'
+	import { inspectionApi } from '../../api/inspection.js'
+	import { mobileApi } from '../../api/mobile.js'
 	import { ROUTES, navigateTo, routeWithQuery } from '../../constants/routes.js'
 	import { requireEquipmentToken } from '../../utils/equipment-token.js'
+	import { equipmentScanErrorMessage, errorMessage } from '../../utils/errors.js'
+	import { scannedEquipmentMatchesTask } from '../../utils/inspection-navigation.js'
 	import AppBottomNav from '../../components/AppBottomNav.vue'
 
 	const scanning = ref(false)
+	const validating = ref(false)
 	const manualValue = ref('')
+	const taskId = ref(0)
+	const expectedEquipmentName = ref('')
+
+	onLoad((query) => {
+		taskId.value = Number(query?.taskId || 0)
+		expectedEquipmentName.value = String(query?.equipmentName || '')
+	})
 
 	function scan() {
 		if (scanning.value) return
@@ -35,7 +48,7 @@
 		uni.scanCode({
 			onlyFromCamera: true,
 			scanType: ['qrCode'],
-			success: (result) => openValue(result.result),
+			success: (result) => void openValue(result.result),
 			fail: (error) => {
 				if (!String(error?.errMsg || '').includes('cancel')) uni.showToast({ title: '扫码失败，请重试', icon: 'none' })
 			},
@@ -43,13 +56,34 @@
 		})
 	}
 
-	function openValue(value) {
+	async function openValue(value) {
+		if (validating.value) return
+		validating.value = true
 		try {
 			const token = requireEquipmentToken(value)
+			if (taskId.value > 0) {
+				let detail
+				try { detail = await inspectionApi.task(taskId.value) }
+				catch (cause) {
+					return uni.showModal({ title: '无法加载任务', content: errorMessage(cause, '任务加载失败'), showCancel: false })
+				}
+				const context = await mobileApi.equipment(token)
+				const task = detail.task
+				if (!scannedEquipmentMatchesTask(task, context?.equipment)) {
+					const scannedName = context?.equipment?.equipmentName || '当前设备'
+					return uni.showModal({
+						title: '设备不匹配',
+						content: `本任务要求扫描“${task.equipmentName || expectedEquipmentName.value || task.equipmentId}”，当前扫描的是“${scannedName}”。`,
+						showCancel: false
+					})
+				}
+				navigateTo(routeWithQuery('/pages/inspection/detail', { id: taskId.value }))
+				return
+			}
 			navigateTo(routeWithQuery(ROUTES.equipmentContext, { token }))
 		} catch (error) {
-			uni.showModal({ title: '无法识别', content: error.message, showCancel: false })
-		}
+			uni.showModal({ title: '无法识别', content: equipmentScanErrorMessage(error), showCancel: false })
+		} finally { validating.value = false }
 	}
 </script>
 

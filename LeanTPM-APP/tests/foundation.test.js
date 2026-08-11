@@ -20,7 +20,13 @@ const {
 const { createIdempotencyKey } = await import('../utils/idempotency.js')
 const { brandingLogoSource, normalizeBranding } = await import('../utils/branding.js')
 const { reportPeriodRange } = await import('../utils/report-period.js')
-const { inspectionTodoRows } = await import('../utils/inspection-todos.js')
+const { inspectionTaskListQuery, inspectionTodoRows } = await import('../utils/inspection-todos.js')
+const { equipmentManagementRows, equipmentTaskPreview } = await import('../utils/equipment-context.js')
+const {
+	inspectionTaskTarget,
+	scannedEquipmentMatchesTask,
+	taskRequiresEquipmentScan
+} = await import('../utils/inspection-navigation.js')
 const { extractEquipmentToken, requireEquipmentToken } = await import('../utils/equipment-token.js')
 const { applyNumericAbnormalState, initialResultDraft, inferAbnormal, validateInspectionResults, buildInspectionPayload } = await import('../utils/inspection-results.js')
 const { saveDraftEnvelope, loadDraftEnvelope, queuePhoto, attachQueuedPhotoToDraft, listQueuedPhotos, removeDraftEnvelope } = await import('../stores/offline.js')
@@ -28,6 +34,7 @@ const { listRecentEquipment, rememberEquipment } = await import('../stores/recen
 const { choosePhoto, choosePhotos, formatBusinessDateTime, normalizePhotoPolicy, watermarkLines } = await import('../platform/photo.js')
 const { compareVersionCodes } = await import('../utils/version.js')
 const { ApiError, equipmentScanErrorMessage, errorMessage, isConflict } = await import('../utils/errors.js')
+const { inspectionConflictResolution, rebaseInspectionDraft } = await import('../utils/inspection-conflict.js')
 const secureStorage = await import('../platform/secure-storage.js')
 const storage = await import('../platform/storage.js')
 
@@ -64,6 +71,18 @@ test('defaults to the production cloud while retaining test presets and manual U
 		normalizeServerBaseUrl(SERVER_PRESETS[0].url),
 		'http://8.163.66.164/api/v1'
 	)
+})
+
+test('keeps overdue unfinished tasks visible in the pending inspection tab', () => {
+	assert.deepEqual(inspectionTaskListQuery('PENDING'), { statusGroup: 'PENDING' })
+	assert.deepEqual(inspectionTaskListQuery('OVERDUE'), { taskStatus: 'OVERDUE' })
+	assert.deepEqual(inspectionTaskListQuery('IN_PROGRESS'), { taskStatus: 'IN_PROGRESS' })
+	assert.deepEqual(inspectionTaskListQuery('COMPLETED'), {
+		statusGroup: 'COMPLETED',
+		sortBy: 'completedTime',
+		sortDirection: 'DESC'
+	})
+	assert.deepEqual(inspectionTaskListQuery(''), {})
 })
 
 test('persists the exact API base URL used by subsequent login requests', () => {
@@ -166,6 +185,61 @@ test('orders active inspection todos for direct execution', () => {
 	]
 	assert.deepEqual(inspectionTodoRows(rows).map((task) => task.id), [2, 1, 3])
 	assert.deepEqual(inspectionTodoRows(rows, 2).map((task) => task.id), [2, 1])
+})
+
+test('shows only customer-approved equipment management fields', () => {
+	const rows = equipmentManagementRows({
+		organizationName: '磨浮车间',
+		locationName: '二层',
+		primaryResponsibleUserName: '张三',
+		model: 'KYF-100m³',
+		lifecycleStatus: 'IN_SERVICE',
+		equipmentTagNames: '关键设备',
+		description: '主浮选设备',
+		statusStartTime: '2026-08-10T13:07:00',
+		updatedTime: '2026-08-10T10:37:00',
+		specification: '100m³',
+		brand: '旧品牌',
+		manufacturer: '旧厂家',
+		factorySerialNumber: 'SN-01',
+		assetNumber: 'ASSET-01',
+		productionDate: '2025-01-01',
+		commissioningDate: '2025-02-01',
+		oeeEnabled: true
+	})
+	assert.deepEqual(rows.map((row) => row.label), [
+		'所属组织', '安装位置', '设备负责人', '型号', '生命周期', '设备标识', '备注'
+	])
+	assert.doesNotMatch(rows.map((row) => row.label).join(','), /状态时间|档案更新时间|规格|品牌|制造商|出厂编号|资产编号|生产日期|投产日期|OEE/)
+})
+
+test('limits the equipment context to one actionable task while preserving the total', () => {
+	const tasks = [{ taskId: 1 }, { taskId: 2 }, { taskId: 3 }]
+	assert.deepEqual(equipmentTaskPreview(tasks), {
+		total: 3,
+		visible: [{ taskId: 1 }],
+		hasMore: true
+	})
+})
+
+test('requires unfinished inspection tasks to scan the assigned equipment first', () => {
+	const pending = { id: 9, taskStatus: 'PENDING', equipmentId: 18, equipmentName: '浮选机' }
+	assert.equal(taskRequiresEquipmentScan(pending), true)
+	assert.equal(taskRequiresEquipmentScan({ ...pending, taskStatus: 'COMPLETED' }), false)
+	assert.deepEqual(inspectionTaskTarget(pending), {
+		url: '/pages/scan/index?taskId=9&equipmentId=18&equipmentName=%E6%B5%AE%E9%80%89%E6%9C%BA',
+		requiresScan: true
+	})
+	assert.equal(
+		inspectionTaskTarget({ ...pending, id: undefined, taskId: 9 }).url,
+		'/pages/scan/index?taskId=9&equipmentId=18&equipmentName=%E6%B5%AE%E9%80%89%E6%9C%BA'
+	)
+	assert.deepEqual(inspectionTaskTarget({ ...pending, taskStatus: 'COMPLETED' }), {
+		url: '/pages/inspection/detail?id=9',
+		requiresScan: false
+	})
+	assert.equal(scannedEquipmentMatchesTask(pending, { equipmentId: 18 }), true)
+	assert.equal(scannedEquipmentMatchesTask(pending, { equipmentId: 19 }), false)
 })
 
 test('extracts LeanTPM equipment tokens from labels and URLs', () => {
@@ -273,6 +347,7 @@ test('normalizes configurable photo retention and watermark templates', () => {
 	assert.deepEqual(
 		normalizePhotoPolicy({ watermarkEnabled: false, saveOriginal: false, saveWatermarked: true }),
 		{
+			allowAlbumSelection: false,
 			watermarkEnabled: false,
 			saveOriginal: true,
 			saveWatermarked: false,
@@ -288,6 +363,29 @@ test('normalizes configurable photo retention and watermark templates', () => {
 		{ template: '{brand} / {equipmentCode}\n{capturedAt} / {executor}', position: 'TOP' }
 	)
 	assert.deepEqual(lines, ['客户矿业 / P-01', '2026-08-05 09:08:07 / 001'])
+})
+
+test('keeps editable inspection drafts after conflicts and rebases them to the server version', () => {
+	const conflict = new ApiError('OPTIMISTIC_LOCK_CONFLICT', '数据已被更新', 409)
+	assert.deepEqual(
+		inspectionConflictResolution(conflict, { taskStatus: 'IN_PROGRESS' }),
+		{ completed: false, preserveDraft: true, rotateIdempotencyKey: true }
+	)
+	assert.deepEqual(
+		rebaseInspectionDraft(
+			{ taskVersion: 2, payload: { taskVersion: 2, results: [{ taskItemId: 1, textValue: '保留本地值', version: 4 }] } },
+			3,
+			[{ id: 1, result: { version: 5 } }]
+		),
+		{ taskVersion: 3, payload: { taskVersion: 3, results: [{ taskItemId: 1, textValue: '保留本地值', version: 5 }] } }
+	)
+	assert.equal(
+		inspectionConflictResolution(
+			new ApiError('INSPECTION_TASK_ALREADY_SUBMITTED', '任务已提交', 409),
+			{ taskStatus: 'COMPLETED' }
+		).completed,
+		true
+	)
 })
 
 test('enforces minimum Android version codes', () => {

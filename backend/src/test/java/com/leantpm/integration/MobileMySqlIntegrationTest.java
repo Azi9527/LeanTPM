@@ -80,7 +80,7 @@ class MobileMySqlIntegrationTest {
         assertThat(bootstrap.draftRetentionDays()).isEqualTo(7);
         assertThat(bootstrap.maxUploadMb()).isEqualTo(10);
         assertThat(bootstrap.photoPolicy().clockSkewWarningSeconds()).isEqualTo(300);
-        assertThat(bootstrap.androidVersion().minimumVersionCode()).isEqualTo(2);
+        assertThat(bootstrap.androidVersion().minimumVersionCode()).isEqualTo(101);
         assertThat(bootstrap.equipmentStatus().total()).isEqualTo(8);
         assertThat(bootstrap.inspection()).isNotNull();
         assertThat(bootstrap.inspectionAbnormal()).isNotNull();
@@ -259,6 +259,67 @@ class MobileMySqlIntegrationTest {
         assertThat(bootstrap.equipmentStatus().total()).isEqualTo(expectedEquipmentCount);
         assertThat(context.equipment().equipmentId()).isEqualTo(1L);
         assertThat(context.equipment().organizationName()).isNotBlank();
+    }
+
+    @Test
+    void teamEmployeeCanScanTheDirectParentTreeButNotItsSiblingBranch() {
+        long lineId = 9580L;
+        long siblingLineId = 9581L;
+        long teamId = 9582L;
+        long siblingTeamId = 9583L;
+        long outsideTeamId = 9584L;
+        long teamUserId = 9585L;
+        long lineUserId = 9586L;
+        String allowedToken = "c".repeat(64);
+        String deniedToken = "d".repeat(64);
+        jdbc.update("""
+                INSERT INTO organization
+                    (id, tenant_id, parent_id, organization_code, organization_name,
+                     organization_type, status, created_by, updated_by)
+                VALUES
+                    (?, 1, 3, 'MOBILE-LINE-A', '扫码范围一工段', 'LINE', 1, 1, 1),
+                    (?, 1, 3, 'MOBILE-LINE-B', '扫码范围二工段', 'LINE', 1, 1, 1),
+                    (?, 1, ?, 'MOBILE-TEAM-A1', '扫码范围一班', 'TEAM', 1, 1, 1),
+                    (?, 1, ?, 'MOBILE-TEAM-A2', '扫码范围二班', 'TEAM', 1, 1, 1),
+                    (?, 1, ?, 'MOBILE-TEAM-B1', '扫码范围外部班组', 'TEAM', 1, 1, 1)
+                """, lineId, siblingLineId, teamId, lineId,
+                siblingTeamId, lineId, outsideTeamId, siblingLineId);
+        jdbc.update("""
+                INSERT INTO system_user
+                    (id, tenant_id, username, password_hash, real_name,
+                     organization_id, status, mobile_enabled, must_change_password)
+                VALUES
+                    (?, 1, 'mobile_team_parent_it', 'not-used', '班组父级扫码测试',
+                     ?, 1, 1, 0),
+                    (?, 1, 'mobile_line_descendant_it', 'not-used', '工段下级扫码测试',
+                     ?, 1, 1, 0)
+                """, teamUserId, teamId, lineUserId, lineId);
+        jdbc.update("""
+                INSERT INTO system_user_role (tenant_id, user_id, role_id)
+                SELECT 1, ?, id FROM system_role
+                WHERE tenant_id = 1 AND role_code = 'OPERATOR' AND deleted = 0
+                """, teamUserId);
+        jdbc.update("""
+                INSERT INTO system_user_role (tenant_id, user_id, role_id)
+                SELECT 1, ?, id FROM system_role
+                WHERE tenant_id = 1 AND role_code = 'OPERATOR' AND deleted = 0
+                """, lineUserId);
+        insertScopedEquipment(9587L, "MOBILE-SCOPE-ALLOWED", siblingTeamId, allowedToken);
+        insertScopedEquipment(9588L, "MOBILE-SCOPE-DENIED", outsideTeamId, deniedToken);
+
+        authenticate(teamUserId, "mobile_team_parent_it", Set.of("OPERATOR"));
+        assertThat(service.equipment(allowedToken).equipment().equipmentId()).isEqualTo(9587L);
+        assertThatThrownBy(() -> service.equipment(deniedToken))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code")
+                .isEqualTo("MOBILE_EQUIPMENT_DATA_SCOPE_DENIED");
+
+        authenticate(lineUserId, "mobile_line_descendant_it", Set.of("OPERATOR"));
+        assertThat(service.equipment(allowedToken).equipment().equipmentId()).isEqualTo(9587L);
+        assertThatThrownBy(() -> service.equipment(deniedToken))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code")
+                .isEqualTo("MOBILE_EQUIPMENT_DATA_SCOPE_DENIED");
     }
 
     @Test
@@ -478,6 +539,30 @@ class MobileMySqlIntegrationTest {
                     (tenant_id, task_id, user_id, sort_order, primary_flag, created_by)
                 VALUES (1, ?, ?, 2, 0, ?)
                 """, id, USER_ID, USER_ID);
+    }
+
+    private void insertScopedEquipment(
+            long equipmentId,
+            String equipmentCode,
+            long organizationId,
+            String token
+    ) {
+        jdbc.update("""
+                INSERT INTO equipment
+                    (id, tenant_id, equipment_code, equipment_name, category_id,
+                     organization_id, location_id, lifecycle_stage, status,
+                     created_by, updated_by)
+                SELECT ?, tenant_id, ?, ?, category_id,
+                       ?, location_id, 'IN_SERVICE', 1, ?, ?
+                FROM equipment
+                WHERE tenant_id = 1 AND id = 1
+                """, equipmentId, equipmentCode, equipmentCode, organizationId, USER_ID, USER_ID);
+        jdbc.update("""
+                INSERT INTO equipment_barcode
+                    (tenant_id, equipment_id, access_token, barcode_type,
+                     active_slot, generated_by)
+                VALUES (1, ?, ?, 'QR', 1, ?)
+                """, equipmentId, token, USER_ID);
     }
 
     private void authenticate() {

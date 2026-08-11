@@ -1,5 +1,5 @@
 <template>
-	<view class="page" :style="$brandTheme()">
+	<view class="page" :class="{ expanded: managementExpanded }" :style="$brandTheme()">
 		<view v-if="loading && !context" class="loading">正在读取设备信息…</view>
 		<view v-if="error && !context" class="error-card">
 			<text class="error-title">无法查看设备</text><text>{{ error }}</text>
@@ -14,57 +14,31 @@
 			</view>
 
 			<view class="detail-card">
-				<text class="section-title">管理信息</text>
-				<view><text>所属组织</text><text>{{ context.equipment.organizationName || '未设置' }}</text></view>
-				<view><text>安装位置</text><text>{{ context.equipment.locationName || '未设置' }}</text></view>
-				<view><text>设备负责人</text><text>{{ context.equipment.responsibleName || '未设置' }}</text></view>
-				<view><text>状态开始</text><text>{{ dateTime(context.equipment.statusSince) }}</text></view>
-				<view><text>档案更新时间</text><text>{{ dateTime(context.equipment.updatedTime) }}</text></view>
+				<view class="section-head management-head" @click="managementExpanded = !managementExpanded">
+					<text class="section-title">管理信息</text>
+					<text class="collapse-label">{{ managementExpanded ? '收起' : '展开' }}</text>
+				</view>
+				<template v-if="managementExpanded">
+					<view v-for="row in managementRows" :key="row.label"><text>{{ row.label }}</text><text>{{ row.value }}</text></view>
+				</template>
 			</view>
 
-			<view class="detail-card">
-				<text class="section-title">技术与资产档案</text>
-				<view><text>型号</text><text>{{ displayValue(context.equipment.model) }}</text></view>
-				<view><text>规格</text><text>{{ displayValue(context.equipment.specification) }}</text></view>
-				<view><text>品牌</text><text>{{ displayValue(context.equipment.brand) }}</text></view>
-				<view><text>制造商</text><text>{{ displayValue(context.equipment.manufacturer) }}</text></view>
-				<view><text>出厂编号</text><text>{{ displayValue(context.equipment.factorySerialNumber) }}</text></view>
-				<view><text>资产编号</text><text>{{ displayValue(context.equipment.assetNumber) }}</text></view>
-				<view><text>生产日期</text><text>{{ dateOnly(context.equipment.productionDate) }}</text></view>
-				<view><text>投产日期</text><text>{{ dateOnly(context.equipment.commissioningDate) }}</text></view>
-				<view><text>生命周期</text><text>{{ lifecycleLabel(context.equipment.lifecycleStage) }}</text></view>
-				<view><text>设备标识</text><text>{{ equipmentTags(context.equipment) }}</text></view>
-				<view><text>纳入 OEE</text><text>{{ yesNo(context.equipment.oeeEnabled) }}</text></view>
-				<view v-if="context.equipment.description"><text>设备说明</text><text>{{ context.equipment.description }}</text></view>
-			</view>
-
-			<view class="action-card">
+			<view class="action-card compact-action">
 				<text class="section-title">现场作业</text>
 				<button class="primary report-primary" :loading="quickReporting" :disabled="!context.inspectionSchemes.length || !canDirectReport" @click="openQuickReport">直接点检报告</button>
-				<button v-if="canCreateTask" class="secondary-action" :disabled="!context.inspectionSchemes.length" @click="openCreate">自定义创建点检任务</button>
-				<button class="disabled" disabled>设备保养（尚未开发）</button>
-				<button class="disabled" disabled>故障报修（尚未开发）</button>
 				<text v-if="!context.inspectionSchemes.length" class="tip">当前没有已启用且已发布的点检模板</text>
 				<text v-else-if="!canDirectReport" class="tip">当前账号没有点检执行权限，请联系班组长或管理员</text>
 			</view>
 
-			<view class="scheme-card">
-				<view class="section-head"><text class="section-title">可用点检模板</text><text>{{ context.inspectionSchemes.length }}</text></view>
-				<view v-for="scheme in context.inspectionSchemes" :key="scheme.schemeVersionId" class="scheme-row">
-					<view><text>{{ scheme.schemeName }}</text><text>{{ scheme.schemeCode }} · {{ inspectionTypeLabel(scheme.inspectionType) }}</text></view>
-					<text>已发布</text>
-				</view>
-				<text v-if="!context.inspectionSchemes.length" class="empty compact">暂无可用点检模板</text>
-			</view>
-
 			<view class="task-card">
-				<view class="section-head"><text class="section-title">我的可执行任务</text><text>{{ context.activeTasks.length }}</text></view>
-				<view v-for="task in context.activeTasks" :key="`${task.workflowType}-${task.taskId}`" class="task" @click="openTask(task)">
+				<view class="section-head"><text class="section-title">我的可执行点检</text><text>{{ taskPreview.total }}</text></view>
+				<view v-for="task in taskPreview.visible" :key="`${task.workflowType}-${task.taskId}`" class="task" @click="openTask(task)">
 					<text :class="['task-type', { maintenance: task.workflowType !== 'INSPECTION' }]">{{ task.workflowType === 'INSPECTION' ? '点检' : '保养' }}</text>
 					<view><text class="task-code">{{ task.taskCode }}</text><text class="task-name">{{ task.schemeName }}</text><text class="due">截止 {{ dateTime(task.dueTime) }}</text></view>
 					<text>›</text>
 				</view>
-				<text v-if="!context.activeTasks.length" class="empty">当前没有分派给你的未关闭任务</text>
+				<text v-if="!taskPreview.total" class="empty compact">当前没有分派给你的未关闭任务</text>
+				<text v-if="taskPreview.hasMore" class="all-tasks" @click="openAllTasks">查看全部 {{ taskPreview.total }} 项任务 ›</text>
 			</view>
 		</template>
 
@@ -129,12 +103,15 @@
 	import { createIdempotencyKey } from '../../utils/idempotency.js'
 	import { equipmentScanErrorMessage, errorMessage } from '../../utils/errors.js'
 	import { requireEquipmentToken } from '../../utils/equipment-token.js'
+	import { equipmentManagementRows, equipmentTaskPreview } from '../../utils/equipment-context.js'
+	import { inspectionTaskTarget } from '../../utils/inspection-navigation.js'
 	import { rememberEquipment } from '../../stores/recent-equipment.js'
 
 	const token = ref('')
 	const context = ref(null)
 	const loading = ref(false)
 	const error = ref('')
+	const managementExpanded = ref(false)
 	const createVisible = ref(false)
 	const creating = ref(false)
 	const quickVisible = ref(false)
@@ -154,7 +131,11 @@
 	const teamLabels = computed(() => ['不指定班组'].concat(context.value?.teams?.map((item) => item.teamName) || []))
 	const canCreateTask = computed(() => can('inspection:task:create'))
 	const canDirectReport = computed(() => can('inspection:task:execute'))
-	const lifecycleLabels = { PLANNED: '计划中', IN_SERVICE: '在役', IDLE: '闲置', RETIRED: '已退役', SCRAPPED: '已报废' }
+	const managementRows = computed(() => equipmentManagementRows(context.value?.equipment))
+	const taskPreview = computed(() => equipmentTaskPreview(
+		(context.value?.activeTasks || []).filter((task) => task.workflowType === 'INSPECTION'),
+		1
+	))
 
 	onLoad((query) => {
 		try { token.value = requireEquipmentToken(query?.token) } catch (cause) { error.value = cause.message; return }
@@ -168,16 +149,7 @@
 		return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
 	}
 	function dateTime(value) { return value ? String(value).replace('T', ' ').slice(0, 16) : '—' }
-	function dateOnly(value) { return value ? String(value).slice(0, 10) : '未设置' }
 	function displayValue(value) { return String(value || '').trim() || '未设置' }
-	function lifecycleLabel(value) { return lifecycleLabels[value] || displayValue(value) }
-	function yesNo(value) { return value === true ? '是' : value === false ? '否' : '未设置' }
-	function equipmentTags(equipment) {
-		const tags = []
-		if (equipment.criticalFlag) tags.push('关键设备')
-		if (equipment.specialFlag) tags.push('特种设备')
-		return tags.join('、') || '普通设备'
-	}
 	function inspectionTypeLabel(value) { return value === 'PROFESSIONAL' ? '专业点检' : value === 'ROUTINE' ? '日常点检' : displayValue(value) }
 
 	async function load() {
@@ -290,33 +262,43 @@
 
 	function openTask(task) {
 		if (task.workflowType !== 'INSPECTION') return uni.showToast({ title: '设备保养尚未开发', icon: 'none' })
-		navigateTo(routeWithQuery('/pages/inspection/detail', { id: task.taskId }))
+		navigateTo(inspectionTaskTarget({
+			...task,
+			id: task.taskId,
+			equipmentId: context.value?.equipment?.equipmentId,
+			equipmentName: context.value?.equipment?.equipmentName
+		}).url)
 	}
+	function openAllTasks() { navigateTo('/pages/inspection/index') }
 </script>
 
 <style>
-	.page { min-height: 100vh; padding: 24rpx 26rpx 70rpx; background: #f4f7f5; }
+	.page { box-sizing: border-box; height: 100vh; overflow: hidden; padding: 14rpx 20rpx 22rpx; background: #f4f7f5; }
+	.page.expanded { height: auto; min-height: 100vh; overflow: visible; padding-bottom: 50rpx; }
 	.loading, .empty { padding: 70rpx 20rpx; color: #89938e; text-align: center; font-size: 25rpx; }
 	.error-card { padding: 40rpx 30rpx; border-radius: 24rpx; color: #7a4a4d; background: #fff; text-align: center; }
 	.error-card text { display: block; margin-bottom: 18rpx; }
 	.error-title { color: #a00008; font-size: 32rpx; font-weight: 800; }
-	.hero { padding: 36rpx 32rpx; border-radius: 27rpx; color: #fff; background: linear-gradient(140deg, #183e30, var(--brand-primary, #1c7d50)); }
+	.hero { padding: 22rpx 26rpx; border-radius: 22rpx; color: #fff; background: linear-gradient(140deg, #183e30, var(--brand-primary, #1c7d50)); }
 	.hero-line { display: flex; align-items: center; justify-content: space-between; }
 	.code { font-family: monospace; font-size: 24rpx; opacity: .76; }
 	.status { padding: 8rpx 18rpx; border-radius: 24rpx; background: rgba(255,255,255,.18); font-size: 22rpx; }
 	.equipment-name, .category { display: block; }
-	.equipment-name { margin-top: 18rpx; font-size: 39rpx; font-weight: 800; }
+	.equipment-name { margin-top: 10rpx; font-size: 34rpx; font-weight: 800; }
 	.category { margin-top: 9rpx; font-size: 23rpx; opacity: .72; }
-	.detail-card, .action-card, .task-card, .scheme-card { margin-top: 21rpx; padding: 29rpx; border-radius: 24rpx; background: #fff; box-shadow: 0 10rpx 34rpx rgba(25,53,42,.06); }
+	.detail-card, .action-card, .task-card, .scheme-card { margin-top: 13rpx; padding: 19rpx 22rpx; border-radius: 20rpx; background: #fff; box-shadow: 0 8rpx 26rpx rgba(25,53,42,.05); }
 	.detail-card .section-title { display: block; margin-bottom: 10rpx; }
-	.detail-card view { display: flex; justify-content: space-between; gap: 20rpx; padding: 16rpx 0; border-bottom: 1rpx solid #edf1ef; font-size: 24rpx; }
+	.detail-card .management-head { padding-top: 0; cursor: pointer; }
+	.detail-card .management-head .section-title { margin-bottom: 0; }
+	.detail-card .management-head .collapse-label { color: var(--brand-primary, #1c7d50); }
+	.detail-card view { display: flex; justify-content: space-between; gap: 20rpx; padding: 10rpx 0; border-bottom: 1rpx solid #edf1ef; font-size: 22rpx; }
 	.detail-card view:last-child { border: 0; }
 	.detail-card view text:first-child { color: #88938d; }
 	.detail-card view text:last-child { color: #31483e; text-align: right; }
 	.section-title { color: #213e32; font-size: 30rpx; font-weight: 750; }
-	.action-card button { margin-top: 20rpx; border-radius: 16rpx; font-size: 26rpx; }
+	.action-card button { margin-top: 12rpx; border-radius: 14rpx; font-size: 25rpx; }
 	.primary { color: #fff; background: var(--brand-primary, #1c7d50); }
-	.report-primary { min-height: 94rpx; font-size: 30rpx !important; font-weight: 800; box-shadow: 0 12rpx 28rpx rgba(28,125,80,.22); }
+	.report-primary { min-height: 72rpx; font-size: 28rpx !important; font-weight: 800; box-shadow: 0 8rpx 20rpx rgba(28,125,80,.18); }
 	.secondary-action { color: var(--brand-primary, #1c7d50); border: 2rpx solid var(--brand-primary, #1c7d50); background: #fff; }
 	.disabled { color: #9ca5a0; background: #eef1f0; }
 	.tip { display: block; margin-top: 15rpx; color: #b0760e; font-size: 22rpx; }
@@ -329,7 +311,8 @@
 	.scheme-row view text:last-child { margin-top: 7rpx; color: #84908a; font-size: 21rpx; }
 	.scheme-row > text { flex: none; padding: 7rpx 13rpx; border-radius: 18rpx; color: #176f47; background: #e6f5ed; font-size: 20rpx; }
 	.empty.compact { display: block; padding: 35rpx 10rpx 12rpx; }
-	.task { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 17rpx; padding: 24rpx 0; border-top: 1rpx solid #edf1ef; }
+	.task { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 14rpx; padding: 14rpx 0 8rpx; border-top: 1rpx solid #edf1ef; }
+	.all-tasks { display: block; padding-top: 10rpx; color: var(--brand-primary, #1c7d50); text-align: right; font-size: 22rpx; }
 	.task-type { padding: 12rpx; border-radius: 12rpx; color: #147145; background: #e5f6ed; font-size: 22rpx; }
 	.task-type.maintenance { color: #9e6709; background: #fff3df; }
 	.task-code, .task-name, .due { display: block; }

@@ -28,6 +28,7 @@ export interface PhotoCaptureContext {
 }
 
 export interface PhotoWatermarkPolicy {
+  allowAlbumSelection: boolean
   watermarkEnabled: boolean
   saveOriginal: boolean
   saveWatermarked: boolean

@@ -590,10 +590,12 @@ public class InspectionTaskService {
                     "INSPECTION_RESULT_REQUIRED_MISSING", "必填点检项目尚未完整填写"
             );
         }
-        if (mapper.countInvalidResultAttachments(current.tenantId(), id) > 0) {
+        List<InspectionMapper.ResultAttachmentValidationRow> attachmentViolations =
+                mapper.findInvalidResultAttachments(current.tenantId(), id);
+        if (!attachmentViolations.isEmpty()) {
             throw new BusinessException(
                     "INSPECTION_RESULT_PHOTO_INVALID",
-                    "点检照片数量、大小或文件类型不符合项目配置"
+                    attachmentValidationMessage(attachmentViolations.getFirst())
             );
         }
         int taskPhotoCount = mapper.countTaskSubmissionPhotos(current.tenantId(), id);
@@ -636,6 +638,30 @@ public class InspectionTaskService {
                 "INSPECTION_TASK", id, "SUBMIT", task,
                 mapper.findTask(current.tenantId(), id, DataPermission.all(current.userId()))
         );
+    }
+
+    static String attachmentValidationMessage(
+            InspectionMapper.ResultAttachmentValidationRow violation
+    ) {
+        List<String> reasons = new ArrayList<>();
+        if (violation.actualCount() < violation.minimumCount()) {
+            reasons.add("至少需要 " + violation.minimumCount()
+                    + " 张照片，当前 " + violation.actualCount() + " 张");
+        }
+        if (violation.actualCount() > violation.maximumCount()) {
+            reasons.add("最多允许 " + violation.maximumCount()
+                    + " 张照片，当前 " + violation.actualCount() + " 张");
+        }
+        if (violation.oversizedCount() > 0) {
+            reasons.add(violation.oversizedCount() + " 张照片超过单张 "
+                    + violation.maximumSizeMb() + " MB");
+        }
+        if (violation.unsupportedTypeCount() > 0) {
+            reasons.add(violation.unsupportedTypeCount() + " 张照片类型不支持（允许 "
+                    + violation.allowedTypes() + "）");
+        }
+        return "第 " + violation.sortOrder() + " 项「" + violation.itemName()
+                + "」：" + String.join("；", reasons);
     }
 
     private void persistDraft(

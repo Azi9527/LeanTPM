@@ -90,6 +90,58 @@
         </choose>
     </sql>
 
+    <select id="inspectionScanOrganizationIds" resultType="long">
+        WITH RECURSIVE inspection_scan_seed AS (
+            SELECT CASE
+                       WHEN own.organization_type = 'TEAM' AND own.parent_id IS NOT NULL
+                           THEN own.parent_id
+                       ELSE own.id
+                       END AS id
+            FROM system_user scoped_user
+            JOIN organization own
+              ON own.tenant_id = scoped_user.tenant_id
+             AND own.id = scoped_user.organization_id
+             AND own.status = 1
+             AND own.deleted = 0
+            WHERE scoped_user.tenant_id = #{tenantId}
+              AND scoped_user.id = #{userId}
+              AND scoped_user.status = 1
+              AND scoped_user.deleted = 0
+            UNION
+            SELECT CASE
+                       WHEN membership_team.organization_type = 'TEAM'
+                            AND membership_team.parent_id IS NOT NULL
+                           THEN membership_team.parent_id
+                       ELSE membership_team.id
+                       END AS id
+            FROM system_user_team_membership membership
+            JOIN organization membership_team
+              ON membership_team.tenant_id = membership.tenant_id
+             AND membership_team.id = membership.team_organization_id
+             AND membership_team.status = 1
+             AND membership_team.deleted = 0
+            WHERE membership.tenant_id = #{tenantId}
+              AND membership.user_id = #{userId}
+              AND membership.deleted = 0
+        ), inspection_scan_roots AS (
+            SELECT organization_row.id
+            FROM organization organization_row
+            JOIN inspection_scan_seed seed ON seed.id = organization_row.id
+            WHERE organization_row.tenant_id = #{tenantId}
+              AND organization_row.status = 1
+              AND organization_row.deleted = 0
+            UNION ALL
+            SELECT child.id
+            FROM organization child
+            JOIN inspection_scan_roots parent ON child.parent_id = parent.id
+            WHERE child.tenant_id = #{tenantId}
+              AND child.status = 1
+              AND child.deleted = 0
+        )
+        SELECT DISTINCT id
+        FROM inspection_scan_roots
+    </select>
+
     <select id="mobileEnabled" resultType="boolean">
         SELECT mobile_enabled
         FROM system_user

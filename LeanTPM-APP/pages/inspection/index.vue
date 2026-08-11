@@ -4,7 +4,7 @@
 			<view v-for="item in tabs" :key="item.value" :class="['tab', { active: activeStatus === item.value }]" @click="selectStatus(item.value)">{{ item.label }}</view>
 		</scroll-view>
 		<view v-if="error" class="error" @click="load">{{ error }} · 点击重试</view>
-		<view v-for="task in rows" :key="task.id" class="task-card" @click="openTask(task.id)">
+		<view v-for="task in rows" :key="task.id" class="task-card" @click="openTask(task)">
 			<view class="task-head"><text class="code">{{ task.taskCode }}</text><text :class="['status', task.taskStatus.toLowerCase()]">{{ statusLabel(task.taskStatus) }}</text></view>
 			<text class="equipment">{{ task.equipmentName }}</text>
 			<text class="scheme">{{ task.schemeNameSnapshot }}</text>
@@ -28,6 +28,8 @@
 	import { inspectionApi } from '../../api/inspection.js'
 	import { ROUTES, navigateTo, routeWithQuery } from '../../constants/routes.js'
 	import { errorMessage } from '../../utils/errors.js'
+	import { inspectionTaskTarget } from '../../utils/inspection-navigation.js'
+	import { inspectionTaskListQuery } from '../../utils/inspection-todos.js'
 	import AppBottomNav from '../../components/AppBottomNav.vue'
 
 	const tabs = [
@@ -56,23 +58,25 @@
 		if (loading.value) return
 		loading.value = true; error.value = ''
 		try {
-			const completed = activeStatus.value === 'COMPLETED'
 			const result = await inspectionApi.tasks({
-				taskStatus: completed ? undefined : (activeStatus.value || undefined),
-				statusGroup: completed ? 'COMPLETED' : undefined,
-				sortBy: completed ? 'completedTime' : undefined,
-				sortDirection: completed ? 'DESC' : undefined,
+				...inspectionTaskListQuery(activeStatus.value),
 				mineOnly: true,
 				page: 1,
 				pageSize: 100
 			})
 			rows.value = result?.records || []
-			if (initialTaskId > 0) { const id = initialTaskId; initialTaskId = 0; openTask(id) }
+			if (initialTaskId > 0) {
+				const id = initialTaskId
+				initialTaskId = 0
+				const task = rows.value.find((row) => Number(row.id) === id)
+				if (task) openTask(task)
+				else openTask((await inspectionApi.task(id)).task)
+			}
 		} catch (cause) { error.value = errorMessage(cause, '点检任务加载失败') }
 		finally { loading.value = false }
 	}
 
-	function openTask(id) { navigateTo(routeWithQuery('/pages/inspection/detail', { id })) }
+	function openTask(task) { navigateTo(inspectionTaskTarget(task).url) }
 </script>
 
 <style>

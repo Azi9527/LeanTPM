@@ -82,6 +82,7 @@ export function formatBusinessDateTime(value = new Date()) {
 }
 
 export const DEFAULT_PHOTO_POLICY = Object.freeze({
+	allowAlbumSelection: false,
 	watermarkEnabled: true,
 	saveOriginal: true,
 	saveWatermarked: true,
@@ -94,6 +95,7 @@ export const DEFAULT_PHOTO_POLICY = Object.freeze({
 
 export function normalizePhotoPolicy(policy = {}) {
 	const normalized = { ...DEFAULT_PHOTO_POLICY, ...(policy || {}) }
+	normalized.allowAlbumSelection = normalized.allowAlbumSelection === true
 	normalized.watermarkEnabled = normalized.watermarkEnabled !== false
 	normalized.saveOriginal = normalized.saveOriginal !== false
 	normalized.saveWatermarked = normalized.watermarkEnabled && normalized.saveWatermarked !== false

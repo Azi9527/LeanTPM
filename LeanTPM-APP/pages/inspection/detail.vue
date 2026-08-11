@@ -103,6 +103,7 @@
 	import { displayName } from '../../stores/session.js'
 	import { createIdempotencyKey } from '../../utils/idempotency.js'
 	import { errorMessage, isConflict } from '../../utils/errors.js'
+	import { inspectionConflictResolution, rebaseInspectionDraft } from '../../utils/inspection-conflict.js'
 	import { applyNumericAbnormalState, buildInspectionPayload, initialResultDraft, resultOptions, validateInspectionResults } from '../../utils/inspection-results.js'
 
 	const taskId = ref(0)
@@ -170,13 +171,21 @@
 			localAttachments.value = listQueuedPhotos().filter((item) => item.workflow === 'inspection' && item.taskId === taskId.value).map((item) => ({ id: `queued:${item.id}`, taskItemId: item.taskItemId, originalName: '离线现场照片.jpg', fileSize: 0, createdTime: item.createdAt, localPath: item.watermarkedPath || item.originalPath, contentType: 'image/jpeg' }))
 			void loadTaskPhotoPreviews()
 			const local = loadDraftEnvelope('inspection', taskId.value)
-			if (local && local.taskVersion === result.task.version) {
-				applyLocalPayload(local.payload)
-				pendingSubmit.value = Boolean(local.pendingSubmit)
-				submitKey.value = local.idempotencyKey || submitKey.value
-				localSavedAt.value = local.updatedAt || ''
-				uni.showToast({ title: local.pendingSubmit ? '已恢复待提交草稿' : '已恢复本地草稿', icon: 'none' })
-			} else if (local) removeDraftEnvelope('inspection', taskId.value)
+			if (local && executable.value) {
+				const rebased = rebaseInspectionDraft(local, result.task.version, result.items)
+				applyLocalPayload(rebased.payload)
+				pendingSubmit.value = Boolean(rebased.pendingSubmit)
+				submitKey.value = rebased.idempotencyKey || submitKey.value
+				localSavedAt.value = rebased.updatedAt || ''
+				uni.showToast({
+					title: local.taskVersion === result.task.version
+						? (local.pendingSubmit ? '已恢复待提交草稿' : '已恢复本地草稿')
+						: '任务已更新，本地草稿已保留',
+					icon: 'none'
+				})
+			} else if (local) {
+				removeDraftEnvelope('inspection', taskId.value)
+			}
 			restoreQueuedAttachmentIds()
 			if (executable.value) {
 				for (const item of result.items) if (item.resultType === 'NUMBER') applyNumericAbnormalState(item, drafts[item.id])
@@ -380,6 +389,7 @@
 	}
 
 	function choosePhotoSource() {
+		if (!effectivePhotoPolicy.value.allowAlbumSelection) return Promise.resolve('camera')
 		return new Promise((resolve) => {
 			uni.showActionSheet({
 				itemList: ['相机拍照', '从手机相册选择'],
@@ -442,8 +452,29 @@
 			await load()
 		} catch (cause) {
 			if (isConflict(cause)) {
-				uni.showModal({ title: '任务状态已变化', content: '其他执行人员可能已完成该任务，将刷新为最新结果。', showCancel: false })
-				await load()
+				let latest = null
+				try { latest = await inspectionApi.task(taskId.value) } catch {}
+				const resolution = inspectionConflictResolution(cause, latest?.task)
+				if (resolution.completed) {
+					removeDraftEnvelope('inspection', taskId.value)
+					pendingSubmit.value = false
+					await load()
+					uni.showModal({ title: '任务已完成', content: '任务已由执行人员完成，已刷新为服务端最新结果。', showCancel: false })
+				} else {
+					if (latest) {
+						const local = loadDraftEnvelope('inspection', taskId.value)
+						const rebased = rebaseInspectionDraft(local, latest.task.version, latest.items)
+						detail.value = latest
+						if (rebased) applyLocalPayload(rebased.payload)
+						submitKey.value = createIdempotencyKey(`inspection-${taskId.value}`)
+						persistLocal(submit)
+					}
+					uni.showModal({
+						title: '任务尚未完成',
+						content: `${errorMessage(cause)}；本地草稿已保留${latest ? '并已同步最新任务版本，可再次提交' : '，请稍后重试'}`,
+						showCancel: false
+					})
+				}
 			} else uni.showModal({ title: submit ? '提交失败' : '保存失败', content: `${errorMessage(cause)}；本地草稿仍保留`, showCancel: false })
 		} finally { saving.value = false }
 	}

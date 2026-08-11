@@ -39,7 +39,7 @@ class ImportTemplateContractTest {
              var oee = workbook(oeeImportService().template());
              var inspection = workbook(inspectionImportService().template())) {
             assertHeaders(equipment.getSheetAt(0),
-                    "*设备名称", "*分类编码", "*组织编码");
+                    "*设备名称", "*设备分类", "*所属组织");
             assertHeaders(users.getSheet("用户导入"),
                     "*账号", "*姓名", "*组织编码", "*角色编码列表", "*处理策略");
             assertThat(headers(oee.getSheet("OEE数据")))
@@ -47,6 +47,21 @@ class ImportTemplateContractTest {
             assertHeaders(inspection.getSheet("点检项目"),
                     "*项目编码", "*项目名称", "*点检内容", "*点检标准", "*结果类型");
             assertThat(inspection.getSheet("填写规范")).isNotNull();
+        }
+    }
+
+    @Test
+    void equipmentTemplateUsesChineseBusinessTermsAndExamples() throws Exception {
+        try (var workbook = workbook(equipmentService().importTemplate())) {
+            Sheet sheet = workbook.getSheet("设备导入模板");
+            List<String> headers = headers(sheet);
+            assertThat(headers).contains(
+                    "*设备分类", "*所属组织", "物理位置", "主负责人", "生命周期"
+            );
+            assertThat(value(sheet, headers, "设备分类")).isEqualTo("生产设备");
+            assertThat(value(sheet, headers, "生命周期")).isEqualTo("在役");
+            assertThat(workbook.getSheet("填写规范")).isNotNull();
+            assertThat(workbook.getSheet("设备分类参考")).isNotNull();
         }
     }
 

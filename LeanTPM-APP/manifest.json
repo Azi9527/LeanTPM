@@ -2,8 +2,8 @@
     "name" : "大宝山矿业LeanTPM",
     "appid" : "__UNI__CEE59D0",
     "description" : "LeanTPM精益设备管理移动端",
-    "versionName" : "1.0.1",
-    "versionCode" : "101",
+    "versionName" : "1.0.3",
+    "versionCode" : "102",
     "transformPx" : false,
     /* 5+App特有相关 */
     "app-plus" : {

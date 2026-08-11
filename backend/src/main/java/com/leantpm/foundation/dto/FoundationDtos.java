@@ -71,6 +71,7 @@ public final class FoundationDtos {
     }
 
     public record PhotoWatermarkSettings(
+            boolean allowAlbumSelection,
             boolean watermarkEnabled,
             boolean saveOriginal,
             boolean saveWatermarked,
@@ -83,6 +84,7 @@ public final class FoundationDtos {
     }
 
     public record SavePhotoWatermarkSettingsRequest(
+            Boolean allowAlbumSelection,
             @NotNull Boolean watermarkEnabled,
             @NotNull Boolean saveOriginal,
             @NotNull Boolean saveWatermarked,

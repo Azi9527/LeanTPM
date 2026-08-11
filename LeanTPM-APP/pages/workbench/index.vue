@@ -62,7 +62,7 @@
 		<view class="section">
 			<view class="section-header" @click="openInspections"><text>我的待办</text><text class="section-link">{{ todoTotal }} 项 · 查看全部</text></view>
 			<view class="todo-card">
-				<view v-for="task in todoRows" :key="task.id" class="todo-row" @click="openTask(task.id)">
+				<view v-for="task in todoRows" :key="task.id" class="todo-row" @click="openTask(task)">
 					<view class="todo-main">
 						<view class="todo-title"><text>{{ task.equipmentName }}</text><text :class="['todo-status', task.taskStatus.toLowerCase()]">{{ taskStatusLabel(task.taskStatus) }}</text></view>
 						<text class="todo-scheme">{{ task.schemeNameSnapshot }}</text>
@@ -108,6 +108,7 @@
 	import { checkAndroidUpgrade } from '../../utils/version.js'
 	import { errorMessage, isServiceUnavailable } from '../../utils/errors.js'
 	import { inspectionTodoRows } from '../../utils/inspection-todos.js'
+	import { inspectionTaskTarget } from '../../utils/inspection-navigation.js'
 	import AppBottomNav from '../../components/AppBottomNav.vue'
 	import { pendingWorkCount } from '../../stores/offline.js'
 	import { listRecentEquipment } from '../../stores/recent-equipment.js'
@@ -175,7 +176,7 @@
 
 	function taskStatusLabel(status) { return taskLabels[status] || status }
 	function dateTime(value) { return value ? String(value).replace('T', ' ').slice(0, 16) : '—' }
-	function openTask(id) { navigateTo(routeWithQuery('/pages/inspection/detail', { id })) }
+	function openTask(task) { navigateTo(inspectionTaskTarget(task).url) }
 	function openRecentEquipment(item) { navigateTo(routeWithQuery(ROUTES.equipmentContext, { token: item.token })) }
 
 	function openProfile() { navigateTo(ROUTES.profile) }

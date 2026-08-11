@@ -31,6 +31,11 @@ public interface MobileMapper {
             @Param("scope") DataPermission scope
     );
 
+    List<Long> inspectionScanOrganizationIds(
+            @Param("tenantId") long tenantId,
+            @Param("userId") long userId
+    );
+
     MobileDtos.AbnormalCount inspectionAbnormalCount(
             @Param("tenantId") long tenantId,
             @Param("userId") long userId

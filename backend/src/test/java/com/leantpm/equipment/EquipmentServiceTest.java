@@ -13,15 +13,23 @@ import com.leantpm.security.CurrentUser;
 import com.leantpm.security.datascope.DataPermission;
 import com.leantpm.security.datascope.DataPermissionService;
 import com.leantpm.system.audit.ChangeLogService;
+import org.apache.poi.ss.usermodel.CellStyle;
+import org.apache.poi.ss.usermodel.CreationHelper;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.mock.web.MockMultipartFile;
 
 import java.awt.Color;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -167,6 +175,266 @@ class EquipmentServiceTest {
         assertThat(new MultiFormatReader().decode(bitmap).getText()).isEqualTo(content);
         Color center = new Color(qrCode.getRGB(240, 240), true);
         assertThat(center.getGreen()).isGreaterThan(center.getRed());
+    }
+
+    @Test
+    void normalizesNewChineseImportTermsWhileKeepingLegacyHeadersAndCodes() {
+        assertThat(EquipmentService.canonicalImportHeader("*分类编码")).isEqualTo("设备分类");
+        assertThat(EquipmentService.canonicalImportHeader("负责人账号")).isEqualTo("主负责人");
+        assertThat(EquipmentService.normalizeCategoryCode("生产设备")).isEqualTo("PRODUCTION");
+        assertThat(EquipmentService.normalizeCategoryCode("PUMP")).isEqualTo("PUMP");
+        assertThat(EquipmentService.normalizeLifecycleStage("在役")).isEqualTo("IN_SERVICE");
+        assertThat(EquipmentService.normalizeLifecycleStage("IN_SERVICE")).isEqualTo("IN_SERVICE");
+    }
+
+    @Test
+    void reportsTheExactImportFieldBeforeAnOversizedValueCanReachTheDatabase() {
+        EquipmentDtos.SaveEquipmentRequest request = new EquipmentDtos.SaveEquipmentRequest(
+                "EQ-1", "测试设备", 1L, "M".repeat(101), null, null, null, null,
+                null, null, 1L, null, null, null, "IN_SERVICE",
+                false, false, true, true, null, List.of(), List.of(), null
+        );
+
+        assertThatThrownBy(() -> EquipmentService.validateImportRequest(request))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(error -> assertThat(EquipmentService.importErrorField(
+                        (BusinessException) error)).isEqualTo("型号"));
+    }
+
+    @Test
+    void validatesEveryFieldBeforeWritingAnyEquipment() throws Exception {
+        MockMultipartFile workbook = importWorkbook(
+                List.of("设备编码", "设备名称", "设备分类", "所属组织", "型号",
+                        "生产日期", "投产日期", "关键设备"),
+                List.of("EQ-INVALID", "", "不存在分类", "不存在组织", "M".repeat(101),
+                        "2026-02-30", "不是日期", "不确定")
+        );
+
+        EquipmentDtos.ImportResult result = service.importWorkbook(workbook);
+
+        assertThat(result.importedRows()).isZero();
+        assertThat(result.errors())
+                .extracting(EquipmentDtos.ImportError::field)
+                .contains("设备名称", "设备分类", "所属组织", "型号", "生产日期", "投产日期", "关键设备");
+        verify(mapper, never()).insertEquipment(anyLong(), any(), any(), anyLong());
+    }
+
+    @Test
+    void rejectsTheWholeWorkbookWhenAValidRowPrecedesAnInvalidRow() throws Exception {
+        when(mapper.findCategoryByCode(1L, "PRODUCTION"))
+                .thenReturn(new EquipmentMapper.LookupRow(10L, "生产设备", 1));
+        when(mapper.findOrganizationByCode(1L, "WORKSHOP-A"))
+                .thenReturn(new EquipmentMapper.LookupRow(20L, "一车间", 1));
+        when(mapper.findEquipmentIdByCode(1L, "EQ-VALID")).thenReturn(100L);
+        MockMultipartFile workbook = importWorkbookRows(
+                List.of("设备编码", "设备名称", "设备分类", "所属组织", "投产日期"),
+                List.of(
+                        List.of("EQ-VALID", "合法设备", "生产设备", "WORKSHOP-A", "2026-08-11"),
+                        List.of("EQ-INVALID", "错误设备", "不存在分类", "WORKSHOP-A", "2026-08-11")
+                )
+        );
+
+        EquipmentDtos.ImportResult result = service.importWorkbook(workbook);
+
+        assertThat(result.importedRows()).isZero();
+        assertThat(result.errors())
+                .extracting(EquipmentDtos.ImportError::rowNumber, EquipmentDtos.ImportError::field)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple(3, "设备分类"));
+        verify(mapper, never()).insertEquipment(anyLong(), any(), any(), anyLong());
+        org.mockito.Mockito.verifyNoInteractions(changeLogService);
+    }
+
+    @Test
+    void reportsEveryWorkbookDuplicateCodeAndWritesNothing() throws Exception {
+        when(mapper.findCategoryByCode(1L, "PRODUCTION"))
+                .thenReturn(new EquipmentMapper.LookupRow(10L, "生产设备", 1));
+        when(mapper.findOrganizationByCode(1L, "WORKSHOP-A"))
+                .thenReturn(new EquipmentMapper.LookupRow(20L, "一车间", 1));
+        MockMultipartFile workbook = importWorkbookRows(
+                List.of("设备编码", "设备名称", "设备分类", "所属组织"),
+                List.of(
+                        List.of("EQ-DUPLICATE", "设备一", "生产设备", "WORKSHOP-A"),
+                        List.of("EQ-DUPLICATE", "设备二", "生产设备", "WORKSHOP-A")
+                )
+        );
+
+        EquipmentDtos.ImportResult result = service.importWorkbook(workbook);
+
+        assertThat(result.importedRows()).isZero();
+        assertThat(result.errors())
+                .extracting(EquipmentDtos.ImportError::rowNumber, EquipmentDtos.ImportError::field)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(2, "设备编码"),
+                        org.assertj.core.groups.Tuple.tuple(3, "设备编码")
+                );
+        verify(mapper, never()).insertEquipment(anyLong(), any(), any(), anyLong());
+    }
+
+    @Test
+    void reportsAnExistingDatabaseCodeDuringPrevalidationAndWritesNothing() throws Exception {
+        when(mapper.findCategoryByCode(1L, "PRODUCTION"))
+                .thenReturn(new EquipmentMapper.LookupRow(10L, "生产设备", 1));
+        when(mapper.findOrganizationByCode(1L, "WORKSHOP-A"))
+                .thenReturn(new EquipmentMapper.LookupRow(20L, "一车间", 1));
+        when(mapper.countEquipmentCode(1L, "EQ-EXISTS", null)).thenReturn(1);
+        MockMultipartFile workbook = importWorkbook(
+                List.of("设备编码", "设备名称", "设备分类", "所属组织"),
+                List.of("EQ-EXISTS", "已存在设备", "生产设备", "WORKSHOP-A")
+        );
+
+        EquipmentDtos.ImportResult result = service.importWorkbook(workbook);
+
+        assertThat(result.importedRows()).isZero();
+        assertThat(result.errors())
+                .extracting(EquipmentDtos.ImportError::rowNumber, EquipmentDtos.ImportError::field)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple(2, "设备编码"));
+        verify(mapper, never()).insertEquipment(anyLong(), any(), any(), anyLong());
+        org.mockito.Mockito.verifyNoInteractions(changeLogService);
+    }
+
+    @Test
+    void acceptsSlashSeparatedAndNativeExcelDatesDuringWholeWorkbookValidation() throws Exception {
+        when(mapper.findCategoryByCode(1L, "PRODUCTION"))
+                .thenReturn(new EquipmentMapper.LookupRow(10L, "生产设备", 1));
+        when(mapper.findOrganizationByCode(1L, "WORKSHOP-A"))
+                .thenReturn(new EquipmentMapper.LookupRow(20L, "一车间", 1));
+        MockMultipartFile slashDate = importWorkbook(
+                List.of("设备编码", "设备名称", "设备分类", "所属组织", "投产日期", "关键设备"),
+                List.of("EQ-SLASH", "斜杠日期设备", "生产设备", "WORKSHOP-A", "2026/08/11", "不确定")
+        );
+        MockMultipartFile nativeDate = nativeDateWorkbook();
+
+        EquipmentDtos.ImportResult slashResult = service.importWorkbook(slashDate);
+        EquipmentDtos.ImportResult nativeResult = service.importWorkbook(nativeDate);
+
+        assertThat(slashResult.errors())
+                .extracting(EquipmentDtos.ImportError::field)
+                .containsExactly("关键设备");
+        assertThat(nativeResult.errors())
+                .extracting(EquipmentDtos.ImportError::field)
+                .containsExactly("关键设备");
+        verify(mapper, never()).insertEquipment(anyLong(), any(), any(), anyLong());
+    }
+
+    @Test
+    void parsesEveryDocumentedTextDateToTheExactSameDay() {
+        LocalDate expected = LocalDate.of(2026, 8, 11);
+
+        assertThat(EquipmentService.parseImportDate("2026-08-11", "投产日期"))
+                .isEqualTo(expected);
+        assertThat(EquipmentService.parseImportDate("2026/8/11", "投产日期"))
+                .isEqualTo(expected);
+        assertThat(EquipmentService.parseImportDate("2026.08.11", "投产日期"))
+                .isEqualTo(expected);
+        assertThat(EquipmentService.parseImportDate("2026年8月11日", "投产日期"))
+                .isEqualTo(expected);
+        assertThatThrownBy(() -> EquipmentService.parseImportDate("2026/02/30", "投产日期"))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code")
+                .isEqualTo("IMPORT_DATE_INVALID");
+    }
+
+    @Test
+    void rejectsAnUnformattedNumericDateCellWithItsExactField() throws Exception {
+        when(mapper.findCategoryByCode(1L, "PRODUCTION"))
+                .thenReturn(new EquipmentMapper.LookupRow(10L, "生产设备", 1));
+        when(mapper.findOrganizationByCode(1L, "WORKSHOP-A"))
+                .thenReturn(new EquipmentMapper.LookupRow(20L, "一车间", 1));
+
+        EquipmentDtos.ImportResult result = service.importWorkbook(numericDateWorkbook());
+
+        assertThat(result.importedRows()).isZero();
+        assertThat(result.errors())
+                .extracting(EquipmentDtos.ImportError::rowNumber, EquipmentDtos.ImportError::field)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple(2, "投产日期"));
+        verify(mapper, never()).insertEquipment(anyLong(), any(), any(), anyLong());
+    }
+
+    private MockMultipartFile importWorkbook(List<String> headers, List<String> values)
+            throws IOException {
+        return importWorkbookRows(headers, List.of(values));
+    }
+
+    private MockMultipartFile importWorkbookRows(List<String> headers, List<List<String>> rows)
+            throws IOException {
+        try (XSSFWorkbook workbook = new XSSFWorkbook();
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            var sheet = workbook.createSheet("设备台账");
+            var header = sheet.createRow(0);
+            for (int index = 0; index < headers.size(); index++) {
+                header.createCell(index).setCellValue(headers.get(index));
+            }
+            for (int rowIndex = 0; rowIndex < rows.size(); rowIndex++) {
+                var row = sheet.createRow(rowIndex + 1);
+                List<String> values = rows.get(rowIndex);
+                for (int columnIndex = 0; columnIndex < values.size(); columnIndex++) {
+                    row.createCell(columnIndex).setCellValue(values.get(columnIndex));
+                }
+            }
+            workbook.write(output);
+            return new MockMultipartFile(
+                    "file", "设备台账.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    output.toByteArray()
+            );
+        }
+    }
+
+    private MockMultipartFile nativeDateWorkbook() throws IOException {
+        try (XSSFWorkbook workbook = new XSSFWorkbook();
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            var sheet = workbook.createSheet("设备台账");
+            var header = sheet.createRow(0);
+            List<String> headers = List.of(
+                    "设备编码", "设备名称", "设备分类", "所属组织", "投产日期", "关键设备"
+            );
+            for (int index = 0; index < headers.size(); index++) {
+                header.createCell(index).setCellValue(headers.get(index));
+            }
+            var row = sheet.createRow(1);
+            row.createCell(0).setCellValue("EQ-NATIVE-DATE");
+            row.createCell(1).setCellValue("原生日期设备");
+            row.createCell(2).setCellValue("生产设备");
+            row.createCell(3).setCellValue("WORKSHOP-A");
+            row.createCell(4).setCellValue(LocalDate.of(2026, 8, 11));
+            CreationHelper helper = workbook.getCreationHelper();
+            CellStyle dateStyle = workbook.createCellStyle();
+            dateStyle.setDataFormat(helper.createDataFormat().getFormat("yyyy/m/d"));
+            row.getCell(4).setCellStyle(dateStyle);
+            row.createCell(5).setCellValue("不确定");
+            workbook.write(output);
+            return new MockMultipartFile(
+                    "file", "设备台账-原生日期.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    output.toByteArray()
+            );
+        }
+    }
+
+    private MockMultipartFile numericDateWorkbook() throws IOException {
+        try (XSSFWorkbook workbook = new XSSFWorkbook();
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            var sheet = workbook.createSheet("设备台账");
+            var header = sheet.createRow(0);
+            List<String> headers = List.of(
+                    "设备编码", "设备名称", "设备分类", "所属组织", "投产日期"
+            );
+            for (int index = 0; index < headers.size(); index++) {
+                header.createCell(index).setCellValue(headers.get(index));
+            }
+            var row = sheet.createRow(1);
+            row.createCell(0).setCellValue("EQ-NUMERIC-DATE");
+            row.createCell(1).setCellValue("普通数字日期设备");
+            row.createCell(2).setCellValue("生产设备");
+            row.createCell(3).setCellValue("WORKSHOP-A");
+            row.createCell(4).setCellValue(45515);
+            workbook.write(output);
+            return new MockMultipartFile(
+                    "file", "设备台账-普通数字日期.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    output.toByteArray()
+            );
+        }
     }
 
     private EquipmentDtos.EquipmentRow equipment() {

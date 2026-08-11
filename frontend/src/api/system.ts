@@ -184,6 +184,7 @@ export interface ParameterRow {
 }
 
 export interface PhotoWatermarkSettings {
+  allowAlbumSelection: boolean
   watermarkEnabled: boolean
   saveOriginal: boolean
   saveWatermarked: boolean

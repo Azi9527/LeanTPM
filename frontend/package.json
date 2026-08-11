@@ -1,9 +1,10 @@
 {
   "name": "leantpm-frontend",
   "private": true,
-  "version": "1.0.2",
+  "version": "1.0.3",
   "type": "module",
   "scripts": {
+    "test": "node --experimental-strip-types --test \"tests/*.test.mjs\" \"tests/*.test.ts\"",
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
     "typecheck": "vue-tsc -b",

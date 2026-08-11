@@ -4,6 +4,41 @@ All notable LeanTPM changes are recorded here. Product versions follow SemVer; d
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-08-11
+
+### Added
+
+- Inspection schemes can be viewed, copied and safely deleted with active-plan protection.
+- Inspection item categories use a tenant dictionary with six Chinese defaults.
+- Mobile photo-source policy can disable album selection centrally.
+
+### Changed
+
+- Mobile inspection tasks require an authoritative equipment scan before execution.
+- Equipment context is condensed for mobile use, while expanded management information remains scrollable.
+- Equipment Excel import performs whole-workbook prevalidation, reports all row and field errors together, and accepts common Chinese and numeric date formats.
+- Mobile equipment access includes the parent scope for team users and descendant equipment for higher-level organizations without changing the shared PC data-permission resolver.
+
+### Fixed
+
+- Inspection submission identifies the exact item and attachment-rule failure and ignores photo requirements for skipped items.
+- Optimistic conflicts preserve local drafts and merge current task and result versions before retry.
+- Pending inspection lists include overdue assigned tasks consistently with the workbench.
+
+### Database
+
+- Upgrade path is V50 to V52 through checksum-locked V51 and V52 migrations.
+- V51 seeds inspection item category dictionaries; V52 seeds customer-feedback configuration defaults.
+
+### Operations
+
+- Product and APP versionName are 1.0.3; Android versionCode is 102 and the minimum supported code remains 101.
+- Production Flyway remains disabled in the business service; migrations require the approved short-lived migrator workflow.
+
+### Rollback
+
+- V50 to V52 is classified `RECOVERY_REQUIRED`; application rollback requires restoration of the verified V50 backup before the previous Backend starts.
+
 ## [1.0.2] - 2026-08-11
 
 ### Added

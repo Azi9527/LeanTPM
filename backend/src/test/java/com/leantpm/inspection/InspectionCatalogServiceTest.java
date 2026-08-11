@@ -15,6 +15,8 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Set;
 
@@ -22,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -131,6 +134,87 @@ class InspectionCatalogServiceTest {
                 ArgumentCaptor.forClass(InspectionDtos.SaveItemRequest.class);
         verify(mapper).insertItem(anyLong(), requestCaptor.capture(), anyString(), anyLong());
         assertThat(requestCaptor.getValue().organizationId()).isNull();
+    }
+
+    @Test
+    void returnsSixBusinessCategoryDefaultsWhenDictionaryIsUnavailable() {
+        when(mapper.findItemCategories(1L)).thenReturn(List.of());
+
+        assertThat(service.itemCategories())
+                .extracting(InspectionDtos.ItemCategoryOption::value)
+                .containsExactly(
+                        "TRANSMISSION", "LUBRICATION", "FASTENING",
+                        "ELECTRICAL", "SAFETY", "OTHER"
+                );
+    }
+
+    @Test
+    void rejectsDeletingAnEnabledScheme() {
+        when(mapper.findScheme(1L, 42L)).thenReturn(scheme(1, 0));
+
+        assertThatThrownBy(() -> service.deleteScheme(42L, 3))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code")
+                .isEqualTo("INSPECTION_SCHEME_ENABLED");
+
+        verify(mapper, never()).softDeleteScheme(anyLong(), anyLong(), anyInt(), anyLong());
+    }
+
+    @Test
+    void rejectsDeletingASchemeWithActivePlans() {
+        when(mapper.findScheme(1L, 42L)).thenReturn(scheme(0, 2));
+
+        assertThatThrownBy(() -> service.deleteScheme(42L, 3))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code")
+                .isEqualTo("INSPECTION_SCHEME_IN_USE");
+
+        verify(mapper, never()).softDeleteScheme(anyLong(), anyLong(), anyInt(), anyLong());
+    }
+
+    @Test
+    void softDeletesOnlyADisabledSchemeWithoutActivePlans() {
+        InspectionDtos.SchemeRow before = scheme(0, 0);
+        when(mapper.findScheme(1L, 42L)).thenReturn(before);
+        when(mapper.softDeleteScheme(1L, 42L, 3, 7L)).thenReturn(1);
+
+        service.deleteScheme(42L, 3);
+
+        verify(mapper).softDeleteScheme(1L, 42L, 3, 7L);
+        verify(changeLogService).record("INSPECTION_SCHEME", 42L, "DELETE", before, null);
+    }
+
+    @Test
+    void rejectsReactivatingAPlanAfterItsSchemeWasDeleted() {
+        when(mapper.findPlan(anyLong(), anyLong(), any())).thenReturn(plan("PAUSED"));
+        when(mapper.findScheme(1L, 42L)).thenReturn(null);
+
+        assertThatThrownBy(() -> service.updatePlanStatus(
+                88L, new InspectionDtos.UpdatePlanStatusRequest("ACTIVE", null, 2)
+        ))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code")
+                .isEqualTo("INSPECTION_SCHEME_NOT_FOUND");
+
+        verify(mapper, never()).updatePlanStatus(anyLong(), anyLong(), any(), anyLong());
+    }
+
+    private InspectionDtos.SchemeRow scheme(int status, int activePlanCount) {
+        return new InspectionDtos.SchemeRow(
+                42L, "ISP-001", "测试方案", "DAILY", 101L, 1, "PUBLISHED",
+                "DAILY", 1, LocalTime.of(8, 0), 4, 1, activePlanCount,
+                status, "测试", 3
+        );
+    }
+
+    private InspectionDtos.PlanRow plan(String status) {
+        return new InspectionDtos.PlanRow(
+                88L, 42L, "ISP-001", "测试方案", 1,
+                9L, "EQ-001", "测试设备", 10L, "测试部门", "测试位置",
+                "DAILY", 1, LocalTime.of(8, 0), 60, null,
+                7L, "测试用户", LocalDate.of(2026, 8, 12), null,
+                status, "暂停", 2
+        );
     }
 
     private InspectionDtos.SaveItemRequest request(

@@ -6,6 +6,7 @@ import com.leantpm.equipment.EquipmentService;
 import com.leantpm.security.CurrentUser;
 import com.leantpm.security.datascope.DataPermissionService;
 import org.apache.ibatis.session.SqlSession;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -15,10 +16,13 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -351,5 +355,67 @@ class EquipmentMySqlIntegrationTest {
                 equipmentId
         );
         assertThat(stored).isEqualByComparingTo("11.5");
+    }
+
+    @Test
+    void importPrevalidationKeepsAValidFirstRowOutWhenTheSecondRowIsInvalid()
+            throws IOException {
+        String categoryCode = jdbc.queryForObject(
+                "SELECT category_code FROM equipment_category WHERE tenant_id = 1 AND id = 3",
+                String.class
+        );
+        String organizationCode = jdbc.queryForObject(
+                "SELECT organization_code FROM organization WHERE tenant_id = 1 AND id = 4",
+                String.class
+        );
+        MockMultipartFile workbook = equipmentImportWorkbook(
+                categoryCode, organizationCode
+        );
+
+        EquipmentDtos.ImportResult result = service.importWorkbook(workbook);
+
+        assertThat(result.importedRows()).isZero();
+        assertThat(result.errors())
+                .extracting(EquipmentDtos.ImportError::rowNumber, EquipmentDtos.ImportError::field)
+                .contains(org.assertj.core.groups.Tuple.tuple(3, "设备分类"));
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM equipment
+                WHERE tenant_id = 1 AND equipment_code IN ('EQ-ATOMIC-VALID', 'EQ-ATOMIC-INVALID')
+                """, Long.class)).isZero();
+    }
+
+    private MockMultipartFile equipmentImportWorkbook(
+            String categoryCode,
+            String organizationCode
+    ) throws IOException {
+        try (XSSFWorkbook workbook = new XSSFWorkbook();
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            var sheet = workbook.createSheet("设备台账");
+            var header = sheet.createRow(0);
+            List<String> headers = List.of(
+                    "设备编码", "设备名称", "设备分类", "所属组织", "投产日期"
+            );
+            for (int index = 0; index < headers.size(); index++) {
+                header.createCell(index).setCellValue(headers.get(index));
+            }
+            List<List<String>> rows = List.of(
+                    List.of("EQ-ATOMIC-VALID", "原子导入合法设备", categoryCode,
+                            organizationCode, "2026/08/11"),
+                    List.of("EQ-ATOMIC-INVALID", "原子导入错误设备", "NOT-EXISTS",
+                            organizationCode, "2026-08-11")
+            );
+            for (int rowIndex = 0; rowIndex < rows.size(); rowIndex++) {
+                var row = sheet.createRow(rowIndex + 1);
+                for (int columnIndex = 0; columnIndex < rows.get(rowIndex).size(); columnIndex++) {
+                    row.createCell(columnIndex).setCellValue(rows.get(rowIndex).get(columnIndex));
+                }
+            }
+            workbook.write(output);
+            return new MockMultipartFile(
+                    "file", "设备原子导入.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    output.toByteArray()
+            );
+        }
     }
 }

@@ -21,6 +21,10 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import { errorMessage } from '@/utils/http'
 import { equipmentStatusLabel, equipmentStatusType } from '@/utils/equipment-status'
+import {
+  equipmentImportSuggestion,
+  groupEquipmentImportErrors,
+} from '@/utils/equipment-import-errors'
 import { useRoute } from 'vue-router'
 
 interface ResponsibleDraft {
@@ -54,6 +58,7 @@ const selected = ref<EquipmentRow | null>(null)
 const detail = ref<EquipmentDetail | null>(null)
 const importFile = ref<File | null>(null)
 const importResult = ref<Awaited<ReturnType<typeof equipmentApi.importWorkbook>> | null>(null)
+const importErrorGroups = computed(() => groupEquipmentImportErrors(importResult.value?.errors || []))
 
 const form = reactive({
   equipmentCode: '',
@@ -393,8 +398,12 @@ async function runImport() {
   saving.value = true
   try {
     importResult.value = await equipmentApi.importWorkbook(importFile.value)
-    ElMessage.success(`成功导入 ${importResult.value.importedRows} 台设备`)
-    await load()
+    if (importResult.value.errors.length) {
+      ElMessage.warning(`预校验发现 ${importResult.value.errors.length} 个问题，整批未导入`)
+    } else {
+      ElMessage.success(`成功导入 ${importResult.value.importedRows} 台设备`)
+      await load()
+    }
   } catch (error) {
     ElMessage.error(errorMessage(error))
   } finally {
@@ -804,7 +813,7 @@ function enabledLabel(value: unknown) {
       </template>
     </el-dialog>
 
-    <el-dialog v-model="importVisible" title="导入设备台账" width="min(700px, 94vw)">
+    <el-dialog v-model="importVisible" title="导入设备台账" width="min(920px, 96vw)">
       <el-alert
         title="请先下载模板；分类、组织、位置和负责人须使用系统中的编码或账号。"
         type="info"
@@ -822,21 +831,43 @@ function enabledLabel(value: unknown) {
           <el-button type="primary" plain>选择 Excel</el-button>
         </el-upload>
       </div>
+      <section v-if="importResult?.errors.length" class="import-error-panel" aria-live="polite">
+        <div class="import-error-summary">
+          <span class="import-error-icon" aria-hidden="true">!</span>
+          <div>
+            <h3>发现 {{ importResult.errors.length }} 个问题，涉及 {{ importErrorGroups.length }} 行</h3>
+            <p>
+              本次 {{ importResult.totalRows }} 行数据均未写入。请按 Excel 行号逐项修改，
+              移除当前文件后重新选择并预校验。
+            </p>
+          </div>
+        </div>
+        <div class="import-error-list">
+          <article v-for="group in importErrorGroups" :key="group.rowNumber" class="import-error-group">
+            <header>
+              <strong>Excel 第 {{ group.rowNumber }} 行</strong>
+              <el-tag type="danger" effect="light">{{ group.issues.length }} 个问题</el-tag>
+            </header>
+            <div v-for="(issue, index) in group.issues" :key="`${group.rowNumber}-${index}`" class="import-error-item">
+              <span class="import-error-field">{{ issue.field || '整行数据' }}</span>
+              <div>
+                <strong>{{ issue.message }}</strong>
+                <p>{{ equipmentImportSuggestion(issue) }}</p>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
       <el-result
-        v-if="importResult"
-        :icon="importResult.errors.length ? 'warning' : 'success'"
-        :title="`成功 ${importResult.importedRows} / ${importResult.totalRows} 行`"
-      >
-        <template #extra>
-          <el-table v-if="importResult.errors.length" :data="importResult.errors" max-height="240">
-            <el-table-column prop="rowNumber" label="行号" width="80" />
-            <el-table-column prop="message" label="错误原因" />
-          </el-table>
-        </template>
-      </el-result>
+        v-else-if="importResult"
+        icon="success"
+        :title="`成功导入 ${importResult.importedRows} / ${importResult.totalRows} 行`"
+      />
       <template #footer>
         <el-button @click="importVisible = false">关闭</el-button>
-        <el-button type="primary" :loading="saving" @click="runImport">开始导入</el-button>
+        <el-button type="primary" :loading="saving" @click="runImport">
+          {{ importResult?.errors.length ? '重新预校验' : '开始导入' }}
+        </el-button>
       </template>
     </el-dialog>
   </div>
@@ -896,6 +927,109 @@ function enabledLabel(value: unknown) {
   margin: 20px 0;
 }
 
+.import-error-panel {
+  display: grid;
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.import-error-summary {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 16px 18px;
+  border: 1px solid var(--el-color-danger-light-7);
+  border-radius: 12px;
+  background: var(--el-color-danger-light-9);
+}
+
+.import-error-summary h3,
+.import-error-summary p,
+.import-error-item p {
+  margin: 0;
+}
+
+.import-error-summary h3 {
+  color: var(--el-color-danger-dark-2);
+  font-size: 17px;
+}
+
+.import-error-summary p {
+  margin-top: 6px;
+  color: var(--el-text-color-regular);
+  line-height: 1.65;
+}
+
+.import-error-icon {
+  display: grid;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: var(--el-color-danger);
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.import-error-list {
+  display: grid;
+  gap: 12px;
+  max-height: 430px;
+  padding-right: 4px;
+  overflow-y: auto;
+}
+
+.import-error-group {
+  overflow: hidden;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 12px;
+  background: var(--el-bg-color);
+}
+
+.import-error-group header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: var(--el-fill-color-light);
+}
+
+.import-error-item {
+  display: grid;
+  grid-template-columns: minmax(110px, 150px) minmax(0, 1fr);
+  gap: 16px;
+  padding: 14px 16px;
+  line-height: 1.55;
+}
+
+.import-error-item + .import-error-item {
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+
+.import-error-field {
+  align-self: start;
+  padding: 3px 9px;
+  border-radius: 6px;
+  color: var(--el-color-danger-dark-2);
+  background: var(--el-color-danger-light-9);
+  font-weight: 700;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.import-error-item strong {
+  color: var(--el-text-color-primary);
+  overflow-wrap: anywhere;
+}
+
+.import-error-item p {
+  margin-top: 4px;
+  color: var(--el-text-color-secondary);
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 900px) {
   .equipment-query,
   .equipment-form {
@@ -916,6 +1050,16 @@ function enabledLabel(value: unknown) {
 
   .header-actions {
     flex-wrap: wrap;
+  }
+
+  .import-error-item {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .import-error-field {
+    justify-self: start;
+    text-align: left;
   }
 }
 </style>
