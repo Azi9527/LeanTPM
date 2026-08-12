@@ -20,6 +20,7 @@ public class AppReleaseService {
     private static final String VERSION_NAME = "mobile.android-latest-version-name";
     private static final String VERSION_CODE = "mobile.android-latest-version-code";
     private static final String MINIMUM_VERSION_CODE = "mobile.android-min-version-code";
+    private static final String FORCE_UPGRADE = "mobile.android-force-upgrade";
     private static final String RELEASE_NOTES = "mobile.android-release-notes";
     private static final String DOWNLOAD_URL = "mobile.android-download-url";
     private static final String PUBLIC_DOWNLOAD_PATH = "/public/app/android/download";
@@ -59,7 +60,8 @@ public class AppReleaseService {
             int versionCode,
             int minimumVersionCode,
             String releaseNotes,
-            boolean enabled
+            boolean enabled,
+            boolean forceUpgrade
     ) {
         validate(file, versionName, versionCode, minimumVersionCode);
         var current = SecurityUtils.currentUser();
@@ -74,6 +76,8 @@ public class AppReleaseService {
                 String.valueOf(versionCode), "INTEGER", "当前可下载 Android 内部版本号", current.userId());
         save(current.tenantId(), MINIMUM_VERSION_CODE, "Android 最低版本号",
                 String.valueOf(minimumVersionCode), "INTEGER", "低于该版本号时提示强制升级", current.userId());
+        save(current.tenantId(), FORCE_UPGRADE, "Android 强制升级",
+                String.valueOf(forceUpgrade), "BOOLEAN", "启用后所有低于最新发布版本号的 APP 必须升级", current.userId());
         save(current.tenantId(), RELEASE_NOTES, "Android 升级说明",
                 clean(releaseNotes), "STRING", "Android APP 发布说明", current.userId());
         save(current.tenantId(), DOWNLOAD_URL, "Android 下载地址",
@@ -120,6 +124,7 @@ public class AppReleaseService {
                 stringValue(tenantId, VERSION_NAME, "1.0.1"),
                 intValue(tenantId, VERSION_CODE, 101),
                 intValue(tenantId, MINIMUM_VERSION_CODE, 101),
+                booleanValue(tenantId, FORCE_UPGRADE, false),
                 attachment.originalName(),
                 attachment.fileSize(),
                 attachment.sha256(),

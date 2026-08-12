@@ -786,6 +786,13 @@ public interface InspectionMapper {
             @Param("operatorId") long operatorId
     );
 
+    int recordAbnormalMeasures(
+            @Param("tenantId") long tenantId,
+            @Param("id") long id,
+            @Param("request") InspectionDtos.RecordAbnormalMeasuresRequest request,
+            @Param("operatorId") long operatorId
+    );
+
     int verifyAbnormal(
             @Param("tenantId") long tenantId,
             @Param("id") long id,

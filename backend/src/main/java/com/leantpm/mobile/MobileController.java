@@ -1,9 +1,12 @@
 package com.leantpm.mobile;
 
 import com.leantpm.common.api.ApiResponse;
+import com.leantpm.common.api.PageResult;
 import com.leantpm.common.idempotency.Idempotent;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.validation.annotation.Validated;
@@ -48,6 +51,16 @@ public class MobileController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate
     ) {
         return ApiResponse.success(service.personalInspectionReport(startDate, endDate));
+    }
+
+    @GetMapping("/equipment-status")
+    @PreAuthorize("hasAuthority('mobile:access') and hasAuthority('mobile:scan')")
+    public ApiResponse<PageResult<MobileDtos.EquipmentStatusRow>> equipmentStatus(
+            @RequestParam(required = false) String currentStatusCode,
+            @RequestParam(defaultValue = "1") @Min(1) int page,
+            @RequestParam(defaultValue = "30") @Min(1) @Max(100) int pageSize
+    ) {
+        return ApiResponse.success(service.equipmentStatus(currentStatusCode, page, pageSize));
     }
 
     @GetMapping("/equipment/{token}")

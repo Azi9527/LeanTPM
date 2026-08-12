@@ -108,8 +108,22 @@ public final class MobileDtos {
     public record AndroidVersionPolicy(
             int minimumVersionCode,
             String latestVersionName,
+            int latestVersionCode,
+            boolean forceUpgrade,
             String downloadUrl,
             String releaseNotes
+    ) {
+    }
+
+    public record EquipmentStatusRow(
+            long id,
+            String equipmentCode,
+            String equipmentName,
+            String organizationName,
+            String locationName,
+            String currentStatusCode,
+            String primaryResponsibleName,
+            String activeBarcodeToken
     ) {
     }
 

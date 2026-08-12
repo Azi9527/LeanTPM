@@ -630,6 +630,17 @@ public class InspectionController {
         return ApiResponse.success();
     }
 
+    @PutMapping("/abnormalities/{id}/measures")
+    @Idempotent
+    @PreAuthorize("hasAuthority('inspection:abnormal:handle')")
+    public ApiResponse<Void> recordAbnormalMeasures(
+            @PathVariable long id,
+            @Valid @RequestBody InspectionDtos.RecordAbnormalMeasuresRequest request
+    ) {
+        taskService.recordAbnormalMeasures(id, request);
+        return ApiResponse.success();
+    }
+
     @PostMapping("/abnormalities/{id}/verify")
     @Idempotent
     @PreAuthorize("hasAuthority('inspection:abnormal:verify')")

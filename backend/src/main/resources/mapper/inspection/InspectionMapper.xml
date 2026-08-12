@@ -1616,7 +1616,10 @@
                abnormal.abnormal_title, abnormal.abnormal_description,
                abnormal.severity, abnormal.abnormal_status,
                responsible.real_name AS responsible_user_name,
-               abnormal.due_time, abnormal.temporary_action, abnormal.final_result,
+               abnormal.due_time, abnormal.cause_analysis, abnormal.temporary_action,
+               COALESCE(abnormal.permanent_countermeasure, abnormal.final_result)
+                   AS permanent_countermeasure,
+               abnormal.final_result,
                closer.real_name AS closed_by_name, abnormal.closed_time,
                verifier.real_name AS verified_by_name, abnormal.verified_time,
                abnormal.verification_comment, abnormal.created_time
@@ -2470,7 +2473,10 @@
         abnormal.abnormal_title, abnormal.abnormal_description, abnormal.severity,
         abnormal.abnormal_status, abnormal.responsible_user_id,
         responsible.real_name AS responsible_user_name, abnormal.due_time,
-        abnormal.temporary_action, abnormal.final_result,
+        abnormal.cause_analysis, abnormal.temporary_action,
+        COALESCE(abnormal.permanent_countermeasure, abnormal.final_result)
+            AS permanent_countermeasure,
+        abnormal.final_result,
         abnormal.requested_equipment_status, abnormal.equipment_stop_required,
         abnormal.equipment_status_changed, abnormal.repair_order_id,
         closer.real_name AS closed_by_name,
@@ -2582,10 +2588,14 @@
     <update id="handleAbnormal">
         UPDATE inspection_abnormal
         SET responsible_user_id = #{request.responsibleUserId},
-            due_time = #{request.dueTime}, temporary_action = #{request.temporaryAction},
-            final_result = #{request.finalResult},
+            due_time = #{request.dueTime}, cause_analysis = #{request.causeAnalysis},
+            temporary_action = #{request.temporaryAction},
+            permanent_countermeasure = COALESCE(#{request.permanentCountermeasure}, #{request.finalResult}),
+            final_result = COALESCE(#{request.permanentCountermeasure}, #{request.finalResult}),
             requested_equipment_status = #{request.requestedEquipmentStatus},
-            abnormal_status = #{request.targetStatus},
+            abnormal_status = CASE
+                WHEN #{request.targetStatus} IN ('PROCESSING','PENDING_VERIFY')
+                THEN #{request.targetStatus} ELSE abnormal_status END,
             closed_by = CASE WHEN #{request.targetStatus} = 'PENDING_VERIFY'
                              THEN #{operatorId} ELSE closed_by END,
             closed_time = CASE WHEN #{request.targetStatus} = 'PENDING_VERIFY'
@@ -2593,7 +2603,19 @@
             updated_by = #{operatorId}, version = version + 1
         WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0
           AND version = #{request.version}
-          AND abnormal_status IN ('OPEN','PROCESSING')
+          AND abnormal_status IN ('OPEN','PROCESSING','PENDING_VERIFY')
+    </update>
+
+    <update id="recordAbnormalMeasures">
+        UPDATE inspection_abnormal
+        SET cause_analysis = #{request.causeAnalysis},
+            temporary_action = #{request.temporaryAction},
+            permanent_countermeasure = #{request.permanentCountermeasure},
+            final_result = #{request.permanentCountermeasure},
+            updated_by = #{operatorId}, version = version + 1
+        WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0
+          AND version = #{request.version}
+          AND abnormal_status IN ('OPEN','PROCESSING','PENDING_VERIFY')
     </update>
 
     <update id="verifyAbnormal">

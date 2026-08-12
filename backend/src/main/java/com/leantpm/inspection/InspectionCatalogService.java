@@ -282,11 +282,22 @@ public class InspectionCatalogService {
         validateScheme(current.tenantId(), normalized, dataPermissionService.current(), false);
         String code = normalized.schemeCode();
         if (code == null) {
-            code = numberRuleService.generate(
-                    current.tenantId(), current.userId(), "INSPECTION_SCHEME"
-            ).businessNumber();
-        }
-        if (mapper.countSchemeCode(current.tenantId(), code, null) > 0) {
+            for (int attempt = 0; code == null && attempt < 100; attempt++) {
+                String generatedCode = numberRuleService.generate(
+                        current.tenantId(), current.userId(), "INSPECTION_SCHEME"
+                ).businessNumber();
+                if (mapper.countSchemeCode(current.tenantId(), generatedCode, null) == 0) {
+                    code = generatedCode;
+                }
+            }
+            if (code == null) {
+                throw new BusinessException(
+                        "INSPECTION_SCHEME_AUTO_CODE_EXHAUSTED",
+                        "点检方案自动编号连续冲突，请检查编号规则当前序号",
+                        HttpStatus.CONFLICT
+                );
+            }
+        } else if (mapper.countSchemeCode(current.tenantId(), code, null) > 0) {
             throw new BusinessException(
                     "INSPECTION_SCHEME_CODE_EXISTS", "点检方案编码已存在", HttpStatus.CONFLICT
             );

@@ -1,6 +1,7 @@
 package com.leantpm.integration;
 
 import com.leantpm.common.exception.BusinessException;
+import com.leantpm.common.api.PageResult;
 import com.leantpm.mobile.MobileDtos;
 import com.leantpm.mobile.MobileService;
 import com.leantpm.security.CurrentUser;
@@ -81,6 +82,8 @@ class MobileMySqlIntegrationTest {
         assertThat(bootstrap.maxUploadMb()).isEqualTo(10);
         assertThat(bootstrap.photoPolicy().clockSkewWarningSeconds()).isEqualTo(300);
         assertThat(bootstrap.androidVersion().minimumVersionCode()).isEqualTo(101);
+        assertThat(bootstrap.androidVersion().latestVersionCode()).isGreaterThanOrEqualTo(101);
+        assertThat(bootstrap.androidVersion().forceUpgrade()).isFalse();
         assertThat(bootstrap.equipmentStatus().total()).isEqualTo(8);
         assertThat(bootstrap.inspection()).isNotNull();
         assertThat(bootstrap.inspectionAbnormal()).isNotNull();
@@ -215,9 +218,17 @@ class MobileMySqlIntegrationTest {
                 """, Long.class, upperOrganizationId);
 
         MobileDtos.Bootstrap bootstrap = service.bootstrap();
+        PageResult<MobileDtos.EquipmentStatusRow> equipmentPage =
+                service.equipmentStatus(null, 1, 100);
         MobileDtos.EquipmentContext context = service.equipment(TOKEN.toUpperCase());
 
         assertThat(bootstrap.equipmentStatus().total()).isEqualTo(expectedEquipmentCount);
+        assertThat(equipmentPage.total()).isEqualTo(expectedEquipmentCount);
+        assertThat(equipmentPage.records())
+                .anySatisfy(row -> {
+                    assertThat(row.id()).isEqualTo(1L);
+                    assertThat(row.activeBarcodeToken()).isEqualTo(TOKEN);
+                });
         assertThat(context.equipment().equipmentId()).isEqualTo(1L);
     }
 
@@ -254,9 +265,15 @@ class MobileMySqlIntegrationTest {
                 """, Long.class, equipmentOrganizationId);
 
         MobileDtos.Bootstrap bootstrap = service.bootstrap();
+        PageResult<MobileDtos.EquipmentStatusRow> equipmentPage =
+                service.equipmentStatus(null, 1, 100);
         MobileDtos.EquipmentContext context = service.equipment(TOKEN.toUpperCase());
 
         assertThat(bootstrap.equipmentStatus().total()).isEqualTo(expectedEquipmentCount);
+        assertThat(equipmentPage.total()).isEqualTo(expectedEquipmentCount);
+        assertThat(equipmentPage.records())
+                .extracting(MobileDtos.EquipmentStatusRow::id)
+                .contains(1L);
         assertThat(context.equipment().equipmentId()).isEqualTo(1L);
         assertThat(context.equipment().organizationName()).isNotBlank();
     }
@@ -308,6 +325,10 @@ class MobileMySqlIntegrationTest {
         insertScopedEquipment(9588L, "MOBILE-SCOPE-DENIED", outsideTeamId, deniedToken);
 
         authenticate(teamUserId, "mobile_team_parent_it", Set.of("OPERATOR"));
+        assertThat(service.equipmentStatus(null, 1, 100).records())
+                .extracting(MobileDtos.EquipmentStatusRow::equipmentCode)
+                .contains("MOBILE-SCOPE-ALLOWED")
+                .doesNotContain("MOBILE-SCOPE-DENIED");
         assertThat(service.equipment(allowedToken).equipment().equipmentId()).isEqualTo(9587L);
         assertThatThrownBy(() -> service.equipment(deniedToken))
                 .isInstanceOf(BusinessException.class)
@@ -315,6 +336,10 @@ class MobileMySqlIntegrationTest {
                 .isEqualTo("MOBILE_EQUIPMENT_DATA_SCOPE_DENIED");
 
         authenticate(lineUserId, "mobile_line_descendant_it", Set.of("OPERATOR"));
+        assertThat(service.equipmentStatus(null, 1, 100).records())
+                .extracting(MobileDtos.EquipmentStatusRow::equipmentCode)
+                .contains("MOBILE-SCOPE-ALLOWED")
+                .doesNotContain("MOBILE-SCOPE-DENIED");
         assertThat(service.equipment(allowedToken).equipment().equipmentId()).isEqualTo(9587L);
         assertThatThrownBy(() -> service.equipment(deniedToken))
                 .isInstanceOf(BusinessException.class)

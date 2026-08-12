@@ -27,7 +27,7 @@
                                         "engine":  "mysql",
                                         "migrationTool":  "flyway",
                                         "schemaFrom":  50,
-                                        "schemaTo":  52,
+                                        "schemaTo":  53,
                                         "phase":  "MIGRATE",
                                         "backwardCompatible":  false,
                                         "requiresDowntime":  false
@@ -55,8 +55,8 @@
                       {
                           "component":  "database",
                           "path":  "database/migrations.json",
-                          "size":  2512,
-                          "sha256":  "856eed387b85652a7ced5e081a3c425703b0945784a5be5f7b7be4d27f972d0d",
+                          "size":  3522,
+                          "sha256":  "d7c2267360a7f5e0c26913322cf110b4447ddc153fefb28e30de4547fa8291ab",
                           "mediaType":  "application/json"
                       },
                       {
@@ -74,10 +74,17 @@
                           "mediaType":  "application/octet-stream"
                       },
                       {
+                          "component":  "database",
+                          "path":  "database/migrations/V53__inspection_abnormal_measures.sql",
+                          "size":  180,
+                          "sha256":  "3a18149ef84b5799b984c1c9bb8d6c14581af15865541376f0579b6d0b1cc77a",
+                          "mediaType":  "application/octet-stream"
+                      },
+                      {
                           "component":  "operations",
                           "path":  "operations/compatibility-matrix.json",
                           "size":  421,
-                          "sha256":  "7bd9a85e0d5c240e89192853407858f24c8093ccabf3d0b7852094eee8f2cf4c",
+                          "sha256":  "8dc46e5fbdfde0f627583bf405b26e89c65d9b4c101c9f99fcd634ce34785c55",
                           "mediaType":  "application/json"
                       },
                       {

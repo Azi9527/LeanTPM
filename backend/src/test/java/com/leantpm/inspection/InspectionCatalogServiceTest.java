@@ -2,6 +2,7 @@ package com.leantpm.inspection;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leantpm.common.exception.BusinessException;
+import com.leantpm.foundation.dto.FoundationDtos;
 import com.leantpm.foundation.service.NumberRuleService;
 import com.leantpm.security.CurrentUser;
 import com.leantpm.security.datascope.DataPermission;
@@ -26,9 +27,11 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -166,6 +169,46 @@ class InspectionCatalogServiceTest {
     }
 
     @Test
+    void skipsExistingGeneratedSchemeCodeAndUsesNextAutomaticNumber() {
+        allowValidSchemeReferences();
+        when(numberRuleService.generate(1L, 7L, "INSPECTION_SCHEME"))
+                .thenReturn(
+                        new FoundationDtos.GeneratedNumber(
+                                "INSPECTION_SCHEME", "ISP-2026-000001", 1L
+                        ),
+                        new FoundationDtos.GeneratedNumber(
+                                "INSPECTION_SCHEME", "ISP-2026-000002", 2L
+                        )
+                );
+        when(mapper.countSchemeCode(1L, "ISP-2026-000001", null)).thenReturn(1);
+        when(mapper.countSchemeCode(1L, "ISP-2026-000002", null)).thenReturn(0);
+        when(mapper.findSchemeIdByCode(1L, "ISP-2026-000002")).thenReturn(42L);
+        when(mapper.nextSchemeVersionNumber(1L, 42L)).thenReturn(1);
+        when(mapper.findSchemeVersionId(1L, 42L, 1)).thenReturn(101L);
+
+        assertThat(service.createScheme(schemeRequest(null))).isEqualTo(42L);
+
+        verify(numberRuleService, times(2)).generate(1L, 7L, "INSPECTION_SCHEME");
+        verify(mapper).insertScheme(
+                eq(1L), eq("ISP-2026-000002"), any(InspectionDtos.SaveSchemeRequest.class), eq(7L)
+        );
+    }
+
+    @Test
+    void stillRejectsDuplicateManuallyEnteredSchemeCode() {
+        allowValidSchemeReferences();
+        when(mapper.countSchemeCode(1L, "ISP-MANUAL-001", null)).thenReturn(1);
+
+        assertThatThrownBy(() -> service.createScheme(schemeRequest("ISP-MANUAL-001")))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code")
+                .isEqualTo("INSPECTION_SCHEME_CODE_EXISTS");
+
+        verify(numberRuleService, never()).generate(anyLong(), anyLong(), anyString());
+        verify(mapper, never()).insertScheme(anyLong(), anyString(), any(), anyLong());
+    }
+
+    @Test
     void rejectsDeletingAnEnabledScheme() {
         when(mapper.findScheme(1L, 42L)).thenReturn(scheme(1, 0));
 
@@ -241,6 +284,26 @@ class InspectionCatalogServiceTest {
                 "NORMAL", null, null, "%", "NORMAL_ABNORMAL", "[]", true,
                 false, 0, 9, 10, "image/jpeg,image/png", 82, false, false,
                 "MEDIUM", "异常时处理", false, 5, "安全说明", 1, "测试说明", version
+        );
+    }
+
+    private void allowValidSchemeReferences() {
+        when(mapper.findItem(1L, 100L)).thenReturn(item(3));
+        when(mapper.countActiveCategory(1L, 10L)).thenReturn(1);
+        when(calendarMapper.countActiveCalendar(1L, 1L)).thenReturn(1);
+    }
+
+    private InspectionDtos.SaveSchemeRequest schemeRequest(String schemeCode) {
+        return new InspectionDtos.SaveSchemeRequest(
+                schemeCode, "测试方案", "DAILY", "DAILY", 1,
+                null, null, LocalTime.of(8, 0), 60, 1L,
+                null, null, List.of(), null,
+                false, false, false, 1,
+                LocalDate.of(2026, 8, 12), null,
+                List.of(new InspectionDtos.SaveSchemeItemRequest(
+                        100L, 0, true, false, false, false
+                )),
+                List.of(10L), List.of(), true, null, null, null
         );
     }
 

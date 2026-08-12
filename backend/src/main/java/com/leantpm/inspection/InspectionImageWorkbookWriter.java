@@ -142,8 +142,8 @@ public class InspectionImageWorkbookWriter {
     ) {
         Sheet sheet = workbook.createSheet("异常记录");
         String[] headers = {"异常编号", "任务编号", "设备编号", "设备名称", "点检项目",
-                "异常标题", "异常说明", "严重度", "状态", "责任人", "处理期限", "临时措施",
-                "最终结果", "关闭人", "关闭时间", "验证人", "验证时间", "验证意见", "创建时间"};
+                "异常标题", "异常说明", "严重度", "状态", "责任人", "处理期限", "原因分析",
+                "临时措施", "恒久对策", "关闭人", "关闭时间", "验证人", "验证时间", "验证意见", "创建时间"};
         writeHeader(sheet, headers, header);
         int rowIndex = 1;
         for (var abnormal : abnormalities) {
@@ -160,8 +160,9 @@ public class InspectionImageWorkbookWriter {
             text(row, column++, abnormal.abnormalStatus());
             text(row, column++, abnormal.responsibleUserName());
             date(row, column++, abnormal.dueTime(), dateTime);
+            text(row, column++, abnormal.causeAnalysis());
             text(row, column++, abnormal.temporaryAction());
-            text(row, column++, abnormal.finalResult());
+            text(row, column++, abnormal.permanentCountermeasure());
             text(row, column++, abnormal.closedByName());
             date(row, column++, abnormal.closedTime(), dateTime);
             text(row, column++, abnormal.verifiedByName());

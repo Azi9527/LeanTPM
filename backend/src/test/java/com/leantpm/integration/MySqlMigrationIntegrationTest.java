@@ -33,6 +33,7 @@ class MySqlMigrationIntegrationTest {
     private long preUpgradeInspectionTaskCount;
     private long preUpgradeOrganizationCount;
     private long preV51CanonicalCategoryCount;
+    private long v53AbnormalId;
 
     @BeforeAll
     void migrateFreshDatabase() {
@@ -154,6 +155,31 @@ class MySqlMigrationIntegrationTest {
         Flyway.configure()
                 .dataSource(url, username, password)
                 .locations("classpath:db/migration")
+                .target(MigrationVersion.fromVersion("52"))
+                .cleanDisabled(true)
+                .load()
+                .migrate();
+        try {
+            executeUpdate("""
+                    INSERT INTO inspection_abnormal
+                        (tenant_id, abnormal_code, task_id, equipment_id,
+                         abnormal_title, abnormal_description, severity,
+                         final_result, created_by, updated_by)
+                    VALUES
+                        (1, 'V53-HISTORY-FIXTURE', 5300001, 5300001,
+                         'V53 历史异常', '验证旧最终结果兼容读取', 'LOW',
+                         'V52 已登记的最终处理结果', 0, 0)
+                    """);
+            v53AbnormalId = number("""
+                    SELECT id FROM inspection_abnormal
+                    WHERE tenant_id = 1 AND abnormal_code = 'V53-HISTORY-FIXTURE'
+                    """);
+        } catch (Exception exception) {
+            throw new IllegalStateException("Could not create the V52 to V53 fixture", exception);
+        }
+        Flyway.configure()
+                .dataSource(url, username, password)
+                .locations("classpath:db/migration")
                 .cleanDisabled(true)
                 .load()
                 .migrate();
@@ -162,7 +188,14 @@ class MySqlMigrationIntegrationTest {
     @Test
     void appliesEveryMigrationAndFoundationTable() throws Exception {
         assertThat(number("SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1"))
-                .isEqualTo(52);
+                .isEqualTo(53);
+        assertThat(number("""
+                SELECT COUNT(*)
+                FROM information_schema.columns
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'inspection_abnormal'
+                  AND column_name IN ('cause_analysis', 'permanent_countermeasure')
+                """)).isEqualTo(2);
         assertThat(number("""
                 SELECT COUNT(*)
                 FROM information_schema.tables
@@ -252,6 +285,17 @@ class MySqlMigrationIntegrationTest {
                 .migrate();
 
         assertThat(result.migrationsExecuted).isZero();
+    }
+
+    @Test
+    void v53PreservesHistoricalFinalResultsWithoutAFullTableBackfill() throws Exception {
+        assertThat(text("""
+                SELECT final_result FROM inspection_abnormal WHERE id = %d
+                """.formatted(v53AbnormalId))).isEqualTo("V52 已登记的最终处理结果");
+        assertThat(number("""
+                SELECT COUNT(*) FROM inspection_abnormal
+                WHERE id = %d AND permanent_countermeasure IS NULL
+                """.formatted(v53AbnormalId))).isEqualTo(1L);
     }
 
     @Test
@@ -399,7 +443,7 @@ class MySqlMigrationIntegrationTest {
             assertThatThrownBy(failedFlyway::migrate).isInstanceOf(FlywayException.class);
             assertThat(number("""
                     SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1
-                    """)).isEqualTo(52L);
+                    """)).isEqualTo(53L);
             assertThat(number("""
                     SELECT COUNT(*) FROM information_schema.tables
                     WHERE table_schema = DATABASE()
@@ -424,7 +468,7 @@ class MySqlMigrationIntegrationTest {
             assertThat(number("SELECT COUNT(*) FROM migration_failure_probe")).isEqualTo(1L);
             assertThat(number("""
                     SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1
-                    """)).isEqualTo(52L);
+                    """)).isEqualTo(53L);
         } finally {
             executeUpdate("DROP TABLE IF EXISTS migration_failure_probe");
             executeUpdate("DROP TABLE IF EXISTS flyway_failure_probe_history");

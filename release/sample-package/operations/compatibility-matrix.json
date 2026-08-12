@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "productVersion": "1.0.4",
-  "databaseSchemaVersion": 52,
+  "databaseSchemaVersion": 53,
   "combinations": [
     {
       "backend": "1.0.4",
       "web": "1.0.4",
       "appVersionCodeRange": { "minimum": 101, "maximum": 103 },
-      "databaseSchema": 52,
+      "databaseSchema": 53,
       "status": "CANDIDATE_UNVERIFIED",
       "notes": "Synthetic TEST package; no environment acceptance evidence."
     }

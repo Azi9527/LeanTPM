@@ -60,10 +60,12 @@ public class AppReleaseController {
             @RequestParam @Min(1) int versionCode,
             @RequestParam @Min(1) int minimumVersionCode,
             @RequestParam(required = false) String releaseNotes,
-            @RequestParam(defaultValue = "true") boolean enabled
+            @RequestParam(defaultValue = "true") boolean enabled,
+            @RequestParam(defaultValue = "false") boolean forceUpgrade
     ) {
         return ApiResponse.success(service.upload(
-                file, versionName, versionCode, minimumVersionCode, releaseNotes, enabled
+                file, versionName, versionCode, minimumVersionCode, releaseNotes,
+                enabled, forceUpgrade
         ));
     }
 
