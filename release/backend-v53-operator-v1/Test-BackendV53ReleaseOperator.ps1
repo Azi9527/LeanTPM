@@ -102,6 +102,8 @@ Assert-True ($operatorBuilder.Contains("'Build-BackendV53ReleasePackage.ps1'")) 
 Assert-True ($operatorBuilder.Contains("'Build-BackendV53OperatorPackage.ps1'")) 'Operator package must include its builder required by its server-side test'
 Assert-True ($builder.Contains("'runtime\production-1.0.4-20260812.2-backend-v53-operator-v1'")) 'Release build output must stay under ignored runtime evidence'
 Assert-True ($operatorBuilder.Contains("'runtime\production-1.0.4-20260812.2-backend-v53-operator-v1'")) 'Operator build output must stay under ignored runtime evidence'
+Assert-True ($executor.Contains("`$backupRoot = 'D:\LeanTPM\backups\backend-v53-predeploy-1.0.4-20260812-01'")) 'V53 release must use a fresh dedicated backup root'
+Assert-True ($executor.Contains("`$evidenceRoot = 'D:\LeanTPM\Runtime\logs\backend-v53-deployment-1.0.4-20260812-01'")) 'V53 release must use a fresh dedicated evidence root'
 $restoreFunction = Get-FunctionText -Source $executor -Name 'Restore-V52Backup'
 $noMigrationGuard = $restoreFunction.IndexOf('if (-not $script:migrationStarted)')
 $destructiveRestore = $restoreFunction.IndexOf('DROP DATABASE IF EXISTS leantpm')
