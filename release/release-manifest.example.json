@@ -83,8 +83,8 @@
                       {
                           "component":  "operations",
                           "path":  "operations/compatibility-matrix.json",
-                          "size":  421,
-                          "sha256":  "8dc46e5fbdfde0f627583bf405b26e89c65d9b4c101c9f99fcd634ce34785c55",
+                          "size":  410,
+                          "sha256":  "70477c906902be824e5e54f05671b3a7e2298a1d118fdf5166876c58e52a1ff1",
                           "mediaType":  "application/json"
                       },
                       {

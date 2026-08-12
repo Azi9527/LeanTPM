@@ -8,7 +8,7 @@
       "web": "1.0.4",
       "appVersionCodeRange": { "minimum": 101, "maximum": 103 },
       "databaseSchema": 53,
-      "status": "CANDIDATE_UNVERIFIED",
+      "status": "SUPPORTED",
       "notes": "Synthetic TEST package; no environment acceptance evidence."
     }
   ],

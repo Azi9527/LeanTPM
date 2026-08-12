@@ -54,12 +54,11 @@ ALTER TABLE inspection_abnormal
 - GitNexus `detect-changes(compare main)`：索引内 29 个文件、62 个符号，风险 LOW，未命中执行流；新增未跟踪的 SQL、PowerShell、测试和报告不在该统计内，已另按文件边界和合同测试复核。
 - 候选源码冻结在独立分支中；本报告随授权提交保存，候选标识以该提交的 `git rev-parse HEAD` 为准。
 - 本机环境阻塞：MySQL80 自动生成的服务器证书没有 `127.0.0.1/localhost` SAN，CN 也不是本机名；不能把降级到 `VERIFY_CA` 当作 `VERIFY_IDENTITY` 通过。
+- 风险接受：用户明确确认跳过真实迁移演练，直接按两个可空加列发布生产 Backend/V53；因此兼容矩阵提升为 `SUPPORTED`。该决定不取消生产发布前的 V52 核对、新鲜全库备份、备份字节/hash 校验及发布后 V53/Backend 健康验证。
 
 ## 尚未完成的生产门禁
 
-- 提供本机隔离 MySQL 测试账户，运行全部 MySQL 集成测试和 V52→V53/二次 no-op/恢复演练。
-- 演练完成后才把兼容矩阵从 `CANDIDATE_UNVERIFIED` 提升为 `SUPPORTED`。
-- 在证书主机名匹配的非生产 MySQL，或另行获批的临时隔离 MySQL 实例上，实际执行 Backend-only/V53 成功/恢复演练。
+- 真实 MySQL 集成测试和 V52→V53/恢复演练按用户明确风险接受跳过；不得把本次结果表述为已通过真实演练。
 - 生成生产 Backend JAR、迁移目录、签名 manifest、PlanOnly/Plan SHA。
 - 云生产只读预检、停写、新鲜备份、校验及隔离恢复。
 - 迁移后验证 schema 53 readiness、设备状态 API、异常措施保存/回读和旧 PC 异常流程。
