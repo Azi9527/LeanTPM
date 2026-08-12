@@ -41,3 +41,9 @@ export function equipmentTaskPreview(tasks = [], limit = 1) {
 		hasMore: source.length > size
 	}
 }
+
+export function inspectionSchemeAvailabilityMessage(schemes = []) {
+	return Array.isArray(schemes) && schemes.length
+		? ''
+		: '当前没有今日已生效且适用于本设备的点检方案，请检查生效日期、发布状态和指定设备'
+}

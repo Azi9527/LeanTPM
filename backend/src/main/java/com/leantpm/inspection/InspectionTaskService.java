@@ -578,6 +578,7 @@ public class InspectionTaskService {
                 || Set.of("PENDING_REVIEW", "COMPLETED").contains(state.taskStatus())) {
             throw alreadySubmitted(state);
         }
+        mapper.refreshTaskItemSnapshotsFromSource(current.tenantId(), id);
         InspectionDtos.TaskRow task = requireTask(
                 current.tenantId(), id, dataPermissionService.current()
         );
@@ -968,8 +969,9 @@ public class InspectionTaskService {
         InspectionDtos.ResultRow saved =
                 mapper.findResult(current.tenantId(), request.taskItemId());
         mapper.deleteResultAttachments(current.tenantId(), saved.id());
-        String attachmentType = "IMAGE".equals(item.resultType())
-                || Boolean.TRUE.equals(item.photoRequiredFlag())
+        String attachmentType = usesResultPhotoAttachment(
+                item.resultType(), item.photoRequiredFlag(), item.photoMinCount()
+        )
                 ? "RESULT_PHOTO" : "RESULT_ATTACHMENT";
         for (Long attachmentId : normalized.attachmentIds() == null
                 ? List.<Long>of() : normalized.attachmentIds()) {
@@ -983,6 +985,16 @@ public class InspectionTaskService {
                     attachmentType, current.userId()
             );
         }
+    }
+
+    static boolean usesResultPhotoAttachment(
+            String resultType,
+            Boolean photoRequiredFlag,
+            Integer photoMinCount
+    ) {
+        return "IMAGE".equals(resultType)
+                || Boolean.TRUE.equals(photoRequiredFlag)
+                || (photoMinCount != null && photoMinCount > 0);
     }
 
     private void saveTaskSubmissionAttachments(

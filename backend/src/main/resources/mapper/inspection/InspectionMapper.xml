@@ -223,6 +223,19 @@
           AND version = #{request.version}
     </update>
 
+    <update id="bumpEditableTaskVersionsForItem">
+        UPDATE inspection_task task
+        JOIN (
+            SELECT DISTINCT task_id
+            FROM inspection_task_item
+            WHERE tenant_id = #{tenantId} AND source_item_id = #{itemId} AND deleted = 0
+        ) affected ON affected.task_id = task.id
+        SET task.version = task.version + 1,
+            task.updated_by = #{operatorId}
+        WHERE task.tenant_id = #{tenantId} AND task.deleted = 0
+          AND task.task_status IN ('PENDING','OVERDUE','IN_PROGRESS')
+    </update>
+
     <update id="softDeleteItem">
         UPDATE inspection_item
         SET deleted = 1, status = 0, updated_by = #{operatorId}, version = version + 1
@@ -459,13 +472,10 @@
     <select id="findSchemeItems" resultType="com.leantpm.inspection.InspectionDtos$SchemeItemRow">
         SELECT relation.id AS relation_id, item.id AS inspection_item_id,
                item.item_code, item.item_name, item.item_category, item.result_type, item.unit,
-               COALESCE(relation.required_override, item.required_flag) AS required_flag,
-               COALESCE(relation.photo_required_override, item.photo_required_flag)
-                   AS photo_required_flag,
-               COALESCE(relation.skip_allowed_override, item.skip_allowed_flag)
-                   AS skip_allowed_flag,
-               COALESCE(relation.abnormal_stop_override, item.abnormal_default_stop_flag)
-                   AS abnormal_stop_flag,
+               item.required_flag AS required_flag,
+               item.photo_required_flag AS photo_required_flag,
+               item.skip_allowed_flag AS skip_allowed_flag,
+               item.abnormal_default_stop_flag AS abnormal_stop_flag,
                relation.sort_order
         FROM inspection_scheme_item relation
         JOIN inspection_item item
@@ -495,8 +505,7 @@
              abnormal_stop_override, created_by)
         VALUES
             (#{tenantId}, #{versionId}, #{item.inspectionItemId}, #{item.sortOrder},
-             #{item.required}, #{item.photoRequired}, #{item.skipAllowed},
-             #{item.abnormalStop}, #{operatorId})
+             NULL, NULL, NULL, NULL, #{operatorId})
     </insert>
 
     <insert id="insertSchemeCategory">
@@ -897,19 +906,15 @@
                item.inspection_method, item.inspection_tool, item.inspection_standard,
                item.standard_value, item.minimum_value, item.maximum_value, item.unit,
                item.result_type, item.result_options,
-               COALESCE(relation.required_override, item.required_flag),
-               COALESCE(relation.photo_required_override, item.photo_required_flag),
-               CASE
-                   WHEN relation.photo_required_override = 0 THEN 0
-                   WHEN relation.photo_required_override = 1 THEN GREATEST(item.photo_min_count, 1)
-                   ELSE item.photo_min_count
-               END,
+               item.required_flag,
+               item.photo_required_flag,
+               item.photo_min_count,
                item.photo_max_count, item.photo_max_size_mb,
                item.photo_allowed_types, item.photo_compression_quality,
                item.numeric_required_flag,
-               COALESCE(relation.skip_allowed_override, item.skip_allowed_flag),
+               item.skip_allowed_flag,
                item.abnormal_severity, item.abnormal_advice,
-               COALESCE(relation.abnormal_stop_override, item.abnormal_default_stop_flag),
+               item.abnormal_default_stop_flag,
                item.standard_minutes,
                item.safety_notes, relation.sort_order
         FROM inspection_scheme_item relation
@@ -1786,36 +1791,102 @@
         LIMIT 1
     </select>
 
+    <sql id="taskItemLiveOrSnapshotColumns">
+        snapshot.id, snapshot.task_id, snapshot.source_item_id,
+        CASE WHEN task.task_status IN ('PENDING','OVERDUE','IN_PROGRESS') AND source.id IS NOT NULL THEN source.item_code ELSE snapshot.item_code END AS item_code,
+        CASE WHEN task.task_status IN ('PENDING','OVERDUE','IN_PROGRESS') AND source.id IS NOT NULL THEN source.item_name ELSE snapshot.item_name END AS item_name,
+        CASE WHEN task.task_status IN ('PENDING','OVERDUE','IN_PROGRESS') AND source.id IS NOT NULL THEN source.item_category ELSE snapshot.item_category END AS item_category,
+        CASE WHEN task.task_status IN ('PENDING','OVERDUE','IN_PROGRESS') AND source.id IS NOT NULL THEN source.inspection_part ELSE snapshot.inspection_part END AS inspection_part,
+        CASE WHEN task.task_status IN ('PENDING','OVERDUE','IN_PROGRESS') AND source.id IS NOT NULL THEN source.inspection_content ELSE snapshot.inspection_content END AS inspection_content,
+        CASE WHEN task.task_status IN ('PENDING','OVERDUE','IN_PROGRESS') AND source.id IS NOT NULL THEN source.inspection_method ELSE snapshot.inspection_method END AS inspection_method,
+        CASE WHEN task.task_status IN ('PENDING','OVERDUE','IN_PROGRESS') AND source.id IS NOT NULL THEN source.inspection_tool ELSE snapshot.inspection_tool END AS inspection_tool,
+        CASE WHEN task.task_status IN ('PENDING','OVERDUE','IN_PROGRESS') AND source.id IS NOT NULL THEN source.inspection_standard ELSE snapshot.inspection_standard END AS inspection_standard,
+        CASE WHEN task.task_status IN ('PENDING','OVERDUE','IN_PROGRESS') AND source.id IS NOT NULL THEN source.standard_value ELSE snapshot.standard_value END AS standard_value,
+        CASE WHEN task.task_status IN ('PENDING','OVERDUE','IN_PROGRESS') AND source.id IS NOT NULL THEN source.minimum_value ELSE snapshot.minimum_value END AS minimum_value,
+        CASE WHEN task.task_status IN ('PENDING','OVERDUE','IN_PROGRESS') AND source.id IS NOT NULL THEN source.maximum_value ELSE snapshot.maximum_value END AS maximum_value,
+        CASE WHEN task.task_status IN ('PENDING','OVERDUE','IN_PROGRESS') AND source.id IS NOT NULL THEN source.unit ELSE snapshot.unit END AS unit,
+        CASE WHEN task.task_status IN ('PENDING','OVERDUE','IN_PROGRESS') AND source.id IS NOT NULL THEN source.result_type ELSE snapshot.result_type END AS result_type,
+        CAST(CASE WHEN task.task_status IN ('PENDING','OVERDUE','IN_PROGRESS') AND source.id IS NOT NULL THEN source.result_options ELSE snapshot.result_options END AS CHAR) AS result_options_json,
+        CASE WHEN task.task_status IN ('PENDING','OVERDUE','IN_PROGRESS') AND source.id IS NOT NULL THEN source.required_flag ELSE snapshot.required_flag END AS required_flag,
+        CASE WHEN task.task_status IN ('PENDING','OVERDUE','IN_PROGRESS') AND source.id IS NOT NULL THEN source.photo_required_flag ELSE snapshot.photo_required_flag END AS photo_required_flag,
+        CASE WHEN task.task_status IN ('PENDING','OVERDUE','IN_PROGRESS') AND source.id IS NOT NULL THEN source.photo_min_count ELSE snapshot.photo_min_count END AS photo_min_count,
+        CASE WHEN task.task_status IN ('PENDING','OVERDUE','IN_PROGRESS') AND source.id IS NOT NULL THEN source.photo_max_count ELSE snapshot.photo_max_count END AS photo_max_count,
+        CASE WHEN task.task_status IN ('PENDING','OVERDUE','IN_PROGRESS') AND source.id IS NOT NULL THEN source.photo_max_size_mb ELSE snapshot.photo_max_size_mb END AS photo_max_size_mb,
+        CASE WHEN task.task_status IN ('PENDING','OVERDUE','IN_PROGRESS') AND source.id IS NOT NULL THEN source.photo_allowed_types ELSE snapshot.photo_allowed_types END AS photo_allowed_types,
+        CASE WHEN task.task_status IN ('PENDING','OVERDUE','IN_PROGRESS') AND source.id IS NOT NULL THEN source.photo_compression_quality ELSE snapshot.photo_compression_quality END AS photo_compression_quality,
+        CASE WHEN task.task_status IN ('PENDING','OVERDUE','IN_PROGRESS') AND source.id IS NOT NULL THEN source.numeric_required_flag ELSE snapshot.numeric_required_flag END AS numeric_required_flag,
+        CASE WHEN task.task_status IN ('PENDING','OVERDUE','IN_PROGRESS') AND source.id IS NOT NULL THEN source.skip_allowed_flag ELSE snapshot.skip_allowed_flag END AS skip_allowed_flag,
+        CASE WHEN task.task_status IN ('PENDING','OVERDUE','IN_PROGRESS') AND source.id IS NOT NULL THEN source.abnormal_severity ELSE snapshot.abnormal_severity END AS abnormal_severity,
+        CASE WHEN task.task_status IN ('PENDING','OVERDUE','IN_PROGRESS') AND source.id IS NOT NULL THEN source.abnormal_advice ELSE snapshot.abnormal_advice END AS abnormal_advice,
+        CASE WHEN task.task_status IN ('PENDING','OVERDUE','IN_PROGRESS') AND source.id IS NOT NULL THEN source.abnormal_default_stop_flag ELSE snapshot.abnormal_default_stop_flag END AS abnormal_default_stop_flag,
+        CASE WHEN task.task_status IN ('PENDING','OVERDUE','IN_PROGRESS') AND source.id IS NOT NULL THEN source.standard_minutes ELSE snapshot.standard_minutes END AS standard_minutes,
+        CASE WHEN task.task_status IN ('PENDING','OVERDUE','IN_PROGRESS') AND source.id IS NOT NULL THEN source.safety_notes ELSE snapshot.safety_notes END AS safety_notes,
+        snapshot.sort_order
+    </sql>
+
+    <sql id="taskItemLiveOrSnapshotJoins">
+        FROM inspection_task_item snapshot
+        JOIN inspection_task task
+          ON task.tenant_id = snapshot.tenant_id AND task.id = snapshot.task_id
+         AND task.deleted = 0
+        LEFT JOIN inspection_item source
+          ON source.tenant_id = snapshot.tenant_id
+         AND source.id = snapshot.source_item_id AND source.deleted = 0
+    </sql>
+
     <select id="findTaskItem" resultType="com.leantpm.inspection.InspectionMapper$TaskItemData">
-        SELECT id, task_id, source_item_id, item_code, item_name, item_category,
-               inspection_part, inspection_content, inspection_method, inspection_tool,
-               inspection_standard, standard_value, minimum_value, maximum_value,
-               unit, result_type, CAST(result_options AS CHAR) AS result_options_json,
-               required_flag, photo_required_flag, photo_min_count, photo_max_count,
-               photo_max_size_mb, photo_allowed_types, photo_compression_quality,
-               numeric_required_flag,
-               skip_allowed_flag, abnormal_severity, abnormal_advice,
-               abnormal_default_stop_flag, standard_minutes, safety_notes, sort_order
-        FROM inspection_task_item
-        WHERE tenant_id = #{tenantId} AND task_id = #{taskId} AND id = #{taskItemId}
-          AND deleted = 0
+        SELECT <include refid="taskItemLiveOrSnapshotColumns"/>
+        <include refid="taskItemLiveOrSnapshotJoins"/>
+        WHERE snapshot.tenant_id = #{tenantId} AND snapshot.task_id = #{taskId}
+          AND snapshot.id = #{taskItemId} AND snapshot.deleted = 0
         LIMIT 1
     </select>
 
     <select id="findTaskItems" resultType="com.leantpm.inspection.InspectionMapper$TaskItemData">
-        SELECT id, task_id, source_item_id, item_code, item_name, item_category,
-               inspection_part, inspection_content, inspection_method, inspection_tool,
-               inspection_standard, standard_value, minimum_value, maximum_value,
-               unit, result_type, CAST(result_options AS CHAR) AS result_options_json,
-               required_flag, photo_required_flag, photo_min_count, photo_max_count,
-               photo_max_size_mb, photo_allowed_types, photo_compression_quality,
-               numeric_required_flag,
-               skip_allowed_flag, abnormal_severity, abnormal_advice,
-               abnormal_default_stop_flag, standard_minutes, safety_notes, sort_order
-        FROM inspection_task_item
-        WHERE tenant_id = #{tenantId} AND task_id = #{taskId} AND deleted = 0
-        ORDER BY sort_order, id
+        SELECT <include refid="taskItemLiveOrSnapshotColumns"/>
+        <include refid="taskItemLiveOrSnapshotJoins"/>
+        WHERE snapshot.tenant_id = #{tenantId} AND snapshot.task_id = #{taskId}
+          AND snapshot.deleted = 0
+        ORDER BY snapshot.sort_order, snapshot.id
     </select>
+
+    <update id="refreshTaskItemSnapshotsFromSource">
+        UPDATE inspection_task_item item
+        JOIN inspection_item source
+          ON source.tenant_id = item.tenant_id
+         AND source.id = item.source_item_id
+         AND source.deleted = 0
+        SET item.item_code = source.item_code,
+            item.item_name = source.item_name,
+            item.item_category = source.item_category,
+            item.inspection_part = source.inspection_part,
+            item.inspection_content = source.inspection_content,
+            item.inspection_method = source.inspection_method,
+            item.inspection_tool = source.inspection_tool,
+            item.inspection_standard = source.inspection_standard,
+            item.standard_value = source.standard_value,
+            item.minimum_value = source.minimum_value,
+            item.maximum_value = source.maximum_value,
+            item.unit = source.unit,
+            item.result_type = source.result_type,
+            item.result_options = source.result_options,
+            item.required_flag = source.required_flag,
+            item.photo_required_flag = source.photo_required_flag,
+            item.photo_min_count = source.photo_min_count,
+            item.photo_max_count = source.photo_max_count,
+            item.photo_max_size_mb = source.photo_max_size_mb,
+            item.photo_allowed_types = source.photo_allowed_types,
+            item.photo_compression_quality = source.photo_compression_quality,
+            item.numeric_required_flag = source.numeric_required_flag,
+            item.skip_allowed_flag = source.skip_allowed_flag,
+            item.abnormal_severity = source.abnormal_severity,
+            item.abnormal_advice = source.abnormal_advice,
+            item.abnormal_default_stop_flag = source.abnormal_default_stop_flag,
+            item.standard_minutes = source.standard_minutes,
+            item.safety_notes = source.safety_notes
+        WHERE item.tenant_id = #{tenantId} AND item.task_id = #{taskId}
+          AND item.deleted = 0
+    </update>
 
     <select id="findResult" resultType="com.leantpm.inspection.InspectionDtos$ResultRow">
         SELECT result.id, result.result_status, result.result_code, result.numeric_value,

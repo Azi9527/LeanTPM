@@ -28,6 +28,31 @@ export function initialResultDraft(item) {
 	}
 }
 
+export function resultPhotoAttachmentIds(taskItemId, attachments = [], existingIds = [], item = null) {
+	const currentQueuedIds = new Set((attachments || [])
+		.filter((attachment) => String(attachment?.taskItemId) === String(taskItemId) && attachment?.attachmentType === 'RESULT_PHOTO' && /^queued:.+/.test(String(attachment.id || '')))
+		.map((attachment) => String(attachment.id)))
+	const result = (Array.isArray(existingIds) ? existingIds : []).filter((id) => {
+		const rawId = String(id || '')
+		if (currentQueuedIds.has(rawId)) return true
+		const numericId = Number(rawId)
+		return Number.isSafeInteger(numericId) && numericId > 0
+	})
+	const selected = new Set(result.map(String))
+	for (const attachment of attachments || []) {
+		const compatibleLegacyPhoto = isInspectionPhotoRequired(item) && attachment?.attachmentType === 'RESULT_ATTACHMENT'
+		if (String(attachment?.taskItemId) !== String(taskItemId) || (attachment?.attachmentType !== 'RESULT_PHOTO' && !compatibleLegacyPhoto)) continue
+		const rawId = String(attachment.id || '')
+		const numericId = Number(rawId)
+		const queuedId = /^queued:.+/.test(rawId)
+		const attachmentId = queuedId ? rawId : numericId
+		if ((!queuedId && (!Number.isSafeInteger(numericId) || numericId <= 0)) || selected.has(String(attachmentId))) continue
+		result.push(attachmentId)
+		selected.add(String(attachmentId))
+	}
+	return result
+}
+
 export function inferAbnormal(item, draft) {
 	if (draft.skipped) return false
 	if (['ABNORMAL', 'FAIL'].includes(draft.resultCode)) return true
@@ -52,6 +77,10 @@ export function applyNumericAbnormalState(item, draft) {
 	return abnormal
 }
 
+export function isInspectionPhotoRequired(item) {
+	return Boolean(item?.photoRequiredFlag) || Number(item?.photoMinCount || 0) > 0
+}
+
 export function validateInspectionResults(items, drafts) {
 	for (const item of items) {
 		const draft = drafts[item.id]
@@ -68,7 +97,7 @@ export function validateInspectionResults(items, drafts) {
 		if (item.resultType === 'MULTIPLE_CHOICE' && !draft.selectedValues?.length) return `${item.itemName} 必须至少选择一项`
 		if (draft.abnormal && !String(draft.abnormalDescription || '').trim()) return `${item.itemName} 的异常必须填写说明`
 		if (draft.abnormal && Boolean(draft.equipmentStopRequired) !== Boolean(item.abnormalDefaultStopFlag) && !String(draft.stopOverrideReason || '').trim()) return `${item.itemName} 调整停机规则时必须填写原因`
-		if (item.photoRequiredFlag && (draft.attachmentIds?.length || 0) < Number(item.photoMinCount || 1)) return `${item.itemName} 至少需要 ${item.photoMinCount || 1} 张照片`
+		if (isInspectionPhotoRequired(item) && (draft.attachmentIds?.length || 0) < Number(item.photoMinCount || 1)) return `${item.itemName} 至少需要 ${item.photoMinCount || 1} 张照片`
 	}
 	return ''
 }

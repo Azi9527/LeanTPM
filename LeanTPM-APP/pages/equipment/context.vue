@@ -26,7 +26,7 @@
 			<view class="action-card compact-action">
 				<text class="section-title">现场作业</text>
 				<button class="primary report-primary" :loading="quickReporting" :disabled="!context.inspectionSchemes.length || !canDirectReport" @click="openQuickReport">直接点检报告</button>
-				<text v-if="!context.inspectionSchemes.length" class="tip">当前没有已启用且已发布的点检模板</text>
+				<text v-if="!context.inspectionSchemes.length" class="tip">{{ inspectionSchemeAvailabilityMessage(context.inspectionSchemes) }}</text>
 				<text v-else-if="!canDirectReport" class="tip">当前账号没有点检执行权限，请联系班组长或管理员</text>
 			</view>
 
@@ -103,7 +103,7 @@
 	import { createIdempotencyKey } from '../../utils/idempotency.js'
 	import { equipmentScanErrorMessage, errorMessage } from '../../utils/errors.js'
 	import { requireEquipmentToken } from '../../utils/equipment-token.js'
-	import { equipmentManagementRows, equipmentTaskPreview } from '../../utils/equipment-context.js'
+	import { equipmentManagementRows, equipmentTaskPreview, inspectionSchemeAvailabilityMessage } from '../../utils/equipment-context.js'
 	import { inspectionTaskTarget } from '../../utils/inspection-navigation.js'
 	import { rememberEquipment } from '../../stores/recent-equipment.js'
 

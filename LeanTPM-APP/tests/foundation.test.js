@@ -17,24 +17,24 @@ const {
 	saveServerBaseUrl,
 	testServerConnection
 } = await import('../utils/server.js')
-const { createIdempotencyKey } = await import('../utils/idempotency.js')
+const { bindIdempotencyKeyToPayload, createIdempotencyKey } = await import('../utils/idempotency.js')
 const { brandingLogoSource, normalizeBranding } = await import('../utils/branding.js')
 const { reportPeriodRange } = await import('../utils/report-period.js')
 const { inspectionTaskListQuery, inspectionTodoRows } = await import('../utils/inspection-todos.js')
-const { equipmentManagementRows, equipmentTaskPreview } = await import('../utils/equipment-context.js')
+const { equipmentManagementRows, equipmentTaskPreview, inspectionSchemeAvailabilityMessage } = await import('../utils/equipment-context.js')
 const {
 	inspectionTaskTarget,
 	scannedEquipmentMatchesTask,
 	taskRequiresEquipmentScan
 } = await import('../utils/inspection-navigation.js')
 const { extractEquipmentToken, requireEquipmentToken } = await import('../utils/equipment-token.js')
-const { applyNumericAbnormalState, initialResultDraft, inferAbnormal, validateInspectionResults, buildInspectionPayload } = await import('../utils/inspection-results.js')
-const { saveDraftEnvelope, loadDraftEnvelope, queuePhoto, attachQueuedPhotoToDraft, listQueuedPhotos, removeDraftEnvelope } = await import('../stores/offline.js')
+const { applyNumericAbnormalState, initialResultDraft, inferAbnormal, isInspectionPhotoRequired, resultPhotoAttachmentIds, validateInspectionResults, buildInspectionPayload } = await import('../utils/inspection-results.js')
+const { saveDraftEnvelope, loadDraftEnvelope, markDraftSubmissionConfirmationRequired, queuePhoto, attachQueuedPhotoToDraft, listQueuedPhotos, removeDraftEnvelope, removeDraftEnvelopeIfCurrent, saveDraftEnvelopeIfCurrent } = await import('../stores/offline.js')
 const { listRecentEquipment, rememberEquipment } = await import('../stores/recent-equipment.js')
 const { choosePhoto, choosePhotos, formatBusinessDateTime, normalizePhotoPolicy, watermarkLines } = await import('../platform/photo.js')
 const { compareVersionCodes } = await import('../utils/version.js')
 const { ApiError, equipmentScanErrorMessage, errorMessage, isConflict } = await import('../utils/errors.js')
-const { inspectionConflictResolution, rebaseInspectionDraft } = await import('../utils/inspection-conflict.js')
+const { inspectionConflictResolution, inspectionOfflineConflictResolution, inspectionPhotoSyncDecision, inspectionSubmitFailureNeedsConfirmation, rebaseInspectionDraft, shouldPreserveLocalInspectionDraft } = await import('../utils/inspection-conflict.js')
 const secureStorage = await import('../platform/secure-storage.js')
 const storage = await import('../platform/storage.js')
 
@@ -151,6 +151,55 @@ test('generates scoped idempotency keys', () => {
 	assert.notEqual(first, second)
 })
 
+test('keeps an idempotency key only while the submitted payload is unchanged', () => {
+	const created = []
+	const createKey = (scope) => {
+		const key = `${scope}-rotated-${created.length + 1}`
+		created.push(key)
+		return key
+	}
+	const first = bindIdempotencyKeyToPayload({
+		idempotencyKey: 'inspection-9-original',
+		payload: { taskVersion: 2, results: [{ taskItemId: 12, attachmentIds: [88], textValue: 'OK' }] },
+		scope: 'inspection-9',
+		createKey
+	})
+	assert.equal(first.idempotencyKey, 'inspection-9-original')
+	assert.equal(created.length, 0)
+
+	const same = bindIdempotencyKeyToPayload({
+		idempotencyKey: first.idempotencyKey,
+		payloadSignature: first.payloadSignature,
+		payload: { results: [{ textValue: 'OK', attachmentIds: [88], taskItemId: 12 }], taskVersion: 2 },
+		scope: 'inspection-9',
+		createKey
+	})
+	assert.equal(same.idempotencyKey, first.idempotencyKey)
+	assert.equal(created.length, 0)
+
+	const changed = bindIdempotencyKeyToPayload({
+		idempotencyKey: same.idempotencyKey,
+		payloadSignature: same.payloadSignature,
+		payload: { taskVersion: 2, results: [{ taskItemId: 12, attachmentIds: [89], textValue: 'OK' }] },
+		scope: 'inspection-9',
+		createKey
+	})
+	assert.equal(changed.idempotencyKey, 'inspection-9-rotated-1')
+	assert.notEqual(changed.payloadSignature, same.payloadSignature)
+})
+
+test('rotates a legacy pending submission key whose payload was never bound', () => {
+	const result = bindIdempotencyKeyToPayload({
+		idempotencyKey: 'inspection-9-legacy',
+		payload: { taskVersion: 3, results: [] },
+		legacyPendingSubmit: true,
+		scope: 'inspection-9',
+		createKey: () => 'inspection-9-safe'
+	})
+	assert.equal(result.idempotencyKey, 'inspection-9-safe')
+	assert.ok(result.payloadSignature)
+})
+
 test('normalizes branding and rejects invalid colors', () => {
 	const branding = normalizeBranding({ shortName: '  客户矿业 ', primaryColor: '#ABCDEF', neutralColor: 'red' })
 	assert.equal(branding.shortName, '客户矿业')
@@ -222,6 +271,13 @@ test('limits the equipment context to one actionable task while preserving the t
 	})
 })
 
+test('explains that an empty equipment scheme list can mean not yet effective or not applicable', () => {
+	assert.equal(inspectionSchemeAvailabilityMessage([{ schemeVersionId: 9 }]), '')
+	assert.match(inspectionSchemeAvailabilityMessage([]), /今日已生效/)
+	assert.match(inspectionSchemeAvailabilityMessage([]), /生效日期/)
+	assert.match(inspectionSchemeAvailabilityMessage([]), /指定设备/)
+})
+
 test('requires unfinished inspection tasks to scan the assigned equipment first', () => {
 	const pending = { id: 9, taskStatus: 'PENDING', equipmentId: 18, equipmentName: '浮选机' }
 	assert.equal(taskRequiresEquipmentScan(pending), true)
@@ -278,6 +334,18 @@ test('validates qualitative and quantitative inspection results', () => {
 	assert.equal(payload.results[1].numericValue, 90)
 })
 
+test('treats a positive minimum photo count as photo-required for legacy inspection items', () => {
+	const legacyItem = { id: 1, itemName: 'legacy item', resultType: 'PASS_FAIL', photoRequiredFlag: false, photoMinCount: 1 }
+	const draft = initialResultDraft(legacyItem)
+	draft.resultCode = 'PASS'
+	assert.equal(isInspectionPhotoRequired(legacyItem), true)
+	assert.match(validateInspectionResults([legacyItem], { 1: draft }), /1/)
+	draft.attachmentIds = [91]
+	assert.equal(validateInspectionResults([legacyItem], { 1: draft }), '')
+	assert.equal(isInspectionPhotoRequired({ photoRequiredFlag: true, photoMinCount: 0 }), true)
+	assert.equal(isInspectionPhotoRequired({ photoRequiredFlag: false, photoMinCount: 0 }), false)
+})
+
 test('recalculates numeric abnormal state when a value returns inside its range', () => {
 	const item = { id: 2, resultType: 'NUMBER', minimumValue: 30, maximumValue: 80, abnormalDefaultStopFlag: true }
 	const draft = initialResultDraft(item)
@@ -332,6 +400,49 @@ test('queues photos before pending drafts and writes attachment ids back', () =>
 	removeDraftEnvelope('inspection', 9)
 })
 
+test('restores only server result photos to the matching inspection item draft', () => {
+	const attachments = [
+		{ id: 'queued:local-1', taskItemId: 11, attachmentType: 'RESULT_PHOTO' },
+		{ id: 91, taskItemId: 11, attachmentType: 'RESULT_PHOTO' },
+		{ id: 92, taskItemId: 11, attachmentType: 'RESULT_ATTACHMENT' },
+		{ id: 93, taskItemId: 12, attachmentType: 'RESULT_PHOTO' },
+		{ id: 94, taskItemId: null, attachmentType: 'TASK_PHOTO' },
+		{ id: 91, taskItemId: 11, attachmentType: 'RESULT_PHOTO' }
+	]
+	assert.deepEqual(resultPhotoAttachmentIds(11, attachments, [777, 'queued:local-1', 'queued:stale', -2, 'not-an-id']), [777, 'queued:local-1', 91])
+	assert.deepEqual(resultPhotoAttachmentIds(11, attachments, [], { photoRequiredFlag: false, photoMinCount: 1 }), ['queued:local-1', 91, 92])
+	assert.deepEqual(resultPhotoAttachmentIds('12', attachments, []), [93])
+	assert.deepEqual(resultPhotoAttachmentIds(99, attachments, []), [])
+})
+
+test('does not delete a newer inspection draft after an older request finishes', () => {
+	saveDraftEnvelope({ workflow: 'inspection', taskId: 91, revision: 'request-r1', pendingSubmit: true, payload: { taskVersion: 2 } })
+	saveDraftEnvelope({ workflow: 'inspection', taskId: 91, revision: 'edited-r2', pendingSubmit: true, payload: { taskVersion: 2, executionRemark: 'newer edit' } })
+	assert.equal(saveDraftEnvelopeIfCurrent({ workflow: 'inspection', taskId: 91, revision: 'stale-r3', payload: { taskVersion: 3 } }, 'request-r1'), null)
+	assert.equal(removeDraftEnvelopeIfCurrent('inspection', 91, 'request-r1'), false)
+	assert.equal(loadDraftEnvelope('inspection', 91).revision, 'edited-r2')
+	assert.equal(removeDraftEnvelopeIfCurrent('inspection', 91, 'edited-r2'), true)
+	assert.equal(loadDraftEnvelope('inspection', 91), null)
+})
+
+test('upgrades a legacy draft only while its stored snapshot is still current', () => {
+	const legacy = saveDraftEnvelope({ workflow: 'inspection', taskId: 92, pendingSubmit: true, idempotencyKey: 'legacy-key', payload: { taskVersion: 2 } })
+	const prepared = saveDraftEnvelopeIfCurrent({ ...legacy, revision: 'sync-r1' }, '', legacy.updatedAt)
+	assert.equal(prepared.revision, 'sync-r1')
+	assert.equal(saveDraftEnvelopeIfCurrent({ ...legacy, revision: 'stale-r2' }, '', legacy.updatedAt), null)
+	removeDraftEnvelope('inspection', 92)
+})
+
+test('marks the newest local draft for manual confirmation without replacing its content', () => {
+	saveDraftEnvelope({ workflow: 'inspection', taskId: 93, revision: 'newest-r1', pendingSubmit: true, payload: { executionRemark: 'keep me' } })
+	const marked = markDraftSubmissionConfirmationRequired('inspection', 93, 'confirmation-r2')
+	assert.equal(marked.requiresSubmissionConfirmation, true)
+	assert.equal(marked.pendingSubmit, false)
+	assert.equal(marked.revision, 'confirmation-r2')
+	assert.equal(marked.payload.executionRemark, 'keep me')
+	removeDraftEnvelope('inspection', 93)
+})
+
 test('builds a GPS-free equipment location watermark', () => {
 	const capturedAt = new Date(2026, 7, 4, 11, 49, 21)
 	const lines = watermarkLines({ brandName: '客户矿业', equipmentName: '循环泵', equipmentCode: 'P-01', taskCode: 'DJ-1', itemName: '油位', executorName: '操作工01', faultLocationText: '机加二线', capturedAt })
@@ -369,8 +480,24 @@ test('keeps editable inspection drafts after conflicts and rebases them to the s
 	const conflict = new ApiError('OPTIMISTIC_LOCK_CONFLICT', '数据已被更新', 409)
 	assert.deepEqual(
 		inspectionConflictResolution(conflict, { taskStatus: 'IN_PROGRESS' }),
-		{ completed: false, preserveDraft: true, rotateIdempotencyKey: true }
+		{ completed: false, preserveDraft: true, rotateIdempotencyKey: true, rebaseDraft: true, requiresUserConfirmation: false }
 	)
+	assert.deepEqual(
+		inspectionConflictResolution(new ApiError('REQUEST_IN_PROGRESS', '请求处理中', 409), { taskStatus: 'IN_PROGRESS' }),
+		{ completed: false, preserveDraft: true, rotateIdempotencyKey: false, rebaseDraft: false, requiresUserConfirmation: false }
+	)
+	for (const code of [
+		'IDEMPOTENCY_RESULT_UNKNOWN',
+		'IDEMPOTENCY_STATE_LOST',
+		'IDEMPOTENCY_RESPONSE_SERIALIZATION_FAILED',
+		'IDEMPOTENCY_RESPONSE_TOO_LARGE',
+		'IDEMPOTENCY_STATE_INVALID'
+	]) {
+		assert.deepEqual(
+			inspectionConflictResolution(new ApiError(code, 'result uncertain', 409), { taskStatus: 'IN_PROGRESS' }),
+			{ completed: false, preserveDraft: true, rotateIdempotencyKey: false, rebaseDraft: false, requiresUserConfirmation: true }
+		)
+	}
 	assert.deepEqual(
 		rebaseInspectionDraft(
 			{ taskVersion: 2, payload: { taskVersion: 2, results: [{ taskItemId: 1, textValue: '保留本地值', version: 4 }] } },
@@ -388,10 +515,52 @@ test('keeps editable inspection drafts after conflicts and rebases them to the s
 	)
 })
 
+test('pauses background inspection submission when the task or latest item rules changed', () => {
+	assert.deepEqual(
+		inspectionOfflineConflictResolution(
+			new ApiError('OPTIMISTIC_LOCK_CONFLICT', '点检项目或任务已更新', 409),
+			{ taskStatus: 'IN_PROGRESS' }
+		),
+		{
+			completed: false,
+			preserveDraft: true,
+			rotateIdempotencyKey: false,
+			rebaseDraft: false,
+			requiresUserConfirmation: true
+		}
+	)
+	assert.equal(
+		inspectionOfflineConflictResolution(
+			new ApiError('TASK_ALREADY_COMPLETED', '任务已完成', 409),
+			{ taskStatus: 'COMPLETED' }
+		).completed,
+		true
+	)
+})
+
 test('enforces minimum Android version codes', () => {
 	assert.equal(compareVersionCodes(99, 100).upgradeRequired, true)
 	assert.equal(compareVersionCodes('100', 100).upgradeRequired, false)
 	assert.equal(compareVersionCodes(101, 100).upgradeRequired, false)
+})
+
+test('never submits twice in the same click after queued-photo synchronization', () => {
+	assert.equal(inspectionPhotoSyncDecision(true, null), 'SUBMITTED_BY_SYNC')
+	assert.equal(inspectionPhotoSyncDecision(true, { pendingSubmit: true }), 'RETRY_REQUIRED')
+	assert.equal(inspectionPhotoSyncDecision(false, { pendingSubmit: false }), 'CONTINUE_SAVE')
+})
+
+test('preserves an unsynchronized local draft when the server task is already complete', () => {
+	assert.equal(shouldPreserveLocalInspectionDraft({ taskStatus: 'COMPLETED' }, { revision: 'newer-r1' }), true)
+	assert.equal(shouldPreserveLocalInspectionDraft({ taskStatus: 'PENDING_REVIEW' }, { pendingSubmit: true }), true)
+	assert.equal(shouldPreserveLocalInspectionDraft({ taskStatus: 'CANCELLED' }, { revision: 'r1' }), false)
+	assert.equal(shouldPreserveLocalInspectionDraft({ taskStatus: 'COMPLETED' }, null), false)
+})
+
+test('requires confirmation after a submit failure that did not return a safe conflict result', () => {
+	assert.equal(inspectionSubmitFailureNeedsConfirmation(new ApiError('INSPECTION_RESULT_PHOTO_INVALID', 'invalid', 400)), true)
+	assert.equal(inspectionSubmitFailureNeedsConfirmation(new ApiError('NETWORK_ERROR', 'timeout', 0)), true)
+	assert.equal(inspectionSubmitFailureNeedsConfirmation(new ApiError('OPTIMISTIC_LOCK_CONFLICT', 'conflict', 409)), false)
 })
 
 test('preserves API conflict semantics', () => {

@@ -74,6 +74,12 @@ public interface InspectionMapper {
             @Param("operatorId") long operatorId
     );
 
+    int bumpEditableTaskVersionsForItem(
+            @Param("tenantId") long tenantId,
+            @Param("itemId") long itemId,
+            @Param("operatorId") long operatorId
+    );
+
     int softDeleteItem(
             @Param("tenantId") long tenantId,
             @Param("id") long id,
@@ -514,6 +520,11 @@ public interface InspectionMapper {
     );
 
     List<TaskItemData> findTaskItems(
+            @Param("tenantId") long tenantId,
+            @Param("taskId") long taskId
+    );
+
+    int refreshTaskItemSnapshotsFromSource(
             @Param("tenantId") long tenantId,
             @Param("taskId") long taskId
     );

@@ -28,6 +28,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -137,6 +138,22 @@ class InspectionCatalogServiceTest {
     }
 
     @Test
+    void updatingAnItemInvalidatesEveryEditableTaskThatReferencesIt() {
+        InspectionDtos.ItemRow before = item(3);
+        when(mapper.findItem(1L, 100L)).thenReturn(before);
+        when(mapper.updateItem(anyLong(), anyLong(), any(), anyString(), anyLong()))
+                .thenReturn(1);
+
+        service.updateItem(100L, withVersion(request(
+                "NORMAL_ABNORMAL", "NORMAL", null, null, false, List.of()
+        ), 3));
+
+        var orderedWrites = inOrder(mapper);
+        orderedWrites.verify(mapper).bumpEditableTaskVersionsForItem(1L, 100L, 7L);
+        orderedWrites.verify(mapper).updateItem(anyLong(), anyLong(), any(), anyString(), anyLong());
+    }
+
+    @Test
     void returnsSixBusinessCategoryDefaultsWhenDictionaryIsUnavailable() {
         when(mapper.findItemCategories(1L)).thenReturn(List.of());
 
@@ -214,6 +231,36 @@ class InspectionCatalogServiceTest {
                 "DAILY", 1, LocalTime.of(8, 0), 60, null,
                 7L, "测试用户", LocalDate.of(2026, 8, 12), null,
                 status, "暂停", 2
+        );
+    }
+
+    private InspectionDtos.ItemRow item(int version) {
+        return new InspectionDtos.ItemRow(
+                100L, "ITEM-001", "测试点检项目", 10L, "测试部门", "OPERATION",
+                "测试部位", "测试点检内容", "目视", "工具", "测试点检标准",
+                "NORMAL", null, null, "%", "NORMAL_ABNORMAL", "[]", true,
+                false, 0, 9, 10, "image/jpeg,image/png", 82, false, false,
+                "MEDIUM", "异常时处理", false, 5, "安全说明", 1, "测试说明", version
+        );
+    }
+
+    private InspectionDtos.SaveItemRequest withVersion(
+            InspectionDtos.SaveItemRequest request,
+            int version
+    ) {
+        return new InspectionDtos.SaveItemRequest(
+                request.itemCode(), request.itemName(), request.organizationId(),
+                request.itemCategory(), request.inspectionPart(), request.inspectionContent(),
+                request.inspectionMethod(), request.inspectionTool(),
+                request.inspectionStandard(), request.standardValue(), request.minimumValue(),
+                request.maximumValue(), request.unit(), request.resultType(),
+                request.resultOptions(), request.required(), request.photoRequired(),
+                request.photoMinCount(), request.photoMaxCount(), request.photoMaxSizeMb(),
+                request.photoAllowedTypes(), request.photoCompressionQuality(),
+                request.numericRequired(), request.skipAllowed(), request.abnormalSeverity(),
+                request.abnormalAdvice(), request.abnormalDefaultStop(),
+                request.standardMinutes(), request.safetyNotes(), request.enabled(),
+                request.description(), version
         );
     }
 

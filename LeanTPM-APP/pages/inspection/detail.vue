@@ -18,7 +18,7 @@
 			<view v-if="['COMPLETED', 'PENDING_REVIEW'].includes(detail.task.taskStatus)" class="notice success">任务已完成，当前为只读结果</view>
 
 			<view v-for="(item, index) in detail.items" :key="item.id" class="item-card">
-				<view class="item-title"><text class="index">{{ index + 1 }}</text><view><text class="name">{{ item.itemName }} <text v-if="item.requiredFlag" class="required">必填</text></text><text class="content">{{ item.inspectionContent }}</text></view></view>
+				<view class="item-title"><text class="index">{{ index + 1 }}</text><view><text class="name">{{ item.itemName }} <text v-if="item.requiredFlag" class="required">必填</text> <text v-if="isInspectionPhotoRequired(item)" class="photo-required">需照片 ≥{{ Number(item.photoMinCount || 1) }}张</text></text><text class="content">{{ item.inspectionContent }}</text></view></view>
 				<view class="standard"><text class="standard-label">标准：</text>{{ item.inspectionStandard }}<text v-if="hasRange(item)">（{{ item.minimumValue ?? '—' }} ~ {{ item.maximumValue ?? '—' }} {{ item.unit || '' }}）</text></view>
 				<view v-if="item.safetyNotes" class="safety">⚠ {{ item.safetyNotes }}</view>
 
@@ -40,7 +40,7 @@
 					<view v-if="executable" class="flags">
 						<view :class="['flag', { active: drafts[item.id].abnormal }]" @click="toggleAbnormal(item)">异常</view>
 						<view v-if="item.skipAllowedFlag" :class="['flag', { active: drafts[item.id].skipped }]" @click="toggleSkip(item)">跳过本项</view>
-						<view class="flag photo" @click="capturePhoto(item)">{{ uploadingItemId === item.id ? '处理中…' : (item.photoRequiredFlag ? '拍照/相册（必需）' : '拍照/相册') }} {{ drafts[item.id].attachmentIds.length }}/{{ item.photoMaxCount }}</view>
+						<view class="flag photo" @click="capturePhoto(item)">{{ uploadingItemId === item.id ? '处理中…' : (isInspectionPhotoRequired(item) ? '拍照/相册（必需）' : '拍照/相册') }} {{ drafts[item.id].attachmentIds.length }}/{{ item.photoMaxCount }}</view>
 					</view>
 					<view v-if="attachmentsForItem(item.id).length" class="attachments">
 						<text class="attachments-title">现场附件（{{ attachmentsForItem(item.id).length }}）</text>
@@ -99,12 +99,12 @@
 	import { syncPendingWork } from '../../services/offline-sync.js'
 	import { brandingState } from '../../stores/branding.js'
 	import { mobileState } from '../../stores/mobile.js'
-	import { listQueuedPhotos, loadDraftEnvelope, queuePhoto, removeDraftEnvelope, removeQueuedPhoto, saveDraftEnvelope } from '../../stores/offline.js'
+	import { listQueuedPhotos, loadDraftEnvelope, markDraftSubmissionConfirmationRequired, queuePhoto, removeDraftEnvelope, removeDraftEnvelopeIfCurrent, removeQueuedPhoto, saveDraftEnvelope } from '../../stores/offline.js'
 	import { displayName } from '../../stores/session.js'
-	import { createIdempotencyKey } from '../../utils/idempotency.js'
+	import { bindIdempotencyKeyToPayload, createIdempotencyKey } from '../../utils/idempotency.js'
 	import { errorMessage, isConflict } from '../../utils/errors.js'
-	import { inspectionConflictResolution, rebaseInspectionDraft } from '../../utils/inspection-conflict.js'
-	import { applyNumericAbnormalState, buildInspectionPayload, initialResultDraft, resultOptions, validateInspectionResults } from '../../utils/inspection-results.js'
+	import { inspectionConflictResolution, inspectionPhotoSyncDecision, inspectionSubmitFailureNeedsConfirmation, rebaseInspectionDraft, shouldPreserveLocalInspectionDraft } from '../../utils/inspection-conflict.js'
+	import { applyNumericAbnormalState, buildInspectionPayload, initialResultDraft, isInspectionPhotoRequired, resultOptions, resultPhotoAttachmentIds, validateInspectionResults } from '../../utils/inspection-results.js'
 
 	const taskId = ref(0)
 	const detail = ref(null)
@@ -164,7 +164,13 @@
 			executionRemark.value = result.task.executionRemark || ''
 			for (const key of Object.keys(drafts)) delete drafts[key]
 			for (const item of result.items) drafts[item.id] = initialResultDraft(item)
-			try { taskAttachments.value = await inspectionApi.taskAttachments(taskId.value) } catch { taskAttachments.value = [] }
+			try {
+				taskAttachments.value = await inspectionApi.taskAttachments(taskId.value)
+			} catch (cause) {
+				taskAttachments.value = []
+				detail.value = null
+				throw new Error(`${errorMessage(cause, '项目照片加载失败')}；已停止本次提交，请点击重试`)
+			}
 			taskAttachmentIds.value = taskAttachments.value
 				.filter((item) => item.attachmentType === 'TASK_PHOTO')
 				.map((item) => item.id)
@@ -183,9 +189,33 @@
 						: '任务已更新，本地草稿已保留',
 					icon: 'none'
 				})
+			} else if (shouldPreserveLocalInspectionDraft(result.task, local)) {
+				const preservedLocal = markDraftSubmissionConfirmationRequired(
+					'inspection',
+					taskId.value,
+					createIdempotencyKey(`inspection-confirm-${taskId.value}`)
+				) || local
+				applyLocalPayload(preservedLocal.payload)
+				pendingSubmit.value = false
+				localSavedAt.value = preservedLocal.updatedAt || ''
+				uni.showModal({
+					title: '任务已完成，发现本地草稿',
+					content: '服务端任务已经完成，当前页面显示未同步的本地草稿供核对，它不会覆盖服务端结果。请选择保留，或明确丢弃并恢复显示服务端结果。',
+					confirmText: '保留草稿',
+					cancelText: '丢弃草稿',
+					showCancel: true,
+					success: (choice) => {
+						if (!choice.cancel) return
+						removeDraftEnvelope('inspection', taskId.value)
+						localSavedAt.value = ''
+						uni.showToast({ title: '本地草稿已丢弃', icon: 'none' })
+						void load()
+					}
+				})
 			} else if (local) {
 				removeDraftEnvelope('inspection', taskId.value)
 			}
+			restoreServerResultPhotoIds()
 			restoreQueuedAttachmentIds()
 			if (executable.value) {
 				for (const item of result.items) if (item.resultType === 'NUMBER') applyNumericAbnormalState(item, drafts[item.id])
@@ -209,6 +239,12 @@
 			}
 		}
 	}
+	function restoreServerResultPhotoIds() {
+		for (const item of detail.value?.items || []) {
+			if (!drafts[item.id]) continue
+			drafts[item.id].attachmentIds = resultPhotoAttachmentIds(item.id, taskAttachments.value.concat(localAttachments.value), drafts[item.id].attachmentIds, item)
+		}
+	}
 
 	function scheduleLocalSave() {
 		if (restoring.value || !executable.value) return
@@ -222,9 +258,26 @@
 		payload.results.forEach((result) => {
 			result.attachmentIds = (drafts[result.taskItemId]?.attachmentIds || []).slice()
 		})
-		const saved = saveDraftEnvelope({ workflow: 'inspection', taskId: taskId.value, taskVersion: detail.value.task.version, pendingSubmit: Boolean(submit), idempotencyKey: submitKey.value, payload })
+		const existing = loadDraftEnvelope('inspection', taskId.value)
+		let payloadSignature = ''
+		if (submit) {
+			if (existing?.requiresSubmissionConfirmation) submitKey.value = createIdempotencyKey(`inspection-${taskId.value}`)
+			const binding = bindIdempotencyKeyToPayload({
+				idempotencyKey: submitKey.value,
+				payloadSignature: existing?.submissionPayloadSignature || '',
+				payload,
+				legacyPendingSubmit: Boolean(existing?.pendingSubmit && !existing?.submissionPayloadSignature),
+				scope: `inspection-${taskId.value}`
+			})
+			submitKey.value = binding.idempotencyKey
+			payloadSignature = binding.payloadSignature
+		} else if (existing?.pendingSubmit) {
+			submitKey.value = createIdempotencyKey(`inspection-${taskId.value}`)
+		}
+		const saved = saveDraftEnvelope({ workflow: 'inspection', taskId: taskId.value, taskVersion: detail.value.task.version, pendingSubmit: Boolean(submit), idempotencyKey: submitKey.value, submissionPayloadSignature: payloadSignature, requiresSubmissionConfirmation: false, revision: createIdempotencyKey(`inspection-draft-${taskId.value}`), payload })
 		pendingSubmit.value = Boolean(submit)
 		localSavedAt.value = saved.updatedAt
+		return saved
 	}
 
 	function selectQualitative(item, choice) {
@@ -423,7 +476,7 @@
 		saving.value = true
 		try {
 			let payload = buildInspectionPayload(detail.value.task, detail.value.items, drafts, executionRemark.value, taskAttachmentIds.value)
-			persistLocal(submit)
+			const requestDraft = persistLocal(submit)
 			if (!connected.value) {
 				uni.showToast({ title: submit ? '已离线排队，联网后自动提交' : '草稿已保存在本机', icon: 'none' })
 				return
@@ -435,18 +488,46 @@
 					return
 				}
 				const updated = loadDraftEnvelope('inspection', taskId.value)
-				if (!updated && submit) {
+				const syncDecision = inspectionPhotoSyncDecision(submit, updated)
+				if (syncDecision === 'SUBMITTED_BY_SYNC') {
 					uni.showToast({ title: '照片及点检结果已同步', icon: 'success' })
 					await load()
 					return
 				}
-				if (updated) { applyLocalPayload(updated.payload); payload = buildInspectionPayload(detail.value.task, detail.value.items, drafts, executionRemark.value, taskAttachmentIds.value) }
+				if (updated) {
+					applyLocalPayload(updated.payload)
+					submitKey.value = updated.idempotencyKey || submitKey.value
+					if (Number.isFinite(Number(updated.taskVersion))) detail.value.task.version = Number(updated.taskVersion)
+					payload = updated.payload
+				}
+				if (syncDecision === 'RETRY_REQUIRED') {
+					uni.showModal({
+						title: '任务尚未完成',
+						content: '照片已同步，本次提交未完成。本地草稿已安全保留，请再次点击提交。',
+						showCancel: false
+					})
+					return
+				}
 			}
 			if (submit) await inspectionApi.submitTask(taskId.value, payload, submitKey.value)
 			else await inspectionApi.saveDraft(taskId.value, payload)
 			uni.showToast({ title: submit ? '点检任务已完成' : '草稿已保存', icon: 'success' })
 			if (submit) submitKey.value = createIdempotencyKey(`inspection-${taskId.value}`)
-			removeDraftEnvelope('inspection', taskId.value)
+			const removed = removeDraftEnvelopeIfCurrent('inspection', taskId.value, requestDraft?.revision)
+			if (!removed) {
+				const current = markDraftSubmissionConfirmationRequired('inspection', taskId.value, createIdempotencyKey(`inspection-confirm-${taskId.value}`))
+					|| loadDraftEnvelope('inspection', taskId.value)
+				pendingSubmit.value = Boolean(current?.pendingSubmit)
+				localSavedAt.value = current?.updatedAt || localSavedAt.value
+				uni.showModal({
+					title: submit ? '任务已提交' : '草稿已保存',
+					content: submit
+						? '服务端已完成提交，但检测到同步期间有新的本地修改；新版草稿已保留，请返回任务列表核对结果。'
+						: '服务端已保存，同步期间产生的新本地修改仍已保留。',
+					showCancel: false
+				})
+				return
+			}
 			pendingSubmit.value = false
 			localSavedAt.value = ''
 			await load()
@@ -456,26 +537,44 @@
 				try { latest = await inspectionApi.task(taskId.value) } catch {}
 				const resolution = inspectionConflictResolution(cause, latest?.task)
 				if (resolution.completed) {
-					removeDraftEnvelope('inspection', taskId.value)
-					pendingSubmit.value = false
-					await load()
-					uni.showModal({ title: '任务已完成', content: '任务已由执行人员完成，已刷新为服务端最新结果。', showCancel: false })
+					const removed = removeDraftEnvelopeIfCurrent('inspection', taskId.value, requestDraft?.revision)
+					if (removed) {
+						pendingSubmit.value = false
+						await load()
+					} else markDraftSubmissionConfirmationRequired('inspection', taskId.value, createIdempotencyKey(`inspection-confirm-${taskId.value}`))
+					uni.showModal({
+						title: '任务已完成',
+						content: removed ? '任务已由执行人员完成，已刷新为服务端最新结果。' : '任务已完成；同步期间产生的新版本地草稿已保留，请返回任务列表核对结果。',
+						showCancel: false
+					})
 				} else {
-					if (latest) {
+					if (latest && resolution.rebaseDraft) {
 						const local = loadDraftEnvelope('inspection', taskId.value)
 						const rebased = rebaseInspectionDraft(local, latest.task.version, latest.items)
 						detail.value = latest
 						if (rebased) applyLocalPayload(rebased.payload)
-						submitKey.value = createIdempotencyKey(`inspection-${taskId.value}`)
+						if (resolution.rotateIdempotencyKey) submitKey.value = createIdempotencyKey(`inspection-${taskId.value}`)
 						persistLocal(submit)
+					} else if (resolution.requiresUserConfirmation) {
+						markDraftSubmissionConfirmationRequired('inspection', taskId.value, createIdempotencyKey(`inspection-confirm-${taskId.value}`))
 					}
+					const recoveryMessage = resolution.requiresUserConfirmation
+						? '请求结果暂时无法确认。本地草稿和原请求键已保留；请先查看任务状态，确认仍未完成后再次点击提交。'
+						: resolution.rebaseDraft
+							? '本地草稿已保留并同步到最新任务版本，可以再次提交。'
+							: '请求仍在处理中，本地草稿和原请求键已保留，请稍后查看任务状态。'
 					uni.showModal({
 						title: '任务尚未完成',
-						content: `${errorMessage(cause)}；本地草稿已保留${latest ? '并已同步最新任务版本，可再次提交' : '，请稍后重试'}`,
+						content: `${errorMessage(cause)}；${recoveryMessage}`,
 						showCancel: false
 					})
 				}
-			} else uni.showModal({ title: submit ? '提交失败' : '保存失败', content: `${errorMessage(cause)}；本地草稿仍保留`, showCancel: false })
+			} else {
+				if (submit && inspectionSubmitFailureNeedsConfirmation(cause)) {
+					markDraftSubmissionConfirmationRequired('inspection', taskId.value, createIdempotencyKey(`inspection-confirm-${taskId.value}`))
+				}
+				uni.showModal({ title: submit ? '提交失败' : '保存失败', content: `${errorMessage(cause)}；本地草稿仍保留`, showCancel: false })
+			}
 		} finally { saving.value = false }
 	}
 </script>
@@ -504,6 +603,7 @@
 	.name, .content { display: block; }
 	.name { color: #203d31; font-size: 29rpx; font-weight: 750; }
 	.required { color: var(--brand-primary, #1c7d50); font-size: 19rpx; }
+	.photo-required { display: inline-flex; margin-left: 8rpx; padding: 3rpx 10rpx; border-radius: 999rpx; color: #8a5b00; background: #fff1c7; font-size: 19rpx; font-weight: 700; }
 	.content { margin-top: 8rpx; color: #6e7b75; font-size: 23rpx; line-height: 1.5; }
 	.standard { margin-top: 22rpx; padding: 20rpx; border-radius: 15rpx; color: #4e5d56; background: #f3f6f4; font-size: 23rpx; line-height: 1.55; }
 	.standard-label { color: #263f35; font-weight: 700; }

@@ -45,8 +45,8 @@
 
 	const loading = ref(false)
 	const serverUrl = getServerBaseUrl()
-	const versionName = ref('1.0.3')
-	const versionCode = ref(102)
+	const versionName = ref('1.0.4')
+	const versionCode = ref(103)
 	const pendingCount = ref(pendingWorkCount())
 	const syncing = ref(false)
 	const rolesText = computed(() => sessionState.user?.roles?.join('、') || '—')

@@ -1,8 +1,8 @@
 {
     "schemaVersion":  1,
-    "releaseId":  "leantpm-1.0.3-test.1",
+    "releaseId":  "leantpm-1.0.4-test.1",
     "releaseTier":  "TEST",
-    "productVersion":  "1.0.3",
+    "productVersion":  "1.0.4",
     "createdAtUtc":  "2026-08-08T04:00:00Z",
     "source":  {
                    "commit":  "2185536ea9da0a323b27f53dcf849b818ea19069",
@@ -12,14 +12,14 @@
                },
     "components":  {
                        "backend":  {
-                                       "version":  "1.0.3"
+                                       "version":  "1.0.4"
                                    },
                        "web":  {
-                                   "version":  "1.0.3"
+                                   "version":  "1.0.4"
                                },
                        "app":  {
-                                   "version":  "1.0.3",
-                                   "versionCode":  102,
+                                   "version":  "1.0.4",
+                                   "versionCode":  103,
                                    "minimumSupportedVersionCode":  101,
                                    "includedInRelease":  true
                                },
@@ -77,7 +77,7 @@
                           "component":  "operations",
                           "path":  "operations/compatibility-matrix.json",
                           "size":  421,
-                          "sha256":  "edab494662eecc8d32fccc10fda3a8b3d82bebeea1270b623fb17f2fa1eeb701",
+                          "sha256":  "7bd9a85e0d5c240e89192853407858f24c8093ccabf3d0b7852094eee8f2cf4c",
                           "mediaType":  "application/json"
                       },
                       {

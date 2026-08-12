@@ -25,6 +25,28 @@ export function removeDraftEnvelope(workflow, taskId) {
 	setStored(STORAGE_KEYS.drafts, drafts().filter((item) => !(item.workflow === workflow && item.taskId === Number(taskId))))
 }
 
+export function removeDraftEnvelopeIfCurrent(workflow, taskId, expectedRevision) {
+	const current = loadDraftEnvelope(workflow, taskId)
+	if (!current || !expectedRevision || current.revision !== expectedRevision) return false
+	removeDraftEnvelope(workflow, taskId)
+	return true
+}
+
+export function saveDraftEnvelopeIfCurrent(envelope, expectedRevision, expectedUpdatedAt = '') {
+	const current = loadDraftEnvelope(envelope.workflow, envelope.taskId)
+	if (!current) return null
+	const revisionMatches = Boolean(expectedRevision) && current.revision === expectedRevision
+	const legacySnapshotMatches = !expectedRevision && !current.revision && Boolean(expectedUpdatedAt) && current.updatedAt === expectedUpdatedAt
+	if (!revisionMatches && !legacySnapshotMatches) return null
+	return saveDraftEnvelope(envelope)
+}
+
+export function markDraftSubmissionConfirmationRequired(workflow, taskId, revision) {
+	const current = loadDraftEnvelope(workflow, taskId)
+	if (!current || !revision) return null
+	return saveDraftEnvelope({ ...current, pendingSubmit: false, requiresSubmissionConfirmation: true, revision })
+}
+
 export function listDraftEnvelopes() { return drafts().slice().sort((a, b) => String(a.updatedAt).localeCompare(String(b.updatedAt))) }
 
 export function queuePhoto(record) {

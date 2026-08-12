@@ -14,6 +14,7 @@ import com.leantpm.inspection.InspectionExportWorker;
 import com.leantpm.inspection.InspectionTaskService;
 import com.leantpm.security.CurrentUser;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.ibatis.session.SqlSession;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -82,6 +83,9 @@ class InspectionMySqlIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbc;
+
+    @Autowired
+    private SqlSession sqlSession;
 
     @BeforeEach
     void prepareUserAndAuthentication() {
@@ -307,7 +311,21 @@ class InspectionMySqlIntegrationTest {
         InspectionDtos.TaskRow task = taskService.tasks(
                 generated.taskCodes().getFirst(), null, null, true, 1, 20
         ).records().getFirst();
+        InspectionDtos.ItemRow sourceBeforeSubmit = catalogService.item(1L);
+        catalogService.updateItem(
+                1L,
+                itemUpdateRequest(sourceBeforeSubmit, "live item before submit", true, 1)
+        );
+        sqlSession.clearCache();
+        assertThat(catalogService.scheme(schemeId, null).items())
+                .filteredOn(item -> item.inspectionItemId() == 1L)
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.itemName()).isEqualTo("live item before submit");
+                    assertThat(item.photoRequiredFlag()).isTrue();
+                });
         InspectionDtos.TaskDetail detail = taskService.detail(task.id());
+        assertThat(detail.task().version()).isEqualTo(task.version() + 1);
         assertThat(detail.items()).hasSize(3);
         assertThat(detail.items())
                 .extracting(InspectionDtos.TaskItemRow::sourceItemId)
@@ -319,9 +337,17 @@ class InspectionMySqlIntegrationTest {
             assertThat(item.photoAllowedTypes()).isEqualTo("image/jpeg,image/png");
             assertThat(item.photoCompressionQuality()).isEqualTo(82);
         });
+        assertThat(detail.items())
+                .filteredOn(item -> item.sourceItemId() == 1L)
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.itemName()).isEqualTo("live item before submit");
+                    assertThat(item.photoRequiredFlag()).isTrue();
+                    assertThat(item.photoMinCount()).isEqualTo(1);
+                });
 
         List<InspectionDtos.SaveResultRequest> results = detail.items().stream()
-                .map(item -> switch (item.resultType()) {
+                .map(item -> withAttachments(switch (item.resultType()) {
                     case "NUMBER" -> result(
                             item.id(), null, new BigDecimal("55"), false, null
                     );
@@ -331,12 +357,12 @@ class InspectionMySqlIntegrationTest {
                     default -> result(
                             item.id(), "ABNORMAL", null, true, "主轴存在异常振动"
                     );
-                })
+                }, item.sourceItemId() == 1L ? List.of(9198L) : List.of()))
                 .toList();
 
         InspectionDtos.SaveTaskResultsRequest submissionRequest =
                 new InspectionDtos.SaveTaskResultsRequest(
-                        results, List.of(9199L), "完成现场点检", task.version()
+                        results, List.of(9199L), "完成现场点检", detail.task().version()
                 );
         jdbc.update("""
                 INSERT INTO system_attachment
@@ -345,10 +371,39 @@ class InspectionMySqlIntegrationTest {
                 VALUES (9199, 1, '整单现场图片.jpg', 'task-photo.jpg',
                         'it/task-photo.jpg', 'image/jpeg', 'jpg', 1024, ?, ?, ?)
                 """, "c".repeat(64), USER_ID, USER_ID);
+        jdbc.update("""
+                INSERT INTO system_attachment
+                    (id, tenant_id, original_name, stored_name, storage_path,
+                     content_type, extension, file_size, sha256, created_by, updated_by)
+                VALUES (9198, 1, 'item-photo.jpg', 'result-photo.jpg',
+                        'it/result-photo.jpg', 'image/jpeg', 'jpg', 1024, ?, ?, ?)
+                """, "d".repeat(64), USER_ID, USER_ID);
         taskService.submit(task.id(), submissionRequest);
         InspectionDtos.TaskDetail submitted = taskService.detail(task.id());
         assertThat(submitted.task().taskStatus()).isEqualTo("COMPLETED");
         assertThat(submitted.task().dispatchStatus()).isEqualTo("COMPLETED");
+        jdbc.update("""
+                UPDATE inspection_item
+                SET item_name = 'live item after submit',
+                    photo_required_flag = 0,
+                    photo_min_count = 0,
+                    updated_by = ?
+                WHERE tenant_id = 1 AND id = 1 AND deleted = 0
+                """, USER_ID);
+        sqlSession.clearCache();
+        assertThat(taskService.detail(task.id()).items())
+                .filteredOn(item -> item.sourceItemId() == 1L)
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.itemName()).isEqualTo("live item before submit");
+                    assertThat(item.photoRequiredFlag()).isTrue();
+                    assertThat(item.photoMinCount()).isEqualTo(1);
+                });
+        assertThat(catalogService.scheme(schemeId, null).items())
+                .filteredOn(item -> item.inspectionItemId() == 1L)
+                .singleElement()
+                .extracting(InspectionDtos.SchemeItemRow::itemName)
+                .isEqualTo("live item after submit");
         assertThat(taskService.taskAttachments(task.id()))
                 .filteredOn(attachment -> "TASK_PHOTO".equals(attachment.attachmentType()))
                 .singleElement()
@@ -461,7 +516,7 @@ class InspectionMySqlIntegrationTest {
             assertThat(workbook.getSheet("任务汇总").getLastRowNum()).isEqualTo(1);
             assertThat(workbook.getSheet("逐项结果").getLastRowNum()).isEqualTo(3);
             assertThat(workbook.getSheet("异常记录").getLastRowNum()).isEqualTo(1);
-            assertThat(workbook.getSheet("附件索引").getLastRowNum()).isEqualTo(1);
+            assertThat(workbook.getSheet("附件索引").getLastRowNum()).isEqualTo(2);
             assertThat(workbook.getSheet("逐项结果").getRow(1).getCell(0).getStringCellValue())
                     .isEqualTo(generated.taskCodes().getFirst());
         } catch (Exception exception) {
@@ -828,6 +883,39 @@ class InspectionMySqlIntegrationTest {
                 null,
                 List.of(),
                 null
+        );
+    }
+
+    private InspectionDtos.SaveResultRequest withAttachments(
+            InspectionDtos.SaveResultRequest request,
+            List<Long> attachmentIds
+    ) {
+        return new InspectionDtos.SaveResultRequest(
+                request.taskItemId(), request.resultCode(), request.numericValue(),
+                request.textValue(), request.selectedValue(), request.selectedValues(),
+                request.abnormal(), request.abnormalDescription(),
+                request.equipmentStopRequired(), request.stopOverrideReason(),
+                request.skipped(), request.skipReason(), attachmentIds, request.version()
+        );
+    }
+
+    private InspectionDtos.SaveItemRequest itemUpdateRequest(
+            InspectionDtos.ItemRow source,
+            String itemName,
+            boolean photoRequired,
+            int photoMinCount
+    ) {
+        return new InspectionDtos.SaveItemRequest(
+                source.itemCode(), itemName, source.organizationId(), source.itemCategory(),
+                source.inspectionPart(), source.inspectionContent(), source.inspectionMethod(),
+                source.inspectionTool(), source.inspectionStandard(), source.standardValue(),
+                source.minimumValue(), source.maximumValue(), source.unit(), source.resultType(),
+                List.of(), source.requiredFlag(), photoRequired, photoMinCount,
+                source.photoMaxCount(), source.photoMaxSizeMb(), source.photoAllowedTypes(),
+                source.photoCompressionQuality(), source.numericRequiredFlag(),
+                source.skipAllowedFlag(), source.abnormalSeverity(), source.abnormalAdvice(),
+                source.abnormalDefaultStopFlag(), source.standardMinutes(), source.safetyNotes(),
+                source.status() == 1, source.description(), source.version()
         );
     }
 }

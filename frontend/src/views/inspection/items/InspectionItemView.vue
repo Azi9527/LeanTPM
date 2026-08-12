@@ -5,6 +5,10 @@ import { inspectionApi, type ItemCategoryOption, type ItemRow, type ResultType }
 import { masterDataApi, type OrganizationRow } from '@/api/masterData'
 import { useAuthStore } from '@/stores/auth'
 import { errorMessage } from '@/utils/http'
+import {
+  afterPhotoMinimumChange,
+  afterPhotoRequiredChange,
+} from '@/utils/inspection-item-photo-rule'
 import InspectionImportDialog from '@/components/inspection/InspectionImportDialog.vue'
 import { applySmartTableQuery, type SmartTableServerQuery } from '@/components/table/smart-table-context'
 
@@ -170,6 +174,9 @@ function applyTableQuery(query: SmartTableServerQuery) {
 
 function open(row?: ItemRow) {
   editing.value = row || null
+  const photoRule = row
+    ? afterPhotoMinimumChange(Boolean(row.photoRequiredFlag), row.photoMinCount ?? 0)
+    : afterPhotoRequiredChange(false, 0)
   Object.assign(form, row
     ? {
         itemCode: row.itemCode,
@@ -188,8 +195,8 @@ function open(row?: ItemRow) {
         resultType: row.resultType,
         resultOptionsText: parseOptions(row.resultOptionsJson).join('\n'),
         required: row.requiredFlag,
-        photoRequired: row.photoRequiredFlag ?? false,
-        photoMinCount: row.photoMinCount ?? 0,
+        photoRequired: photoRule.photoRequired,
+        photoMinCount: photoRule.photoMinCount,
         photoMaxCount: row.photoMaxCount ?? 2,
         photoMaxSizeMb: row.photoMaxSizeMb ?? 5,
         photoAllowedTypes: row.photoAllowedTypes || 'image/jpeg,image/png',
@@ -242,6 +249,14 @@ function open(row?: ItemRow) {
   dialogVisible.value = true
 }
 
+function onPhotoRequiredChange(required: string | number | boolean) {
+  Object.assign(form, afterPhotoRequiredChange(Boolean(required), form.photoMinCount))
+}
+
+function onPhotoMinimumChange(minimum: number | undefined) {
+  Object.assign(form, afterPhotoMinimumChange(form.photoRequired, minimum ?? 0))
+}
+
 async function save() {
   const missing = [
     !form.itemCode && '项目编码',
@@ -274,7 +289,6 @@ async function save() {
     ElMessage.warning('选择型结果请至少配置一个选项')
     return
   }
-  if (form.photoRequired && form.photoMinCount < 1) form.photoMinCount = 1
   saving.value = true
   try {
     const payload = {
@@ -411,7 +425,7 @@ function parseOptions(value?: string): string[] {
         <el-form-item label="异常等级" required><el-select v-model="form.abnormalSeverity"><el-option label="低" value="LOW" /><el-option label="中" value="MEDIUM" /><el-option label="高" value="HIGH" /><el-option label="紧急" value="CRITICAL" /></el-select></el-form-item>
         <el-form-item label="异常建议"><el-input v-model="form.abnormalAdvice" /></el-form-item>
         <el-form-item label="异常默认停机"><el-switch v-model="form.abnormalDefaultStop" /><small class="block">任务执行时可调整，调整后必须填写原因</small></el-form-item>
-        <el-form-item label="最少照片数" required><el-input-number v-model="form.photoMinCount" :min="0" :max="20" /></el-form-item>
+        <el-form-item label="最少照片数" required><el-input-number v-model="form.photoMinCount" :min="0" :max="20" @change="onPhotoMinimumChange" /><div class="field-hint">大于 0 即表示必须拍照；设为 0 会自动关闭“必须拍照”。</div></el-form-item>
         <el-form-item label="最多照片数" required><el-input-number v-model="form.photoMaxCount" :min="1" :max="20" /></el-form-item>
         <el-form-item label="单张上限（MB）" required><el-input-number v-model="form.photoMaxSizeMb" :min="1" :max="100" /></el-form-item>
         <el-form-item label="压缩质量" required><el-slider v-model="form.photoCompressionQuality" :min="40" :max="95" show-input /></el-form-item>
@@ -419,9 +433,9 @@ function parseOptions(value?: string): string[] {
         <el-form-item label="安全说明" class="full"><el-input v-model="form.safetyNotes" type="textarea" /></el-form-item>
         <el-form-item label="执行规则" class="full" required>
           <el-checkbox v-model="form.required">必填</el-checkbox>
-          <el-checkbox v-model="form.photoRequired">必须拍照</el-checkbox>
+          <el-checkbox v-model="form.photoRequired" @change="onPhotoRequiredChange">必须拍照</el-checkbox>
           <el-checkbox v-model="form.numericRequired">必须数值</el-checkbox>
-          <span class="field-hint">勾选“必须数值”会自动切换为数值结果；正常/异常、合格/不合格不使用上下限。</span>
+          <span class="field-hint">勾选“必须拍照”时最少照片数自动调整为 1；最少照片数设为 0 时自动关闭。勾选“必须数值”会自动切换为数值结果；正常/异常、合格/不合格不使用上下限。</span>
           <el-checkbox v-model="form.skipAllowed">允许跳过</el-checkbox>
           <el-checkbox v-model="form.enabled">启用</el-checkbox>
         </el-form-item>

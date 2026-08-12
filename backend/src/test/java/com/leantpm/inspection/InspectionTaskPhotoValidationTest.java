@@ -7,6 +7,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 class InspectionTaskPhotoValidationTest {
 
     @Test
+    void classifiesLegacyPositivePhotoMinimumAsResultPhoto() {
+        assertThat(InspectionTaskService.usesResultPhotoAttachment("NORMAL_ABNORMAL", false, 1))
+                .isTrue();
+        assertThat(InspectionTaskService.usesResultPhotoAttachment("NORMAL_ABNORMAL", true, 0))
+                .isTrue();
+        assertThat(InspectionTaskService.usesResultPhotoAttachment("IMAGE", false, 0))
+                .isTrue();
+        assertThat(InspectionTaskService.usesResultPhotoAttachment("NORMAL_ABNORMAL", false, 0))
+                .isFalse();
+    }
+
+    @Test
     void identifiesTheExactItemAndMissingPhotoCount() {
         var violation = new InspectionMapper.ResultAttachmentValidationRow(
                 16L, 6, "润滑系统-注油泵01",

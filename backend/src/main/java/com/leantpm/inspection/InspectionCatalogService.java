@@ -162,6 +162,7 @@ public class InspectionCatalogService {
         if (!before.itemCode().equals(normalized.itemCode())) {
             throw new BusinessException("INSPECTION_ITEM_CODE_IMMUTABLE", "点检项目编码不可修改");
         }
+        mapper.bumpEditableTaskVersionsForItem(current.tenantId(), id, current.userId());
         if (mapper.updateItem(
                 current.tenantId(), id, normalized, json(normalized.resultOptions()), current.userId()
         ) == 0) {

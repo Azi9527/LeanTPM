@@ -5,8 +5,8 @@ export function compareVersionCodes(currentCode, minimumCode) {
 }
 
 export function currentAppInfo() {
-	let version = '1.0.3'
-	let versionCode = 102
+	let version = '1.0.4'
+	let versionCode = 103
 	try {
 		const info = uni.getAppBaseInfo?.() || {}
 		version = info.appVersion || version

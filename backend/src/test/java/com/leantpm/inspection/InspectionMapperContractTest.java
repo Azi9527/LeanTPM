@@ -45,6 +45,62 @@ class InspectionMapperContractTest {
                 .contains("unsupported_type_count");
     }
 
+    @Test
+    void schemesReferenceLiveItemsAndEditableTasksRefreshBeforeSubmission() throws Exception {
+        String xml = new ClassPathResource(
+                "mapper/inspection/InspectionMapper.xml"
+        ).getContentAsString(StandardCharsets.UTF_8);
+
+        String schemeItems = block(xml, "<select id=\"findSchemeItems\"", "</select>");
+        String copiedItems = block(xml, "<insert id=\"copyTaskItems\">", "</insert>");
+        String liveColumns = block(
+                xml,
+                "<sql id=\"taskItemLiveOrSnapshotColumns\">",
+                "</sql>"
+        );
+        String liveJoins = block(
+                xml,
+                "<sql id=\"taskItemLiveOrSnapshotJoins\">",
+                "</sql>"
+        );
+        String refresh = block(
+                xml,
+                "<update id=\"refreshTaskItemSnapshotsFromSource\">",
+                "</update>"
+        );
+        String bumpVersions = block(
+                xml,
+                "<update id=\"bumpEditableTaskVersionsForItem\">",
+                "</update>"
+        );
+
+        assertThat(schemeItems)
+                .contains("item.required_flag AS required_flag")
+                .contains("item.photo_required_flag AS photo_required_flag")
+                .doesNotContain("required_override", "photo_required_override",
+                        "skip_allowed_override", "abnormal_stop_override");
+        assertThat(copiedItems)
+                .contains("item.required_flag")
+                .contains("item.photo_required_flag")
+                .doesNotContain("required_override", "photo_required_override",
+                        "skip_allowed_override", "abnormal_stop_override");
+        assertThat(liveJoins)
+                .contains("JOIN inspection_task task")
+                .contains("LEFT JOIN inspection_item source");
+        assertThat(liveColumns)
+                .contains("task.task_status IN ('PENDING','OVERDUE','IN_PROGRESS')");
+        assertThat(refresh)
+                .contains("UPDATE inspection_task_item item")
+                .contains("JOIN inspection_item source")
+                .contains("item.photo_required_flag = source.photo_required_flag")
+                .contains("item.photo_min_count = source.photo_min_count");
+        assertThat(bumpVersions)
+                .contains("UPDATE inspection_task task")
+                .contains("source_item_id = #{itemId}")
+                .contains("task.version = task.version + 1")
+                .contains("task.task_status IN ('PENDING','OVERDUE','IN_PROGRESS')");
+    }
+
     private String block(String source, String startToken, String endToken) {
         int start = source.indexOf(startToken);
         int end = source.indexOf(endToken, start);

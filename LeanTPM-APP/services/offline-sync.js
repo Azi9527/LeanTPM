@@ -1,10 +1,10 @@
 import { inspectionApi } from '../api/inspection.js'
 import { connected, onNetworkReconnect } from '../platform/network.js'
 import { removeSavedFile } from '../platform/photo.js'
-import { attachQueuedPhotoToDraft, listDraftEnvelopes, listQueuedPhotos, removeDraftEnvelope, removeQueuedPhoto, saveDraftEnvelope } from '../stores/offline.js'
-import { createIdempotencyKey } from '../utils/idempotency.js'
+import { attachQueuedPhotoToDraft, listDraftEnvelopes, listQueuedPhotos, markDraftSubmissionConfirmationRequired, removeDraftEnvelopeIfCurrent, removeQueuedPhoto, saveDraftEnvelopeIfCurrent } from '../stores/offline.js'
+import { bindIdempotencyKeyToPayload, createIdempotencyKey } from '../utils/idempotency.js'
 import { isConflict } from '../utils/errors.js'
-import { inspectionConflictResolution, rebaseInspectionDraft } from '../utils/inspection-conflict.js'
+import { inspectionOfflineConflictResolution, inspectionSubmitFailureNeedsConfirmation } from '../utils/inspection-conflict.js'
 import { uploadPhotoEvidence } from './photo-evidence.js'
 
 let syncing = null
@@ -40,25 +40,51 @@ async function doSync() {
 	if (listQueuedPhotos().length) return { photos: photoCount, drafts: draftCount }
 	for (const draft of listDraftEnvelopes()) {
 		if (!draft.pendingSubmit || draft.workflow !== 'inspection') continue
+		if (draft.requiresSubmissionConfirmation) continue
+		let prepared = draft
 		try {
-			await inspectionApi.submitTask(draft.taskId, draft.payload, draft.idempotencyKey)
-			removeDraftEnvelope(draft.workflow, draft.taskId)
-			draftCount += 1
+			const binding = bindIdempotencyKeyToPayload({
+				idempotencyKey: draft.idempotencyKey,
+				payloadSignature: draft.submissionPayloadSignature || '',
+				payload: draft.payload,
+				legacyPendingSubmit: !draft.submissionPayloadSignature,
+				scope: `inspection-${draft.taskId}`
+			})
+			prepared = saveDraftEnvelopeIfCurrent({
+				...draft,
+				idempotencyKey: binding.idempotencyKey,
+				submissionPayloadSignature: binding.payloadSignature,
+				revision: createIdempotencyKey(`inspection-sync-${draft.taskId}`)
+			}, draft.revision, draft.updatedAt)
+			if (!prepared) continue
+			await inspectionApi.submitTask(prepared.taskId, prepared.payload, prepared.idempotencyKey)
+			if (removeDraftEnvelopeIfCurrent(draft.workflow, draft.taskId, prepared.revision)) draftCount += 1
+			else markDraftSubmissionConfirmationRequired(draft.workflow, draft.taskId, createIdempotencyKey(`inspection-confirm-${draft.taskId}`))
 		} catch (error) {
 			if (isConflict(error)) {
 				try {
 					const latest = await inspectionApi.task(draft.taskId)
-					if (inspectionConflictResolution(error, latest?.task).completed) {
-						removeDraftEnvelope(draft.workflow, draft.taskId)
-						draftCount += 1
+					const resolution = inspectionOfflineConflictResolution(error, latest?.task)
+					if (resolution.completed) {
+						if (removeDraftEnvelopeIfCurrent(draft.workflow, draft.taskId, prepared.revision)) draftCount += 1
+						else markDraftSubmissionConfirmationRequired(draft.workflow, draft.taskId, createIdempotencyKey(`inspection-confirm-${draft.taskId}`))
 						continue
 					}
-					const rebased = rebaseInspectionDraft(draft, latest.task.version, latest.items)
-					if (rebased) saveDraftEnvelope({
-						...rebased,
-						idempotencyKey: createIdempotencyKey(`inspection-${draft.taskId}`)
-					})
-				} catch {}
+					if (resolution.requiresUserConfirmation) {
+						const current = markDraftSubmissionConfirmationRequired(draft.workflow, draft.taskId, createIdempotencyKey(`inspection-confirm-${draft.taskId}`))
+						if (current) prepared = current
+						break
+					}
+					break
+				} catch {
+					markDraftSubmissionConfirmationRequired(
+						draft.workflow,
+						draft.taskId,
+						createIdempotencyKey(`inspection-confirm-${draft.taskId}`)
+					)
+				}
+			} else if (inspectionSubmitFailureNeedsConfirmation(error)) {
+				markDraftSubmissionConfirmationRequired(draft.workflow, draft.taskId, createIdempotencyKey(`inspection-confirm-${draft.taskId}`))
 			}
 			break
 		}

@@ -7,7 +7,7 @@ import {
   schemeItemPayload,
 } from '../src/utils/inspection-scheme.ts'
 
-test('copies every scheme-level item override without changing source order', () => {
+test('scheme payload only references item ids and preserves source order', () => {
   const configs = schemeItemConfigMap([
     {
       inspectionItemId: 11,
@@ -19,14 +19,10 @@ test('copies every scheme-level item override without changing source order', ()
     },
   ])
 
-  assert.deepEqual(schemeItemPayload([11], configs, { 11: false }), [
+  assert.deepEqual(schemeItemPayload([11], configs), [
     {
       inspectionItemId: 11,
       sortOrder: 35,
-      required: false,
-      photoRequired: true,
-      skipAllowed: true,
-      abnormalStop: false,
     },
   ])
 })

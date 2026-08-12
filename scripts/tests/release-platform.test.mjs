@@ -445,9 +445,9 @@ test('accepts the canonical version only when every component and schema agrees'
   assert.equal(result.status, 0, combinedOutput(result))
   const report = JSON.parse(result.stdout.trim())
   assert.equal(report.status, 'PASS')
-  assert.equal(report.productVersion, '1.0.3')
-  assert.equal(report.appVersionName, '1.0.3')
-  assert.equal(report.appVersionCode, 102)
+  assert.equal(report.productVersion, '1.0.4')
+  assert.equal(report.appVersionName, '1.0.4')
+  assert.equal(report.appVersionCode, 103)
   assert.equal(report.minimumSupportedAppVersionCode, 101)
   assert.equal(report.appPackageName, 'com.leantpm.mobile')
   assert.equal(report.databaseSchemaVersion, 52)
@@ -885,7 +885,7 @@ test('builds byte-for-byte deterministic release bundles and verifies the archiv
     assert.equal(verified.status, 0, combinedOutput(verified))
     const report = JSON.parse(verified.stdout.trim())
     assert.equal(report.status, 'PASS')
-    assert.equal(report.releaseId, 'leantpm-1.0.3-test.1')
+    assert.equal(report.releaseId, 'leantpm-1.0.4-test.1')
 
     const extracted = path.join(temporaryRoot, 'verified-extraction')
     const extractedResult = invokePowerShell('scripts/Test-ReleasePackage.ps1', [
@@ -1117,7 +1117,7 @@ test('builds backup, deployment and rollback plans without touching a database o
       schemaVersion: 1,
       environmentName: 'isolated-test',
       environmentKind: 'NON_PRODUCTION',
-      releaseId: 'leantpm-1.0.3-test.1',
+      releaseId: 'leantpm-1.0.4-test.1',
       approvalId: 'approval-test-001',
       packagePath,
       installRoot: install,
@@ -1125,7 +1125,7 @@ test('builds backup, deployment and rollback plans without touching a database o
       backupRoot: backups,
       serviceId: 'LeanTPM.Backend',
       healthUri: 'http://127.0.0.1:18080/actuator/health/readiness',
-      runtimeConfigId: 'leantpm-1.0.3-test.1-config',
+      runtimeConfigId: 'leantpm-1.0.4-test.1-config',
       runtimeConfigSha256: 'a'.repeat(64),
     }, null, 2))
     beforePlan = snapshotTree(temporaryRoot)
@@ -1151,7 +1151,7 @@ test('builds backup, deployment and rollback plans without touching a database o
       environmentKind: 'NON_PRODUCTION',
       rollbackId: 'rollback-test-001',
       approvalId: 'approval-test-002',
-      failedReleaseId: 'leantpm-1.0.3-test.1',
+      failedReleaseId: 'leantpm-1.0.4-test.1',
       targetReleaseId: 'leantpm-1.0.0',
       installRoot: install,
       dataRoot: temporaryRoot,
@@ -1283,7 +1283,7 @@ test('generates a canonical manifest from payload bytes instead of hand-maintain
     ])
     assert.equal(result.status, 0, combinedOutput(result))
     const manifest = JSON.parse(fs.readFileSync(output, 'utf8'))
-    assert.equal(manifest.productVersion, '1.0.3')
+    assert.equal(manifest.productVersion, '1.0.4')
     assert.equal(manifest.components.database.schemaTo, 52)
     assert.equal(manifest.artifacts.length, 7)
     for (const artifact of manifest.artifacts) {
@@ -1317,9 +1317,9 @@ test('generates and validates a PC API release manifest without an APP artifact'
 
     const matrixPath = path.join(payload, 'operations', 'compatibility-matrix.json')
     const matrix = JSON.parse(fs.readFileSync(matrixPath, 'utf8'))
-    matrix.productVersion = '1.0.3'
-    matrix.combinations[0].backend = '1.0.3'
-    matrix.combinations[0].web = '1.0.3'
+    matrix.productVersion = '1.0.4'
+    matrix.combinations[0].backend = '1.0.4'
+    matrix.combinations[0].web = '1.0.4'
     fs.writeFileSync(matrixPath, JSON.stringify(matrix, null, 2))
 
     const baselinePath = path.join(temporaryRoot, 'baseline.json')
@@ -1335,7 +1335,7 @@ test('generates and validates a PC API release manifest without an APP artifact'
     const generated = invokePowerShell('scripts/New-ReleaseManifest.ps1', [
       '-PayloadRoot', payload,
       '-OutputPath', output,
-      '-ReleaseId', 'leantpm-1.0.3-pc-api-test',
+      '-ReleaseId', 'leantpm-1.0.4-pc-api-test',
       '-ReleaseTier', 'TEST',
       '-SourceCommit', '2185536ea9da0a323b27f53dcf849b818ea19069',
       '-BaselinePath', baselinePath,
@@ -1350,9 +1350,9 @@ test('generates and validates a PC API release manifest without an APP artifact'
     assert.equal(generated.status, 0, combinedOutput(generated))
 
     const manifest = JSON.parse(fs.readFileSync(output, 'utf8'))
-    assert.equal(manifest.productVersion, '1.0.3')
-    assert.equal(manifest.components.app.version, '1.0.3')
-    assert.equal(manifest.components.app.versionCode, 102)
+    assert.equal(manifest.productVersion, '1.0.4')
+    assert.equal(manifest.components.app.version, '1.0.4')
+    assert.equal(manifest.components.app.versionCode, 103)
     assert.equal(manifest.components.app.includedInRelease, false)
     assert.equal(manifest.artifacts.some((artifact) => artifact.component === 'app'), false)
 

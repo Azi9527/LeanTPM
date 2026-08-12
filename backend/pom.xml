@@ -13,7 +13,7 @@
 
     <groupId>com.leantpm</groupId>
     <artifactId>leantpm-backend</artifactId>
-    <version>1.0.3</version>
+    <version>1.0.4</version>
     <name>LeanTPM Backend</name>
     <description>LeanTPM 精益设备管理系统后端</description>
 
