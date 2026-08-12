@@ -8,8 +8,8 @@
       "web": "1.0.4",
       "appVersionCodeRange": { "minimum": 101, "maximum": 104 },
       "databaseSchema": 53,
-      "status": "CANDIDATE_UNVERIFIED",
-      "notes": "LeanTPM 1.0.4 Backend/Web on V53; APP versionCode 101-104 remains API-compatible and code 104 is packaged separately by the user."
+      "status": "SUPPORTED",
+      "notes": "Approved for the additive nullable V53 abnormal-measure columns after explicit risk acceptance to skip the real migration rehearsal; Web 1.0.4 and APP versionCode 101-104 remain contract-compatible, and APP 104 is packaged separately by the user."
     },
     {
       "backend": "1.0.0",
