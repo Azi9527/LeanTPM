@@ -469,7 +469,7 @@ function dueClass(row: TaskRow) {
     <section v-loading="loading" class="task-grid">
       <article v-for="row in displayRows" :key="row.id" class="surface-card task-card" :class="`task-${row.taskStatus.toLowerCase()}`" @click="openTask(row)">
         <div class="task-card-head"><span class="mono">{{ row.taskCode }}</span><el-tag :type="dueClass(row)">{{ statusLabels[row.taskStatus] }}</el-tag></div>
-        <h3>{{ row.equipmentName }}</h3>
+        <h3>{{ row.equipmentCode }} · {{ row.equipmentName }}</h3>
         <p>{{ row.schemeNameSnapshot }}</p>
         <div class="task-meta"><span>{{ row.locationName }}</span><span>截止 {{ row.dueTime.replace('T', ' ') }}</span></div>
         <el-progress :percentage="row.itemCount ? Math.round(row.completedItemCount * 100 / row.itemCount) : 0" :status="row.taskStatus === 'COMPLETED' ? 'success' : undefined" />
@@ -489,7 +489,7 @@ function dueClass(row: TaskRow) {
     <el-drawer v-model="executionVisible" direction="rtl" size="min(720px, 100vw)" :with-header="false">
       <template v-if="detail">
         <div class="execution-head">
-          <div><span class="mono">{{ detail.task.taskCode }}</span><h2>{{ detail.task.equipmentName }}</h2><p>{{ detail.task.schemeNameSnapshot }} · 截止 {{ detail.task.dueTime }}</p></div>
+          <div><span class="mono">{{ detail.task.taskCode }}</span><h2>{{ detail.task.equipmentCode }} · {{ detail.task.equipmentName }}</h2><p>{{ detail.task.schemeNameSnapshot }} · 截止 {{ detail.task.dueTime }}</p></div>
           <el-button circle @click="executionVisible = false">×</el-button>
         </div>
         <el-alert

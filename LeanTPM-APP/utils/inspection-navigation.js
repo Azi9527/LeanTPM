@@ -12,6 +12,7 @@ export function inspectionTaskTarget(task) {
 	const query = [
 		['taskId', taskId],
 		['equipmentId', task.equipmentId],
+		['equipmentCode', task.equipmentCode || ''],
 		['equipmentName', task.equipmentName || '']
 	].map(([key, value]) => `${key}=${encodeURIComponent(String(value))}`).join('&')
 	return { url: `/pages/scan/index?${query}`, requiresScan: true }

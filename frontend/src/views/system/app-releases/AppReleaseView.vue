@@ -23,6 +23,7 @@ const form = reactive({
   minimumVersionCode: 100,
   releaseNotes: '',
   enabled: true,
+  forceUpgrade: false,
 })
 
 function formatBytes(value?: number) {
@@ -61,6 +62,7 @@ async function load() {
       form.minimumVersionCode = release.value.minimumVersionCode || form.minimumVersionCode
       form.releaseNotes = release.value.releaseNotes || ''
       form.enabled = release.value.enabled
+      form.forceUpgrade = Boolean(release.value.forceUpgrade)
     }
   } catch (error) {
     ElMessage.error(errorMessage(error, 'APP 发布信息加载失败'))
@@ -91,6 +93,7 @@ async function upload() {
     data.append('minimumVersionCode', String(form.minimumVersionCode))
     data.append('releaseNotes', form.releaseNotes.trim())
     data.append('enabled', String(form.enabled))
+    data.append('forceUpgrade', String(form.forceUpgrade))
     release.value = await appReleaseApi.upload(data)
     selectedFile.value = undefined
     if (fileInput.value) fileInput.value.value = ''
@@ -135,7 +138,7 @@ onMounted(load)
           <h2>{{ release.available ? `Android ${release.versionName}` : '尚未发布 Android APP' }}</h2>
           <p v-if="release.available">
             版本号 {{ release.versionCode }} · 最低支持 {{ release.minimumVersionCode }} ·
-            {{ formatBytes(release.fileSize) }}
+            {{ release.forceUpgrade ? '强制旧版本升级' : '允许旧版本继续使用' }} · {{ formatBytes(release.fileSize) }}
           </p>
           <p v-else>上传首个 APK 后，登录页才会出现“下载 Android APP”入口。</p>
         </div>
@@ -205,6 +208,10 @@ onMounted(load)
             <el-input v-model="form.releaseNotes" type="textarea" :rows="4" maxlength="1000" show-word-limit />
           </el-form-item>
           <el-checkbox v-model="form.enabled">上传后立即在登录页展示下载入口</el-checkbox>
+          <el-checkbox v-model="form.forceUpgrade">强制所有旧版本升级</el-checkbox>
+          <p class="force-upgrade-tip">
+            勾选后，版本号低于本次发布版本号的 APP 登录后将被立即阻断并要求升级；未勾选时，仅低于“最低支持版本号”的 APP 会被阻断。
+          </p>
           <div class="actions">
             <el-button type="primary" :loading="uploading" @click="upload">上传并发布</el-button>
           </div>
@@ -231,6 +238,7 @@ dl > div { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 14px;
 dt { color: var(--tpm-text-secondary); }
 dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
 .mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; }
+.force-upgrade-tip { margin: 4px 0 0; color: var(--tpm-text-secondary); font-size: 12px; line-height: 1.6; }
 .qr-preview { display: flex; align-items: stretch; flex-direction: column; gap: 10px; }
 .qr-preview img,
 .qr-placeholder { box-sizing: border-box; width: 170px; height: 170px; border: 1px solid var(--tpm-border); border-radius: 10px; background: #fff; }

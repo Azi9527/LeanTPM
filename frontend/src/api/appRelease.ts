@@ -7,6 +7,7 @@ export interface AndroidAppRelease {
   versionName?: string
   versionCode?: number
   minimumVersionCode?: number
+  forceUpgrade?: boolean
   fileName?: string
   fileSize?: number
   sha256?: string

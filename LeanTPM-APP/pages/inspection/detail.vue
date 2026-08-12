@@ -5,7 +5,7 @@
 		<template v-if="detail">
 			<view class="task-hero">
 				<view class="task-line"><text class="code">{{ detail.task.taskCode }}</text><text class="status">{{ statusLabel(detail.task.taskStatus) }}</text></view>
-				<text class="equipment">{{ detail.task.equipmentName }}</text>
+				<text class="equipment">{{ detail.task.equipmentCode }} · {{ detail.task.equipmentName }}</text>
 				<text class="scheme">{{ detail.task.schemeNameSnapshot }}</text>
 				<view class="task-meta"><text>截止 {{ dateTime(detail.task.dueTime) }}</text><text>{{ detail.task.locationName }}</text></view>
 				<text v-if="detail.task.assigneeName" class="assignee">主执行：{{ detail.task.assigneeName }}；所有协作人均可提交，任一人提交即完成任务</text>

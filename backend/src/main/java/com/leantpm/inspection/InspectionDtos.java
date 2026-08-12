@@ -417,7 +417,9 @@ public final class InspectionDtos {
             String abnormalStatus,
             String responsibleUserName,
             LocalDateTime dueTime,
+            String causeAnalysis,
             String temporaryAction,
+            String permanentCountermeasure,
             String finalResult,
             String closedByName,
             LocalDateTime closedTime,
@@ -667,7 +669,9 @@ public final class InspectionDtos {
             Long responsibleUserId,
             String responsibleUserName,
             LocalDateTime dueTime,
+            String causeAnalysis,
             String temporaryAction,
+            String permanentCountermeasure,
             String finalResult,
             String requestedEquipmentStatus,
             Boolean equipmentStopRequired,
@@ -686,19 +690,28 @@ public final class InspectionDtos {
     public record HandleAbnormalRequest(
             Long responsibleUserId,
             LocalDateTime dueTime,
+            @Size(max = 2000) String causeAnalysis,
             @Size(max = 2000) String temporaryAction,
+            @Size(max = 2000) String permanentCountermeasure,
             @Size(max = 2000) String finalResult,
             @Pattern(
                     regexp = "^$|^(IDLE|RUNNING|STOPPED|SCRAPPED)$",
                     message = "设备状态不正确"
             )
             String requestedEquipmentStatus,
-            @NotBlank
             @Pattern(
-                    regexp = "^(PROCESSING|PENDING_VERIFY)$",
+                    regexp = "^$|^(PROCESSING|PENDING_VERIFY)$",
                     message = "异常处理状态不正确"
             )
             String targetStatus,
+            @NotNull Integer version
+    ) {
+    }
+
+    public record RecordAbnormalMeasuresRequest(
+            @Size(max = 2000) String causeAnalysis,
+            @Size(max = 2000) String temporaryAction,
+            @Size(max = 2000) String permanentCountermeasure,
             @NotNull Integer version
     ) {
     }

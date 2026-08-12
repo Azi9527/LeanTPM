@@ -3,12 +3,12 @@
     "engine":  "mysql",
     "migrationTool":  "flyway",
     "schemaFrom":  50,
-    "schemaTo":  52,
+    "schemaTo":  53,
     "phase":  "MIGRATE",
     "backwardCompatible":  false,
     "requiresDowntime":  false,
     "classificationConfirmed":  true,
-    "classificationSha256":  "36192261d51be505459bc10515b0939d2a727182a02274e2285118361af67a88",
+    "classificationSha256":  "4159f3d253eba0de368a7479c89859f7dd8609d4953c2baa07c2d24dcbbec093",
     "migrations":  [
                        {
                            "version":  51,
@@ -39,6 +39,22 @@
                                           "reviewedBy":  "codex-static-review",
                                           "approvedAtUtc":  "2026-08-11T06:00:00Z",
                                           "evidence":  "reports/ai/2026-08-11-customer-feedback-round-2-fix.md#数据保护与回滚"
+                                      },
+                           "execution":  "FLYWAY_CHECKSUM_GUARDED_ONCE"
+                       },
+                       {
+                           "version":  53,
+                           "description":  "inspection_abnormal_measures",
+                           "script":  "V53__inspection_abnormal_measures.sql",
+                           "sha256":  "3a18149ef84b5799b984c1c9bb8d6c14581af15865541376f0579b6d0b1cc77a",
+                           "phase":  "EXPAND",
+                           "backwardCompatible":  true,
+                           "requiresDowntime":  false,
+                           "review":  {
+                                          "status":  "APPROVED",
+                                          "reviewedBy":  "codex-release-review",
+                                          "approvedAtUtc":  "2026-08-12T12:45:00Z",
+                                          "evidence":  "reports/ai/2026-08-12-equipment-organization-tree-and-inspection-abnormal-measures.md#数据库迁移"
                                       },
                            "execution":  "FLYWAY_CHECKSUM_GUARDED_ONCE"
                        }

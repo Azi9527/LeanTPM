@@ -840,8 +840,11 @@ public class InspectionTaskService {
         InspectionDtos.AbnormalRow before = requireAbnormal(
                 current.tenantId(), id, dataPermissionService.current()
         );
+        String effectiveResult = clean(request.permanentCountermeasure()) != null
+                ? request.permanentCountermeasure()
+                : request.finalResult();
         if ("PENDING_VERIFY".equals(request.targetStatus())
-                && clean(request.finalResult()) == null) {
+                && clean(effectiveResult) == null) {
             throw new BusinessException(
                     "INSPECTION_ABNORMAL_RESULT_REQUIRED", "提交验证前必须填写最终处理结果"
             );
@@ -875,6 +878,28 @@ public class InspectionTaskService {
         }
         changeLogService.record(
                 "INSPECTION_ABNORMAL", id, "HANDLE", before,
+                mapper.findAbnormal(
+                        current.tenantId(), id, DataPermission.all(current.userId())
+                )
+        );
+    }
+
+    @Transactional
+    public void recordAbnormalMeasures(
+            long id,
+            InspectionDtos.RecordAbnormalMeasuresRequest request
+    ) {
+        var current = SecurityUtils.currentUser();
+        InspectionDtos.AbnormalRow before = requireAbnormal(
+                current.tenantId(), id, dataPermissionService.current()
+        );
+        if (mapper.recordAbnormalMeasures(
+                current.tenantId(), id, request, current.userId()
+        ) == 0) {
+            throw optimisticConflict();
+        }
+        changeLogService.record(
+                "INSPECTION_ABNORMAL", id, "RECORD_MEASURES", before,
                 mapper.findAbnormal(
                         current.tenantId(), id, DataPermission.all(current.userId())
                 )
@@ -1520,7 +1545,7 @@ public class InspectionTaskService {
             String[] abnormalHeaders = {
                     "异常编号", "任务编号", "设备编号", "设备名称", "点检项目",
                     "异常标题", "异常说明", "严重度", "状态", "责任人", "处理期限",
-                    "临时措施", "最终结果", "关闭人", "关闭时间", "验证人", "验证时间",
+                    "原因分析", "临时措施", "恒久对策", "关闭人", "关闭时间", "验证人", "验证时间",
                     "验证意见", "创建时间"
             };
             writeHeader(abnormalSheet, abnormalHeaders, header);
@@ -1539,8 +1564,9 @@ public class InspectionTaskService {
                 text(row, column++, abnormal.abnormalStatus());
                 text(row, column++, abnormal.responsibleUserName());
                 date(row, column++, abnormal.dueTime(), dateTime);
-                text(row, column++, abnormal.temporaryAction());
-                text(row, column++, abnormal.finalResult());
+            text(row, column++, abnormal.causeAnalysis());
+            text(row, column++, abnormal.temporaryAction());
+            text(row, column++, abnormal.permanentCountermeasure());
                 text(row, column++, abnormal.closedByName());
                 date(row, column++, abnormal.closedTime(), dateTime);
                 text(row, column++, abnormal.verifiedByName());

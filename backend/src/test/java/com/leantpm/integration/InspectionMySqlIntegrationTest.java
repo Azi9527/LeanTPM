@@ -455,27 +455,62 @@ class InspectionMySqlIntegrationTest {
                 new InspectionDtos.HandleAbnormalRequest(
                         USER_ID,
                         LocalDateTime.now().plusDays(1),
+                        "轴承座紧固不足导致振动升高",
                         "暂停设备并检查紧固件",
-                        "紧固主轴组件后试运行正常",
+                        "增加紧固力矩标准并纳入每日点检",
+                        null,
                         "IDLE",
-                        "PENDING_VERIFY",
+                        null,
                         abnormal.version()
                 )
         );
-        InspectionDtos.AbnormalRow pending =
-                taskService.abnormalities(null, "PENDING_VERIFY", 1, 20)
+        InspectionDtos.AbnormalRow handled =
+                taskService.abnormalities(null, "OPEN", 1, 20)
                         .records().getFirst();
-        taskService.verifyAbnormal(
-                pending.id(),
-                new InspectionDtos.VerifyAbnormalRequest(
-                        true, "现场验证通过", pending.version()
+        assertThat(handled)
+                .extracting(
+                        InspectionDtos.AbnormalRow::causeAnalysis,
+                        InspectionDtos.AbnormalRow::temporaryAction,
+                        InspectionDtos.AbnormalRow::permanentCountermeasure,
+                        InspectionDtos.AbnormalRow::abnormalStatus
+                )
+                .containsExactly(
+                        "轴承座紧固不足导致振动升高",
+                        "暂停设备并检查紧固件",
+                        "增加紧固力矩标准并纳入每日点检",
+                        "OPEN"
+                );
+        taskService.recordAbnormalMeasures(
+                handled.id(),
+                new InspectionDtos.RecordAbnormalMeasuresRequest(
+                        "润滑不足导致轴承温升",
+                        "补充润滑并持续测温",
+                        "增加润滑周期和温升趋势检查",
+                        handled.version()
                 )
         );
-
-        assertThat(taskService.abnormalities(null, "CLOSED", 1, 20).records())
-                .singleElement()
-                .extracting(InspectionDtos.AbnormalRow::verificationComment)
-                .isEqualTo("现场验证通过");
+        InspectionDtos.AbnormalRow measuresOnly =
+                taskService.abnormalities(null, "OPEN", 1, 20)
+                        .records().getFirst();
+        assertThat(measuresOnly)
+                .extracting(
+                        InspectionDtos.AbnormalRow::causeAnalysis,
+                        InspectionDtos.AbnormalRow::temporaryAction,
+                        InspectionDtos.AbnormalRow::permanentCountermeasure,
+                        InspectionDtos.AbnormalRow::responsibleUserId,
+                        InspectionDtos.AbnormalRow::dueTime,
+                        InspectionDtos.AbnormalRow::requestedEquipmentStatus,
+                        InspectionDtos.AbnormalRow::abnormalStatus
+                )
+                .containsExactly(
+                        "润滑不足导致轴承温升",
+                        "补充润滑并持续测温",
+                        "增加润滑周期和温升趋势检查",
+                        handled.responsibleUserId(),
+                        handled.dueTime(),
+                        handled.requestedEquipmentStatus(),
+                        handled.abnormalStatus()
+                );
         assertThat(jdbc.queryForObject(
                 """
                 SELECT COUNT(*) FROM inspection_task_item item

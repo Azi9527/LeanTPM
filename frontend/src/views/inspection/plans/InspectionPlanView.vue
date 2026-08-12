@@ -197,7 +197,7 @@ async function changeStatus(row: PlanRow, target: 'ACTIVE' | 'PAUSED' | 'CANCELL
 
 async function removePlan(row: PlanRow) {
   await ElMessageBox.confirm(
-    `删除“${row.schemeName} / ${row.equipmentName}”计划？该计划及其已生成任务会一并逻辑删除，且不再参与任何查询和报表。`,
+    `删除“${row.schemeName} / ${row.equipmentCode} · ${row.equipmentName}”计划？该计划及其已生成任务会一并逻辑删除，且不再参与任何查询和报表。`,
     '删除点检计划',
     { type: 'warning', confirmButtonText: '确认删除' },
   )

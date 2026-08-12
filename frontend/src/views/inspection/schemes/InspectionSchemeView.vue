@@ -18,6 +18,7 @@ const total = ref(0)
 const page = ref(1)
 const keyword = ref('')
 const dialogVisible = ref(false)
+const activeEditorSection = ref('basic')
 const detailVisible = ref(false)
 const importVisible = ref(false)
 const editing = ref<SchemeRow | null>(null)
@@ -76,6 +77,11 @@ const cycleLabels: Record<string, string> = {
   WEEKLY: '每周',
   MONTHLY: '每月',
   INTERVAL_DAYS: '间隔天数',
+}
+
+function equipmentIdentity(equipmentId: number) {
+  const row = equipment.value.find((item) => item.id === equipmentId)
+  return row ? `${row.equipmentName}（${row.equipmentCode}）` : `设备 #${equipmentId}`
 }
 
 onMounted(async () => {
@@ -156,6 +162,7 @@ function resetForm() {
 }
 
 async function open(row?: SchemeRow, copy = false) {
+  activeEditorSection.value = 'basic'
   editing.value = copy ? null : row || null
   copying.value = Boolean(row && copy)
   resetForm()
@@ -369,8 +376,11 @@ function csvNumbers(value?: string) {
       <el-pagination v-model:current-page="page" :page-size="20" :total="total" layout="total, prev, pager, next" @change="load" />
     </section>
 
-    <el-dialog v-model="dialogVisible" :title="editing ? '创建方案新版本' : copying ? '复制点检方案' : '新增点检方案'" width="min(980px, 97vw)">
-      <el-form label-position="top" class="form-grid">
+    <el-dialog v-model="dialogVisible" :title="editing ? '创建方案新版本' : copying ? '复制点检方案' : '新增点检方案'" width="min(1080px, 97vw)" class="inspection-editor-dialog" align-center>
+      <el-form label-position="top" class="inspection-editor-form">
+        <el-tabs v-model="activeEditorSection" class="inspection-editor-tabs">
+          <el-tab-pane label="基础与周期" name="basic">
+            <div class="form-grid inspection-editor-pane">
         <el-form-item label="方案编码"><el-input v-model="form.schemeCode" :disabled="Boolean(editing)" placeholder="留空自动编号" /></el-form-item>
         <el-form-item label="方案名称" required><el-input v-model="form.schemeName" /></el-form-item>
         <el-form-item label="点检类型" required><el-select v-model="form.inspectionType"><el-option v-for="(label, value) in typeLabels" :key="value" :label="label" :value="value" /></el-select></el-form-item>
@@ -381,13 +391,21 @@ function csvNumbers(value?: string) {
         <el-form-item label="点检工作日历" required><el-select v-model="form.workCalendarId" filterable><el-option v-for="calendar in calendars" :key="calendar.id" :label="calendar.defaultFlag ? `${calendar.calendarName}（默认）` : calendar.calendarName" :value="calendar.id" /></el-select></el-form-item>
         <el-form-item v-if="form.cycleType === 'WEEKLY'" label="执行星期" class="full"><el-checkbox-group v-model="form.weekDays"><el-checkbox v-for="day in 7" :key="day" :value="day">周{{ '一二三四五六日'[day - 1] }}</el-checkbox></el-checkbox-group></el-form-item>
         <el-form-item v-if="form.cycleType === 'MONTHLY'" label="每月日期" class="full"><el-select v-model="form.monthDays" multiple collapse-tags><el-option v-for="day in 31" :key="day" :label="`${day}日`" :value="day" /></el-select></el-form-item>
-        <el-form-item label="默认执行人"><el-select v-model="form.defaultAssigneeUserIds" multiple clearable filterable collapse-tags collapse-tags-tooltip :max-collapse-tags="3"><el-option v-for="user in users" :key="user.id" :label="`${user.realName} (${user.username})`" :value="user.id" /></el-select><div class="field-hint">最多选择 20 人；第一位作为主执行人，任一执行人提交即完成任务。</div></el-form-item>
-        <el-form-item label="默认班组"><el-input v-model="form.defaultTeamCode" /></el-form-item>
         <el-form-item label="生效日期" required><el-date-picker v-model="form.effectiveDate" type="date" value-format="YYYY-MM-DD" /></el-form-item>
         <el-form-item label="失效日期"><el-date-picker v-model="form.expiryDate" type="date" value-format="YYYY-MM-DD" clearable /></el-form-item>
+            </div>
+          </el-tab-pane>
+          <el-tab-pane label="人员与适用" name="scope">
+            <div class="form-grid inspection-editor-pane">
+        <el-form-item label="默认执行人"><el-select v-model="form.defaultAssigneeUserIds" multiple clearable filterable collapse-tags collapse-tags-tooltip :max-collapse-tags="3"><el-option v-for="user in users" :key="user.id" :label="`${user.realName} (${user.username})`" :value="user.id" /></el-select><div class="field-hint">最多选择 20 人；第一位作为主执行人，任一执行人提交即完成任务。</div></el-form-item>
+        <el-form-item label="默认班组"><el-input v-model="form.defaultTeamCode" /></el-form-item>
         <el-form-item label="点检项目" class="full" required><el-select v-model="form.itemIds" multiple filterable collapse-tags collapse-tags-tooltip><el-option v-for="item in items" :key="item.id" :label="`${item.itemCode} · ${item.itemName}`" :value="item.id" /></el-select></el-form-item>
         <el-form-item label="适用设备分类" class="full"><el-select v-model="form.categoryIds" multiple filterable collapse-tags><el-option v-for="category in categories" :key="category.id" :label="`${category.categoryCode} · ${category.categoryName}`" :value="category.id" /></el-select><div class="field-hint">适用设备分类和指定设备至少填写一项。</div></el-form-item>
-        <el-form-item label="指定设备" class="full"><el-select v-model="form.equipmentIds" multiple filterable collapse-tags collapse-tags-tooltip><el-option v-for="row in equipment" :key="row.id" :label="`${row.equipmentCode} · ${row.equipmentName}`" :value="row.id" /></el-select><div class="field-hint">适用设备分类和指定设备至少填写一项。</div></el-form-item>
+        <el-form-item label="指定设备" class="full"><el-select v-model="form.equipmentIds" multiple filterable collapse-tags collapse-tags-tooltip><el-option v-for="row in equipment" :key="row.id" :label="`${row.equipmentName}（${row.equipmentCode}）`" :value="row.id" /></el-select><div class="field-hint">适用设备分类和指定设备至少填写一项。</div></el-form-item>
+            </div>
+          </el-tab-pane>
+          <el-tab-pane label="提交与版本" name="release">
+            <div class="form-grid inspection-editor-pane">
         <el-form-item label="执行控制" class="full"><el-checkbox v-model="form.backfillAllowed">允许补录</el-checkbox><el-checkbox v-model="form.enabled">启用方案</el-checkbox><span class="field-hint">点检结果提交后任务直接完成</span></el-form-item>
         <el-form-item label="提交图片" class="full scheme-photo-policy">
           <el-switch v-model="form.submissionPhotoRequired" active-text="提交时必须上传水印图片" inactive-text="图片选传" />
@@ -395,6 +413,9 @@ function csvNumbers(value?: string) {
           <span class="field-hint">必传开启后，任务至少需要 1 张通过拍照/相册入口生成的水印图片；单个项目的拍照规则仍同时生效。</span>
         </el-form-item>
         <el-form-item label="版本说明" class="full"><el-input v-model="form.changeSummary" type="textarea" placeholder="说明本版本调整内容" /></el-form-item>
+            </div>
+          </el-tab-pane>
+        </el-tabs>
       </el-form>
       <template #footer><el-button @click="dialogVisible = false">取消</el-button><el-button type="primary" :loading="saving" @click="save">保存并发布</el-button></template>
     </el-dialog>
@@ -412,7 +433,7 @@ function csvNumbers(value?: string) {
           <el-descriptions-item label="控制">提交即完成 / {{ detail.version.backfillAllowedFlag ? '可补录' : '不可补录' }}</el-descriptions-item>
           <el-descriptions-item label="提交图片">{{ detail.version.submissionPhotoRequiredFlag ? '必须上传水印图片' : '图片选传' }} / 最多 {{ detail.version.submissionPhotoMaxCount }} 张</el-descriptions-item>
           <el-descriptions-item label="适用设备分类" :span="2">{{ detail.applicability.categoryIds.map((id) => categories.find((row) => row.id === id)?.categoryName || `分类 #${id}`).join('、') || '未指定' }}</el-descriptions-item>
-          <el-descriptions-item label="指定设备" :span="2">{{ detail.applicability.equipmentIds.map((id) => equipment.find((row) => row.id === id)?.equipmentName || `设备 #${id}`).join('、') || '未指定' }}</el-descriptions-item>
+          <el-descriptions-item label="指定设备" :span="2">{{ detail.applicability.equipmentIds.map((id) => equipmentIdentity(id)).join('、') || '未指定' }}</el-descriptions-item>
         </el-descriptions>
         <h3>点检项目</h3>
         <el-table :data="detail.items" size="small" max-height="420">
@@ -448,6 +469,16 @@ function csvNumbers(value?: string) {
 
 <style scoped>
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
+.inspection-editor-form { height: 100%; }
+.inspection-editor-tabs { display: flex; height: 100%; flex-direction: column; overflow: hidden; }
+.inspection-editor-tabs :deep(.el-tabs__header) { flex: none; margin-bottom: 12px; }
+.inspection-editor-tabs :deep(.el-tabs__content) { flex: 1; min-height: 0; overflow: hidden; }
+.inspection-editor-tabs :deep(.el-tab-pane) { height: 100%; }
+.inspection-editor-pane { max-height: 100%; align-content: start; overflow-y: auto; padding-right: 8px; }
+:global(.inspection-editor-dialog) { display: flex; max-height: calc(100vh - 32px); margin: 0 auto; flex-direction: column; }
+:global(.inspection-editor-dialog .el-dialog__header),
+:global(.inspection-editor-dialog .el-dialog__footer) { flex: none; }
+:global(.inspection-editor-dialog .el-dialog__body) { flex: 1; min-height: 0; overflow: hidden; padding-top: 8px; padding-bottom: 8px; }
 .page-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .full { grid-column: 1 / -1; }
 .field-hint { margin-top: 4px; color: var(--el-text-color-secondary); font-size: 12px; }

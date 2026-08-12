@@ -19,7 +19,7 @@ assert.equal(
 	'requiredComponents',
 	'WeChat mini program must enable component lazy loading'
 )
-assert.equal(android?.packagename, 'com.leantpm.mobile')
+assert.equal(android?.packagename, 'uni.app.UNICEE59D0')
 assert.equal(android?.minSdkVersion, 29)
 assert.equal(android?.targetSdkVersion, 36)
 assert.equal(android?.usesCleartextTraffic, true, 'Android APP must allow the approved HTTP deployment endpoint')

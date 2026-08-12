@@ -13,5 +13,10 @@ export const inspectionApi = Object.freeze({
 	submitTask: (id, payload, idempotencyKey) => apiRequest({ path: `/inspection/tasks/${id}/submit`, method: 'POST', data: payload, idempotencyKey }),
 	taskAttachments: (id) => apiRequest({ path: `/inspection/tasks/${id}/attachments` }),
 	abnormalities: (query = {}) => apiRequest({ path: '/inspection/abnormalities', data: query }),
-	abnormalAttachments: (id) => apiRequest({ path: `/inspection/abnormalities/${id}/attachments` })
+	abnormalAttachments: (id) => apiRequest({ path: `/inspection/abnormalities/${id}/attachments` }),
+	recordAbnormalMeasures: (id, payload) => apiRequest({
+		path: `/inspection/abnormalities/${id}/measures`,
+		method: 'PUT',
+		data: payload
+	})
 })

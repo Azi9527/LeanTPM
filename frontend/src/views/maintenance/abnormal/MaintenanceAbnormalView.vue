@@ -137,7 +137,7 @@ async function toRepair(row: AbnormalRow) {
       <div class="table-toolbar"><span class="table-title">异常闭环台账</span><span>共 {{ total }} 条</span></div>
       <el-table :data="rows" row-key="id">
         <el-table-column label="异常" min-width="230"><template #default="{ row }"><strong>{{ row.abnormalTitle }}</strong><div class="muted mono">{{ row.abnormalCode }} · {{ row.taskCode }}</div></template></el-table-column>
-        <el-table-column label="设备/项目" min-width="190"><template #default="{ row }">{{ row.equipmentName }}<div class="muted">{{ row.itemName }}</div></template></el-table-column>
+        <el-table-column label="设备/项目" min-width="220"><template #default="{ row }">{{ row.equipmentCode }} · {{ row.equipmentName }}<div class="muted">{{ row.itemName }}</div></template></el-table-column>
         <el-table-column prop="abnormalDescription" label="异常现象" min-width="220" show-overflow-tooltip />
         <el-table-column label="等级" width="85"><template #default="{ row }"><el-tag :type="severityMeta[row.severity].type">{{ severityMeta[row.severity].label }}</el-tag></template></el-table-column>
         <el-table-column prop="responsibleUserName" label="责任人" width="110"><template #default="{ row }">{{ row.responsibleUserName || '待分派' }}</template></el-table-column>
@@ -159,7 +159,7 @@ async function toRepair(row: AbnormalRow) {
     </section>
 
     <el-dialog v-model="dialogVisible" :title="`处理异常 · ${selected?.abnormalCode || ''}`" width="min(720px, 96vw)">
-      <el-alert v-if="selected" :title="`${selected.equipmentName} · ${selected.abnormalTitle}`" :description="selected.abnormalDescription" type="error" :closable="false" />
+      <el-alert v-if="selected" :title="`${selected.equipmentCode} · ${selected.equipmentName} · ${selected.abnormalTitle}`" :description="selected.abnormalDescription" type="error" :closable="false" />
       <el-form label-position="top" class="form-grid">
         <el-form-item label="责任人"><el-select v-model="form.responsibleUserId" clearable filterable><el-option v-for="user in users" :key="user.id" :label="user.realName" :value="user.id" /></el-select></el-form-item>
         <el-form-item label="完成期限"><el-date-picker v-model="form.dueTime" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" /></el-form-item>

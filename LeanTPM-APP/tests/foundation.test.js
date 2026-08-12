@@ -279,16 +279,16 @@ test('explains that an empty equipment scheme list can mean not yet effective or
 })
 
 test('requires unfinished inspection tasks to scan the assigned equipment first', () => {
-	const pending = { id: 9, taskStatus: 'PENDING', equipmentId: 18, equipmentName: '浮选机' }
+	const pending = { id: 9, taskStatus: 'PENDING', equipmentId: 18, equipmentCode: 'FX-018', equipmentName: '浮选机' }
 	assert.equal(taskRequiresEquipmentScan(pending), true)
 	assert.equal(taskRequiresEquipmentScan({ ...pending, taskStatus: 'COMPLETED' }), false)
 	assert.deepEqual(inspectionTaskTarget(pending), {
-		url: '/pages/scan/index?taskId=9&equipmentId=18&equipmentName=%E6%B5%AE%E9%80%89%E6%9C%BA',
+		url: '/pages/scan/index?taskId=9&equipmentId=18&equipmentCode=FX-018&equipmentName=%E6%B5%AE%E9%80%89%E6%9C%BA',
 		requiresScan: true
 	})
 	assert.equal(
 		inspectionTaskTarget({ ...pending, id: undefined, taskId: 9 }).url,
-		'/pages/scan/index?taskId=9&equipmentId=18&equipmentName=%E6%B5%AE%E9%80%89%E6%9C%BA'
+		'/pages/scan/index?taskId=9&equipmentId=18&equipmentCode=FX-018&equipmentName=%E6%B5%AE%E9%80%89%E6%9C%BA'
 	)
 	assert.deepEqual(inspectionTaskTarget({ ...pending, taskStatus: 'COMPLETED' }), {
 		url: '/pages/inspection/detail?id=9',

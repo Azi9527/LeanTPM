@@ -340,8 +340,9 @@ export interface AbnormalRow {
   responsibleUserId?: number
   responsibleUserName?: string
   dueTime?: string
+  causeAnalysis?: string
   temporaryAction?: string
-  finalResult?: string
+  permanentCountermeasure?: string
   requestedEquipmentStatus?: string
   equipmentStopRequired?: boolean
   equipmentStatusChanged?: boolean

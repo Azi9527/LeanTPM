@@ -37,6 +37,8 @@ Assert-True (-not [regex]::IsMatch($scriptText, '[^\x00-\x7F]')) 'Executor must 
 Assert-True ($scriptText.Contains("`$releaseFrom = '1.0.3-20260811.1'")) 'Source release contract is missing'
 Assert-True ($scriptText.Contains("`$releaseTo = '1.0.4-20260812.1'")) 'Target release contract is missing'
 Assert-True ($scriptText.Contains("`$schemaVersion = 52")) 'V52 application-only contract is missing'
+Assert-True ($scriptText.Contains("direct-predeploy-1.0.4-20260812-02")) 'Clean retry must use a fresh backup directory'
+Assert-True ($scriptText.Contains("direct-deployment-1.0.4-20260812-02")) 'Clean retry must use a fresh evidence directory'
 Assert-True (-not $scriptText.Contains('Invoke-LegacyMigration')) 'Application-only executor must not contain a migration invocation'
 Assert-True (-not $scriptText.Contains('Restore-LeanTpmV50')) 'Application-only executor must not contain V50 recovery'
 Assert-True (-not $scriptText.Contains('OpsControl')) 'Executor must not use OpsControl'
@@ -49,6 +51,13 @@ Assert-True (-not $databaseStateText.Contains("); FROM flyway_schema_history;"))
 
 Invoke-Expression (Get-FunctionText -Source $scriptText -Name 'New-BackendStarterText')
 Invoke-Expression (Get-FunctionText -Source $scriptText -Name 'Get-JarArgument')
+Invoke-Expression (Get-FunctionText -Source $scriptText -Name 'Test-ExactExecutableServicePath')
+
+$expectedBackendService = 'D:\LeanTPM\App\service\LeanTPM.Backend.exe'
+Assert-True (Test-ExactExecutableServicePath -Actual $expectedBackendService -Expected $expectedBackendService) 'Unquoted exact Backend service path must pass'
+Assert-True (Test-ExactExecutableServicePath -Actual ('"' + $expectedBackendService + '"') -Expected $expectedBackendService) 'SCM-quoted exact Backend service path must pass'
+Assert-True (-not (Test-ExactExecutableServicePath -Actual ('"' + $expectedBackendService + '" --extra') -Expected $expectedBackendService)) 'Quoted Backend service path with arguments must fail'
+Assert-True (-not (Test-ExactExecutableServicePath -Actual ($expectedBackendService + ' --extra') -Expected $expectedBackendService)) 'Unquoted Backend service path with arguments must fail'
 
 $expectedProcessJar = 'D:\LeanTPM\App\releases\1.0.4-20260812.1\payload\backend\leantpm-backend.jar'
 Assert-True ((Get-JarArgument "java.exe -Xmx1g -jar $expectedProcessJar") -ceq $expectedProcessJar) 'Unquoted exact -jar token was not parsed'
@@ -110,6 +119,11 @@ Assert-True ($scriptText.Contains('$expectedBackendServicePath')) 'Backend SCM P
 Assert-True ($scriptText.Contains('$expectedCaddyServicePath')) 'Caddy SCM PathName must be fixed'
 Assert-True ($scriptText.Contains('$backupManifestSha256')) 'Rollback must bind the backup manifest to its creation-time SHA256'
 Assert-True ($scriptText.Contains('backupRequired = $true')) 'Production release must create a current V52 backup'
+$expandReleaseText = Get-FunctionText -Source $scriptText -Name 'Expand-AndVerifyRelease'
+Assert-True (-not $expandReleaseText.Contains('$targetReleaseRoot /inheritance:r /grant:r ''*S-1-5-18:(OI)(CI)F'' ''*S-1-5-32-544:(OI)(CI)F'' ''*S-1-5-20:(OI)(CI)RX'' /T /C')) 'Target ACL must not apply inherit-only directory ACEs directly to files'
+$publicStateText = Get-FunctionText -Source $scriptText -Name 'Assert-PublicState'
+Assert-True (-not $publicStateText.Contains('ConvertFrom-Json')) 'Public branding verification must not decode UTF-8 JSON through the PowerShell 5.1 console code page'
+Assert-True ($publicStateText.Contains('"code"')) 'Public branding verification must check the ASCII code field'
 
 $restoreStart = $scriptText.IndexOf('function Restore-ApplicationV103')
 $restoreEnd = $scriptText.IndexOf("Write-Output '[DIRECT_104_BEGIN]", $restoreStart)
@@ -134,6 +148,17 @@ $backendPackageRead = $releaseBuilderText.IndexOf("target-codex-104-release\lean
 $webPackageRead = $releaseBuilderText.IndexOf("frontend\dist")
 Assert-True ($mavenBuild -ge 0 -and $mavenBuild -lt $backendPackageRead) 'Release builder must rebuild Backend before packaging it'
 Assert-True ($webBuild -ge 0 -and $webBuild -lt $webPackageRead) 'Release builder must rebuild Web before packaging it'
+
+$operatorBuilderText = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Build-Direct104OperatorPackage.ps1'))
+Assert-True ($operatorBuilderText.Contains("operatorVersion = 3")) 'Replacement operator package must identify itself as v3'
+Assert-True ($operatorBuilderText.Contains('direct-application-v3.zip')) 'Replacement operator package must use a fresh v3 filename'
+Assert-True ($operatorBuilderText.Contains("`$operatorTestPath = Join-Path `$sourceRoot 'Test-Direct104ApplicationOperator.ps1'")) 'Operator builder must bind the PowerShell 5.1 safety regression test'
+Assert-True ($operatorBuilderText.Contains("System32\WindowsPowerShell\v1.0\powershell.exe")) 'Operator builder must execute its safety regression under Windows PowerShell 5.1'
+$operatorTestInvocation = $operatorBuilderText.IndexOf('& $windowsPowerShell51 -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $operatorTestPath')
+$operatorPackageCreation = $operatorBuilderText.IndexOf('[IO.File]::Open($partialPath')
+Assert-True ($operatorTestInvocation -ge 0 -and $operatorTestInvocation -lt $operatorPackageCreation) 'Operator safety regression must pass before any package is created'
+$readmeText = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'README.txt'))
+Assert-True ($readmeText.Contains('operator v3')) 'Replacement operator README must identify v3'
 
 [ordered]@{
     status = 'PASS'

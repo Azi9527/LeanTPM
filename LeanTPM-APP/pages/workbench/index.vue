@@ -64,7 +64,7 @@
 			<view class="todo-card">
 				<view v-for="task in todoRows" :key="task.id" class="todo-row" @click="openTask(task)">
 					<view class="todo-main">
-						<view class="todo-title"><text>{{ task.equipmentName }}</text><text :class="['todo-status', task.taskStatus.toLowerCase()]">{{ taskStatusLabel(task.taskStatus) }}</text></view>
+						<view class="todo-title"><text>{{ task.equipmentCode }} · {{ task.equipmentName }}</text><text :class="['todo-status', task.taskStatus.toLowerCase()]">{{ taskStatusLabel(task.taskStatus) }}</text></view>
 						<text class="todo-scheme">{{ task.schemeNameSnapshot }}</text>
 						<view class="todo-meta"><text>{{ task.taskCode }}</text><text>截止 {{ dateTime(task.dueTime) }}</text></view>
 					</view>
@@ -148,7 +148,7 @@
 		try {
 			const bootstrap = await refreshMobileBootstrap()
 			serviceAlertShown = false
-			checkAndroidUpgrade(bootstrap?.androidVersion)
+			if (checkAndroidUpgrade(bootstrap?.androidVersion)) return
 			await loadTodos()
 		} catch (error) {
 			if (isServiceUnavailable(error) && !serviceAlertShown) {

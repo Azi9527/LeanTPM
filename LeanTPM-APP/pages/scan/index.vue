@@ -3,7 +3,7 @@
 		<view class="scanner-card">
 			<view class="scan-frame"><view/><view/><view/><view/><text>▦</text></view>
 			<text class="title">扫描设备二维码</text>
-			<text class="hint">{{ taskId ? `请扫描“${expectedEquipmentName || '任务设备'}”的 LeanTPM 二维码，校验通过后进入点检。` : '将每台设备的 LeanTPM 二维码放入取景框，识别后进入设备现场页。' }}</text>
+			<text class="hint">{{ taskId ? `请扫描“${expectedEquipmentIdentity}”的 LeanTPM 二维码，校验通过后进入点检。` : '将每台设备的 LeanTPM 二维码放入取景框，识别后进入设备现场页。' }}</text>
 			<!-- #ifndef H5 -->
 			<button class="primary" :loading="scanning" @click="scan">打开相机扫码</button>
 			<!-- #endif -->
@@ -21,7 +21,7 @@
 </template>
 
 <script setup>
-	import { ref } from 'vue'
+	import { computed, ref } from 'vue'
 	import { onLoad } from '@dcloudio/uni-app'
 	import { inspectionApi } from '../../api/inspection.js'
 	import { mobileApi } from '../../api/mobile.js'
@@ -35,10 +35,13 @@
 	const validating = ref(false)
 	const manualValue = ref('')
 	const taskId = ref(0)
+	const expectedEquipmentCode = ref('')
 	const expectedEquipmentName = ref('')
+	const expectedEquipmentIdentity = computed(() => [expectedEquipmentCode.value, expectedEquipmentName.value].filter(Boolean).join(' · ') || '任务设备')
 
 	onLoad((query) => {
 		taskId.value = Number(query?.taskId || 0)
+		expectedEquipmentCode.value = String(query?.equipmentCode || '')
 		expectedEquipmentName.value = String(query?.equipmentName || '')
 	})
 
@@ -70,10 +73,11 @@
 				const context = await mobileApi.equipment(token)
 				const task = detail.task
 				if (!scannedEquipmentMatchesTask(task, context?.equipment)) {
-					const scannedName = context?.equipment?.equipmentName || '当前设备'
+					const requiredIdentity = [task.equipmentCode, task.equipmentName || expectedEquipmentName.value].filter(Boolean).join(' · ') || task.equipmentId
+					const scannedIdentity = [context?.equipment?.equipmentCode, context?.equipment?.equipmentName].filter(Boolean).join(' · ') || '当前设备'
 					return uni.showModal({
 						title: '设备不匹配',
-						content: `本任务要求扫描“${task.equipmentName || expectedEquipmentName.value || task.equipmentId}”，当前扫描的是“${scannedName}”。`,
+						content: `本任务要求扫描“${requiredIdentity}”，当前扫描的是“${scannedIdentity}”。`,
 						showCancel: false
 					})
 				}

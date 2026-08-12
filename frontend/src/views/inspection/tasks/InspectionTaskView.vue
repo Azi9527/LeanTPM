@@ -605,7 +605,7 @@ async function removeTask(row: TaskRow) {
     <el-dialog v-model="assignVisible" :title="`任务派工 · ${assignTarget?.taskCode || ''}`" width="min(620px, 96vw)">
       <el-alert
         v-if="assignTarget"
-        :title="`${assignTarget.equipmentName} · ${assignTarget.schemeNameSnapshot}`"
+        :title="`${assignTarget.equipmentCode} · ${assignTarget.equipmentName} · ${assignTarget.schemeNameSnapshot}`"
         type="info"
         :closable="false"
       />

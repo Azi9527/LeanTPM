@@ -31,6 +31,20 @@ public interface MobileMapper {
             @Param("scope") DataPermission scope
     );
 
+    List<MobileDtos.EquipmentStatusRow> equipmentStatusRows(
+            @Param("tenantId") long tenantId,
+            @Param("scope") DataPermission scope,
+            @Param("currentStatusCode") String currentStatusCode,
+            @Param("offset") int offset,
+            @Param("pageSize") int pageSize
+    );
+
+    long equipmentStatusTotal(
+            @Param("tenantId") long tenantId,
+            @Param("scope") DataPermission scope,
+            @Param("currentStatusCode") String currentStatusCode
+    );
+
     List<Long> inspectionScanOrganizationIds(
             @Param("tenantId") long tenantId,
             @Param("userId") long userId

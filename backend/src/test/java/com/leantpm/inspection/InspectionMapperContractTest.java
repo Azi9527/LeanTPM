@@ -101,6 +101,27 @@ class InspectionMapperContractTest {
                 .contains("task.task_status IN ('PENDING','OVERDUE','IN_PROGRESS')");
     }
 
+    @Test
+    void abnormalHandlingKeepsNewMeasureFieldsAndPublishedWebWorkflowCompatibility()
+            throws Exception {
+        String xml = new ClassPathResource(
+                "mapper/inspection/InspectionMapper.xml"
+        ).getContentAsString(StandardCharsets.UTF_8);
+
+        String handle = block(xml, "<update id=\"handleAbnormal\">", "</update>");
+        assertThat(handle)
+                .contains("cause_analysis = #{request.causeAnalysis}")
+                .contains("temporary_action = #{request.temporaryAction}")
+                .contains(
+                        "permanent_countermeasure = COALESCE(#{request.permanentCountermeasure}, #{request.finalResult})",
+                        "abnormal_status = CASE",
+                        "#{request.targetStatus}",
+                        "ELSE 'PROCESSING' END",
+                        "closed_by = CASE",
+                        "closed_time = CASE"
+                );
+    }
+
     private String block(String source, String startToken, String endToken) {
         int start = source.indexOf(startToken);
         int end = source.indexOf(endToken, start);

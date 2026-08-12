@@ -7,6 +7,7 @@
 		<view v-for="task in rows" :key="task.id" class="task-card" @click="openTask(task)">
 			<view class="task-head"><text class="code">{{ task.taskCode }}</text><text :class="['status', task.taskStatus.toLowerCase()]">{{ statusLabel(task.taskStatus) }}</text></view>
 			<text class="equipment">{{ task.equipmentName }}</text>
+			<text class="equipment-code">设备编号：{{ task.equipmentCode || '—' }}</text>
 			<text class="scheme">{{ task.schemeNameSnapshot }}</text>
 			<view class="meta"><text>{{ task.locationName || '未设置位置' }}</text><text>截止 {{ dateTime(task.dueTime) }}</text></view>
 			<view v-if="isCompleted(task)" class="completion-overview">
@@ -91,8 +92,9 @@
 	.status.pending, .status.in_progress { color: #176f47; background: #e6f5ed; }
 	.status.overdue { color: #a00008; background: #ffeded; }
 	.status.pending_review, .status.completed { color: #176f47; background: #e6f5ed; }
-	.equipment, .scheme { display: block; }
+	.equipment, .equipment-code, .scheme { display: block; }
 	.equipment { margin-top: 20rpx; color: #213e32; font-size: 31rpx; font-weight: 800; }
+	.equipment-code { margin-top: 6rpx; color: #718079; font-family: monospace; font-size: 21rpx; }
 	.scheme { margin-top: 7rpx; color: #75827c; font-size: 24rpx; }
 	.meta { margin-top: 22rpx; color: #89938e; font-size: 21rpx; }
 	.completion-overview { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12rpx; margin-top: 22rpx; padding: 18rpx; border-radius: 16rpx; background: #f4f7f5; color: #315044; font-size: 21rpx; }

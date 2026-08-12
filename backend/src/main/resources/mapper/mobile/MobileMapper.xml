@@ -223,6 +223,68 @@
           AND <include refid="equipmentScope"/>
     </select>
 
+    <select id="equipmentStatusRows"
+            resultType="com.leantpm.mobile.MobileDtos$EquipmentStatusRow">
+        SELECT e.id,
+               e.equipment_code,
+               e.equipment_name,
+               organization.organization_name,
+               location.location_name,
+               COALESCE(current_status.status_code, 'IDLE') AS current_status_code,
+               responsible.real_name AS primary_responsible_name,
+               barcode.access_token AS active_barcode_token
+        FROM equipment e
+        JOIN organization
+          ON organization.tenant_id = e.tenant_id
+         AND organization.id = e.organization_id
+         AND organization.status = 1
+         AND organization.deleted = 0
+        LEFT JOIN location
+          ON location.tenant_id = e.tenant_id
+         AND location.id = e.location_id
+         AND location.deleted = 0
+        LEFT JOIN system_user responsible
+          ON responsible.tenant_id = e.tenant_id
+         AND responsible.id = e.primary_responsible_user_id
+         AND responsible.deleted = 0
+        LEFT JOIN equipment_current_status current_status
+          ON current_status.tenant_id = e.tenant_id
+         AND current_status.equipment_id = e.id
+        LEFT JOIN equipment_barcode barcode
+          ON barcode.tenant_id = e.tenant_id
+         AND barcode.equipment_id = e.id
+         AND barcode.active_slot = 1
+        WHERE e.tenant_id = #{tenantId}
+          AND e.status = 1
+          AND e.deleted = 0
+          AND <include refid="equipmentScope"/>
+        <if test="currentStatusCode != null and currentStatusCode != ''">
+          AND COALESCE(current_status.status_code, 'IDLE') = #{currentStatusCode}
+        </if>
+        ORDER BY e.equipment_code, e.id
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
+    <select id="equipmentStatusTotal" resultType="long">
+        SELECT COUNT(*)
+        FROM equipment e
+        JOIN organization
+          ON organization.tenant_id = e.tenant_id
+         AND organization.id = e.organization_id
+         AND organization.status = 1
+         AND organization.deleted = 0
+        LEFT JOIN equipment_current_status current_status
+          ON current_status.tenant_id = e.tenant_id
+         AND current_status.equipment_id = e.id
+        WHERE e.tenant_id = #{tenantId}
+          AND e.status = 1
+          AND e.deleted = 0
+          AND <include refid="equipmentScope"/>
+        <if test="currentStatusCode != null and currentStatusCode != ''">
+          AND COALESCE(current_status.status_code, 'IDLE') = #{currentStatusCode}
+        </if>
+    </select>
+
     <select id="inspectionAbnormalCount"
             resultType="com.leantpm.mobile.MobileDtos$AbnormalCount">
         SELECT COALESCE(SUM(abnormal.abnormal_status != 'CLOSED'), 0) AS open,

@@ -36,8 +36,8 @@ $expectedCaddyServicePath = 'D:\LeanTPM\tools\caddy\caddy.exe run --environ --co
 $backendServiceName = 'LeanTPM.Backend'
 $caddyServiceName = 'caddy'
 $mysqlServiceName = 'MySQL80'
-$backupRoot = 'D:\LeanTPM\backups\direct-predeploy-1.0.4-20260812-01'
-$evidenceRoot = 'D:\LeanTPM\Runtime\logs\direct-deployment-1.0.4-20260812-01'
+$backupRoot = 'D:\LeanTPM\backups\direct-predeploy-1.0.4-20260812-02'
+$evidenceRoot = 'D:\LeanTPM\Runtime\logs\direct-deployment-1.0.4-20260812-02'
 $utf8NoBom = New-Object Text.UTF8Encoding($false)
 $rootPassword = $null
 $writeStarted = $false
@@ -265,8 +265,7 @@ function Assert-PublicState {
     if ($LASTEXITCODE -ne 0 -or $homeCode -cne '200') { throw "Local public HTTP verification failed: $homeCode" }
     $brandingText = [string](& curl.exe --max-time 10 --resolve '8.163.66.164:80:127.0.0.1' -sS 'http://8.163.66.164/api/v1/public/branding')
     if ($LASTEXITCODE -ne 0) { throw 'Local public branding request failed' }
-    $branding = $brandingText | ConvertFrom-Json
-    if ([string]$branding.code -cne 'OK') { throw 'Local public branding response was not OK' }
+    if ($brandingText -notmatch '"code"\s*:\s*"OK"') { throw 'Local public branding response was not OK' }
     Assert-BackendProcessBinding -ExpectedJar $ExpectedJar
 }
 
@@ -298,6 +297,12 @@ function Get-ServiceEvidence {
     }
 }
 
+function Test-ExactExecutableServicePath {
+    param([string]$Actual, [string]$Expected)
+    if ([string]::IsNullOrWhiteSpace($Actual) -or [string]::IsNullOrWhiteSpace($Expected)) { return $false }
+    return $Actual -ieq $Expected -or $Actual -ieq ('"{0}"' -f $Expected)
+}
+
 function Assert-ServiceContracts {
     $backend = Get-ServiceEvidence $backendServiceName
     $caddy = Get-ServiceEvidence $caddyServiceName
@@ -310,7 +315,8 @@ function Assert-ServiceContracts {
             -not ($caddy.startName -ieq 'LocalSystem' -or $caddy.startName -ieq 'NT AUTHORITY\SYSTEM')) {
         throw 'Production service identity changed'
     }
-    if ($backend.pathName -ine $expectedBackendServicePath -or $caddy.pathName -ine $expectedCaddyServicePath) {
+    if (-not (Test-ExactExecutableServicePath -Actual $backend.pathName -Expected $expectedBackendServicePath) -or
+            $caddy.pathName -ine $expectedCaddyServicePath) {
         throw 'Production service executable binding changed'
     }
     return [ordered]@{ backend = $backend; caddy = $caddy; mysql = $mysql }
@@ -380,7 +386,10 @@ function Expand-AndVerifyRelease {
     }
     Assert-BackendJarSchemaCeiling -Path (Join-Path $targetReleasePartial 'payload\backend\leantpm-backend.jar')
     Move-Item -LiteralPath $targetReleasePartial -Destination $targetReleaseRoot -ErrorAction Stop
-    $aclOutput = @(& icacls.exe $targetReleaseRoot /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-20:(OI)(CI)RX' /T /C 2>&1)
+    # Apply inheritable entries to the release root only. Applying /inheritance:r
+    # recursively would strip every file's inherited effective permissions before
+    # adding directory-only inheritance entries, leaving JAR/Web files unreadable.
+    $aclOutput = @(& icacls.exe $targetReleaseRoot /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-20:(OI)(CI)RX' 2>&1)
     if ($LASTEXITCODE -ne 0) { throw ('Target release ACL failed: ' + ($aclOutput -join '; ')) }
     foreach ($artifact in @($Manifest.artifacts)) {
         $path = Join-Path $targetReleaseRoot ([string]$artifact.path).Replace('/', '\')

@@ -34,6 +34,11 @@ interface ResponsibleDraft {
   endDate?: string
 }
 
+interface OrganizationTreeNode extends OrganizationRow {
+  disabled: boolean
+  children: OrganizationTreeNode[]
+}
+
 const auth = useAuthStore()
 const route = useRoute()
 const loading = ref(false)
@@ -142,7 +147,23 @@ const transferLocations = computed(() =>
   ),
 )
 const activeCategories = computed(() => categories.value.filter((row) => row.status === 1))
-const activeOrganizations = computed(() => organizations.value.filter((row) => row.status === 1))
+const organizationTree = computed(() => buildOrganizationTree(organizations.value))
+
+function buildOrganizationTree(source: OrganizationRow[]): OrganizationTreeNode[] {
+  const nodes = new Map<number, OrganizationTreeNode>()
+  source.forEach((row) => nodes.set(row.id, {
+    ...row,
+    disabled: row.status !== 1,
+    children: [],
+  }))
+  const roots: OrganizationTreeNode[] = []
+  nodes.forEach((node) => {
+    const parent = nodes.get(node.parentId)
+    if (parent) parent.children.push(node)
+    else roots.push(node)
+  })
+  return roots
+}
 
 watch(() => form.organizationId, () => {
   if (!filteredLocations.value.some((row) => row.id === form.locationId)) {
@@ -372,7 +393,7 @@ async function copyEquipment() {
 
 async function remove(row: EquipmentRow) {
   await ElMessageBox.confirm(
-    `确认删除设备“${row.equipmentName}”吗？已有业务记录的设备只能停用。`,
+    `确认删除设备“${row.equipmentCode} · ${row.equipmentName}”吗？已有业务记录的设备只能停用。`,
     '删除设备',
     { type: 'warning' },
   )
@@ -591,9 +612,16 @@ function enabledLabel(value: unknown) {
 
         <el-divider content-position="left">组织与位置</el-divider>
         <el-form-item label="所属组织">
-          <el-select v-model="form.organizationId" filterable>
-            <el-option v-for="item in activeOrganizations" :key="item.id" :label="item.organizationName" :value="item.id" />
-          </el-select>
+          <el-tree-select
+            v-model="form.organizationId"
+            :data="organizationTree"
+            :props="{ label: 'organizationName', children: 'children', disabled: 'disabled' }"
+            node-key="id"
+            value-key="id"
+            check-strictly
+            filterable
+            default-expand-all
+          />
         </el-form-item>
         <el-form-item label="物理位置">
           <el-select
@@ -769,9 +797,16 @@ function enabledLabel(value: unknown) {
     <el-dialog v-model="transferVisible" title="设备调拨" width="min(620px, 94vw)">
       <el-form label-position="top">
         <el-form-item label="目标组织">
-          <el-select v-model="transferForm.organizationId" filterable>
-            <el-option v-for="item in activeOrganizations" :key="item.id" :label="item.organizationName" :value="item.id" />
-          </el-select>
+          <el-tree-select
+            v-model="transferForm.organizationId"
+            :data="organizationTree"
+            :props="{ label: 'organizationName', children: 'children', disabled: 'disabled' }"
+            node-key="id"
+            value-key="id"
+            check-strictly
+            filterable
+            default-expand-all
+          />
         </el-form-item>
         <el-form-item label="目标位置">
           <el-select

@@ -67,9 +67,11 @@
 	import { onLoad } from '@dcloudio/uni-app'
 	import { ROUTES, reLaunchTo } from '../../constants/routes.js'
 	import { brandingState, initializeBranding } from '../../stores/branding.js'
+	import { checkPublicAndroidUpgrade, refreshMobileBootstrap } from '../../stores/mobile.js'
 	import { rememberedCredentials, rememberedUsername, signIn } from '../../stores/session.js'
 	import { errorMessage, isServiceUnavailable } from '../../utils/errors.js'
 	import { brandingLogoSource } from '../../utils/branding.js'
+	import { checkAndroidUpgrade } from '../../utils/version.js'
 
 	const form = reactive({ username: '', password: '' })
 	const loading = ref(false)
@@ -82,6 +84,9 @@
 		form.username = saved?.username || rememberedUsername()
 		form.password = saved?.password || ''
 		remember.value = Boolean(saved) || remember.value
+		try {
+			if (await checkPublicAndroidUpgrade()) return
+		} catch { /* keep login available when offline */ }
 		await initializeBranding()
 	})
 
@@ -94,6 +99,9 @@
 
 	async function submit() {
 		if (loading.value) return
+		try {
+			if (await checkPublicAndroidUpgrade()) return
+		} catch { /* sign-in will provide the actionable connectivity error */ }
 		const username = form.username.trim()
 		if (!username) return uni.showToast({ title: '请输入账号', icon: 'none' })
 		if (!form.password) return uni.showToast({ title: '请输入密码', icon: 'none' })
@@ -104,6 +112,8 @@
 				username,
 				password: form.password
 			}, remember.value)
+			const bootstrap = await refreshMobileBootstrap()
+			if (checkAndroidUpgrade(bootstrap?.androidVersion)) return
 			await reLaunchTo(user.mustChangePassword ? '/pages/login/change-password' : ROUTES.workbench)
 		} catch (error) {
 			uni.showModal({

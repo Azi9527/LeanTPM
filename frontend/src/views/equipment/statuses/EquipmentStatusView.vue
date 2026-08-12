@@ -257,7 +257,7 @@ function duration(seconds?: number) {
       </template>
     </el-dialog>
 
-    <el-drawer v-model="historyVisible" :title="`${selected?.equipmentName || ''} · 状态履历`" size="min(720px, 96vw)">
+    <el-drawer v-model="historyVisible" :title="`${selected?.equipmentCode || ''} · ${selected?.equipmentName || ''} · 状态履历`" size="min(720px, 96vw)">
       <el-timeline>
         <el-timeline-item
           v-for="item in history"

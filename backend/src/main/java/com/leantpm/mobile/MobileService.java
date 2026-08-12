@@ -1,6 +1,7 @@
 package com.leantpm.mobile;
 
 import com.leantpm.common.exception.BusinessException;
+import com.leantpm.common.api.PageResult;
 import com.leantpm.inspection.InspectionDtos;
 import com.leantpm.inspection.InspectionTaskService;
 import com.leantpm.notification.NotificationService;
@@ -77,6 +78,8 @@ public class MobileService {
                 new MobileDtos.AndroidVersionPolicy(
                         parameter(current.tenantId(), "mobile.android-min-version-code", 1, 1, Integer.MAX_VALUE),
                         stringParameter(current.tenantId(), "mobile.android-latest-version-name", "1.0.1"),
+                        parameter(current.tenantId(), "mobile.android-latest-version-code", 0, 0, Integer.MAX_VALUE),
+                        booleanParameter(current.tenantId(), "mobile.android-force-upgrade", false),
                         stringParameter(current.tenantId(), "mobile.android-download-url", ""),
                         stringParameter(current.tenantId(), "mobile.android-release-notes", "")
                 ),
@@ -99,6 +102,37 @@ public class MobileService {
                                 message.occurredTime(), message.routePath()
                         ))
                         .toList()
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public PageResult<MobileDtos.EquipmentStatusRow> equipmentStatus(
+            String currentStatusCode,
+            int page,
+            int pageSize
+    ) {
+        var current = SecurityUtils.currentUser();
+        assertMobileEnabled(current.tenantId(), current.userId());
+        DataPermission scope = inspectionScanScope(
+                current.tenantId(), current.userId(), dataPermissionService.current()
+        );
+        String normalizedStatus = clean(currentStatusCode);
+        if (normalizedStatus != null) {
+            normalizedStatus = normalizedStatus.toUpperCase(Locale.ROOT);
+            if (!Set.of("IDLE", "RUNNING", "STOPPED", "SCRAPPED").contains(normalizedStatus)) {
+                throw new BusinessException(
+                        "MOBILE_EQUIPMENT_STATUS_INVALID", "设备状态筛选条件不正确"
+                );
+            }
+        }
+        int offset = (page - 1) * pageSize;
+        return PageResult.of(
+                mapper.equipmentStatusRows(
+                        current.tenantId(), scope, normalizedStatus, offset, pageSize
+                ),
+                mapper.equipmentStatusTotal(current.tenantId(), scope, normalizedStatus),
+                page,
+                pageSize
         );
     }
 

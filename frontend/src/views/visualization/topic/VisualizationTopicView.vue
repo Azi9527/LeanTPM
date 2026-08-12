@@ -249,7 +249,7 @@ async function fullscreen() {
         <div class="radar-visual"><i /><i /><i /><span>风险扫描</span></div>
         <div class="risk-list">
           <button v-for="item in attentionEquipment.slice(0, 4)" :key="item.equipmentId" @click="openLiveEquipment(item)">
-            <i :style="{ backgroundColor: item.displayColor }" /><span><b>{{ item.equipmentName }}</b><small>{{ item.statusName }} · {{ duration(item.durationSeconds) }}</small></span>
+            <i :style="{ backgroundColor: item.displayColor }" /><span><b>{{ item.equipmentCode }} · {{ item.equipmentName }}</b><small>{{ item.statusName }} · {{ duration(item.durationSeconds) }}</small></span>
           </button>
           <div v-if="!attentionEquipment.length" class="risk-empty">未发现需要关注的设备</div>
         </div>

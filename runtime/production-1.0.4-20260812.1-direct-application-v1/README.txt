@@ -1,4 +1,4 @@
-LeanTPM 1.0.4-20260812.1 direct application-only operator v1
+LeanTPM 1.0.4-20260812.1 direct application-only operator v3
 
 Scope:
 - Backend and Web only.
@@ -14,8 +14,17 @@ Required order:
 5. Run the executor with -PlanOnly and return the complete Plan JSON and PLAN_SHA256.
 6. Execute only after the coordinator confirms that exact PLAN_SHA256.
 
+Clean retry after the withdrawn v2 attempt:
+- Confirm 1.0.3 Backend/Caddy are healthy first.
+- Move the failed 1.0.4 target directory to the fixed quarantine sibling supplied by the coordinator; do not delete it.
+- This operator uses fresh -02 backup/evidence directories and creates a new target only from the verified release ZIP.
+
 Safety:
+- Building the operator automatically runs its Windows PowerShell 5.1 regression gate before any ZIP is created.
 - The source starter must contain exactly one 1.0.3 version line, one V52 schema line, and one 1.0.3 JAR path.
+- The Backend SCM executable binding accepts only the exact executable path, either unquoted or quoted by Windows SCM, with no arguments.
+- Target release ACLs are applied once at the release root; JAR/Web files retain effective inherited read permissions.
+- Public branding validation uses an ASCII-safe response contract and does not decode Chinese JSON through the Windows PowerShell 5.1 console code page.
 - The generated starter is parsed and verifies 1.0.4, V52, and the 1.0.4 JAR independently.
 - After Backend/Caddy stop, a verified V52 SQL dump plus the current 1.0.3 starter/Caddy bindings are stored under a restricted backup directory.
 - The immutable 1.0.3 JAR and Web index are hash-bound and left in place for application rollback.

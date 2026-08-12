@@ -32,6 +32,7 @@ const fallbackCategories: ItemCategoryOption[] = [
 ]
 const itemCategories = ref<ItemCategoryOption[]>(fallbackCategories)
 const dialogVisible = ref(false)
+const activeEditorSection = ref('basic')
 const importVisible = ref(false)
 const smartTableQuery = reactive({
   tableFilters: undefined as string | undefined,
@@ -173,6 +174,7 @@ function applyTableQuery(query: SmartTableServerQuery) {
 }
 
 function open(row?: ItemRow) {
+  activeEditorSection.value = 'basic'
   editing.value = row || null
   const photoRule = row
     ? afterPhotoMinimumChange(Boolean(row.photoRequiredFlag), row.photoMinCount ?? 0)
@@ -386,8 +388,11 @@ function parseOptions(value?: string): string[] {
       <el-pagination v-model:current-page="page" :page-size="20" :total="total" layout="total, prev, pager, next" @change="load" />
     </section>
 
-    <el-dialog v-model="dialogVisible" :title="editing ? '编辑点检项目' : '新增点检项目'" width="min(900px, 96vw)">
-      <el-form label-position="top" class="form-grid">
+    <el-dialog v-model="dialogVisible" :title="editing ? '编辑点检项目' : '新增点检项目'" width="min(1040px, 96vw)" class="inspection-editor-dialog" align-center>
+      <el-form label-position="top" class="inspection-editor-form">
+        <el-tabs v-model="activeEditorSection" class="inspection-editor-tabs">
+          <el-tab-pane label="基础标准" name="basic">
+            <div class="form-grid inspection-editor-pane">
         <el-form-item label="项目编码" required><el-input v-model="form.itemCode" :disabled="Boolean(editing)" placeholder="例如 CNC-LUBRICATION" /></el-form-item>
         <el-form-item label="项目名称" required><el-input v-model="form.itemName" /></el-form-item>
         <el-form-item label="适用范围" required>
@@ -407,6 +412,10 @@ function parseOptions(value?: string): string[] {
         <el-form-item label="点检方法"><el-input v-model="form.inspectionMethod" /></el-form-item>
         <el-form-item label="工具"><el-input v-model="form.inspectionTool" /></el-form-item>
         <el-form-item label="点检标准" class="full" required><el-input v-model="form.inspectionStandard" type="textarea" /></el-form-item>
+            </div>
+          </el-tab-pane>
+          <el-tab-pane label="判定与异常" name="result">
+            <div class="form-grid inspection-editor-pane">
         <el-form-item label="结果类型" required>
           <el-select v-model="form.resultType"><el-option v-for="(label, value) in resultLabels" :key="value" :label="label" :value="value" /></el-select>
         </el-form-item>
@@ -425,6 +434,10 @@ function parseOptions(value?: string): string[] {
         <el-form-item label="异常等级" required><el-select v-model="form.abnormalSeverity"><el-option label="低" value="LOW" /><el-option label="中" value="MEDIUM" /><el-option label="高" value="HIGH" /><el-option label="紧急" value="CRITICAL" /></el-select></el-form-item>
         <el-form-item label="异常建议"><el-input v-model="form.abnormalAdvice" /></el-form-item>
         <el-form-item label="异常默认停机"><el-switch v-model="form.abnormalDefaultStop" /><small class="block">任务执行时可调整，调整后必须填写原因</small></el-form-item>
+            </div>
+          </el-tab-pane>
+          <el-tab-pane label="拍照与执行" name="execution">
+            <div class="form-grid inspection-editor-pane">
         <el-form-item label="最少照片数" required><el-input-number v-model="form.photoMinCount" :min="0" :max="20" @change="onPhotoMinimumChange" /><div class="field-hint">大于 0 即表示必须拍照；设为 0 会自动关闭“必须拍照”。</div></el-form-item>
         <el-form-item label="最多照片数" required><el-input-number v-model="form.photoMaxCount" :min="1" :max="20" /></el-form-item>
         <el-form-item label="单张上限（MB）" required><el-input-number v-model="form.photoMaxSizeMb" :min="1" :max="100" /></el-form-item>
@@ -439,6 +452,9 @@ function parseOptions(value?: string): string[] {
           <el-checkbox v-model="form.skipAllowed">允许跳过</el-checkbox>
           <el-checkbox v-model="form.enabled">启用</el-checkbox>
         </el-form-item>
+            </div>
+          </el-tab-pane>
+        </el-tabs>
       </el-form>
       <template #footer><el-button @click="dialogVisible = false">取消</el-button><el-button type="primary" :loading="saving" @click="save">保存</el-button></template>
     </el-dialog>
@@ -448,6 +464,16 @@ function parseOptions(value?: string): string[] {
 
 <style scoped>
 .form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 16px; }
+.inspection-editor-form { height: 100%; }
+.inspection-editor-tabs { display: flex; height: 100%; flex-direction: column; overflow: hidden; }
+.inspection-editor-tabs :deep(.el-tabs__header) { flex: none; margin-bottom: 12px; }
+.inspection-editor-tabs :deep(.el-tabs__content) { flex: 1; min-height: 0; overflow: hidden; }
+.inspection-editor-tabs :deep(.el-tab-pane) { height: 100%; }
+.inspection-editor-pane { max-height: 100%; align-content: start; overflow-y: auto; padding-right: 8px; }
+:global(.inspection-editor-dialog) { display: flex; max-height: calc(100vh - 32px); margin: 0 auto; flex-direction: column; }
+:global(.inspection-editor-dialog .el-dialog__header),
+:global(.inspection-editor-dialog .el-dialog__footer) { flex: none; }
+:global(.inspection-editor-dialog .el-dialog__body) { flex: 1; min-height: 0; overflow: hidden; padding-top: 8px; padding-bottom: 8px; }
 .page-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .full { grid-column: 1 / -1; }
 @media (max-width: 640px) { .form-grid { grid-template-columns: 1fr; } .full { grid-column: auto; } }

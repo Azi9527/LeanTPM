@@ -30,7 +30,7 @@ class AppReleaseServiceTest {
                 "file", "LeanTPM.zip", "application/zip", new byte[]{1, 2, 3}
         );
 
-        assertThatThrownBy(() -> service.upload(file, "1.0.0", 100, 100, "", true))
+        assertThatThrownBy(() -> service.upload(file, "1.0.0", 100, 100, "", true, false))
                 .isInstanceOf(BusinessException.class)
                 .extracting("code")
                 .isEqualTo("ANDROID_APK_REQUIRED");
@@ -43,7 +43,7 @@ class AppReleaseServiceTest {
                 new byte[]{1, 2, 3}
         );
 
-        assertThatThrownBy(() -> service.upload(file, "1.0.0", 100, 101, "", true))
+        assertThatThrownBy(() -> service.upload(file, "1.0.0", 100, 101, "", true, false))
                 .isInstanceOf(BusinessException.class)
                 .extracting("code")
                 .isEqualTo("ANDROID_VERSION_CODE_INVALID");

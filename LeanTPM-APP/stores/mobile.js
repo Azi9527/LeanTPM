@@ -1,5 +1,6 @@
 import { reactive, readonly } from 'vue'
 import { mobileApi } from '../api/mobile.js'
+import { checkAndroidUpgrade } from '../utils/version.js'
 
 const state = reactive({
 	bootstrap: null,
@@ -9,6 +10,12 @@ const state = reactive({
 })
 
 export const mobileState = readonly(state)
+
+export async function checkPublicAndroidUpgrade() {
+	const release = await mobileApi.androidRelease()
+	if (!release?.available || !release?.enabled) return false
+	return checkAndroidUpgrade(release)
+}
 
 export async function refreshMobileBootstrap() {
 	state.loading = true

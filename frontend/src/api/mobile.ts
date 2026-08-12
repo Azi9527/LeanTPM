@@ -42,6 +42,8 @@ export interface MobileBootstrap {
   androidVersion: {
     minimumVersionCode: number
     latestVersionName: string
+    latestVersionCode: number
+    forceUpgrade: boolean
     downloadUrl: string
     releaseNotes: string
   }

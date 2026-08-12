@@ -1,15 +1,15 @@
 {
   "schemaVersion": 1,
   "productVersion": "1.0.4",
-  "databaseSchemaVersion": 52,
+  "databaseSchemaVersion": 53,
   "combinations": [
     {
       "backend": "1.0.4",
       "web": "1.0.4",
-      "appVersionCodeRange": { "minimum": 101, "maximum": 103 },
-      "databaseSchema": 52,
+      "appVersionCodeRange": { "minimum": 101, "maximum": 104 },
+      "databaseSchema": 53,
       "status": "CANDIDATE_UNVERIFIED",
-      "notes": "LeanTPM 1.0.4 Backend/Web application-only candidate on V52; APP versionCode 101-103 remains compatible and code 103 is packaged separately by the operator."
+      "notes": "LeanTPM 1.0.4 Backend/Web on V53; APP versionCode 101-104 remains API-compatible and code 104 is packaged separately by the user."
     },
     {
       "backend": "1.0.0",

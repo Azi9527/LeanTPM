@@ -13,18 +13,27 @@ $releaseZip = Join-Path $sourceRoot 'deliverables\LeanTPM-1.0.4-20260812.1-backe
 $releaseManifest = Join-Path $releaseWork 'package\direct-release-manifest.json'
 $templatePath = Join-Path $sourceRoot 'Invoke-LeanTpmDirectApplicationDeployment-1.0.4.ps1'
 $readmePath = Join-Path $sourceRoot 'README.txt'
-$outputPath = Join-Path $sourceRoot 'deliverables\production-1.0.4-20260812.1-direct-application-v1.zip'
+$operatorTestPath = Join-Path $sourceRoot 'Test-Direct104ApplicationOperator.ps1'
+$windowsPowerShell51 = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+$outputPath = Join-Path $sourceRoot 'deliverables\production-1.0.4-20260812.1-direct-application-v3.zip'
 $partialPath = $outputPath + '.partial'
-$generatedRoot = Join-Path $sourceRoot 'operator-work-v1'
+$generatedRoot = Join-Path $sourceRoot 'operator-work-v3'
 $generatedScript = Join-Path $generatedRoot 'Invoke-LeanTpmDirectApplicationDeployment-1.0.4.ps1'
 $utf8NoBom = New-Object Text.UTF8Encoding($false)
 
 function Get-Sha256([string]$Path) { return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() }
-foreach ($path in @($releaseZip, $releaseManifest, $templatePath, $readmePath)) {
+foreach ($path in @($releaseZip, $releaseManifest, $templatePath, $readmePath, $operatorTestPath, $windowsPowerShell51)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Required operator input is missing: $path" }
 }
 foreach ($path in @($outputPath, $partialPath, $generatedRoot)) {
     if (Test-Path -LiteralPath $path) { throw "Operator output already exists: $path" }
+}
+
+# Do not create any operator artifact unless the Windows PowerShell 5.1
+# deployment safety contract passes against the exact template being packaged.
+$operatorTestOutput = @(& $windowsPowerShell51 -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $operatorTestPath 2>&1)
+if ($LASTEXITCODE -ne 0) {
+    throw ('Operator safety regression failed: ' + ($operatorTestOutput -join '; '))
 }
 
 $manifest = Get-Content -LiteralPath $releaseManifest -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -59,7 +68,7 @@ $artifacts = @($files | ForEach-Object {
     [ordered]@{ path = $_.path; bytes = [long]$item.Length; sha256 = Get-Sha256 $_.source }
 })
 $operatorManifest = [ordered]@{
-    schemaVersion = 1; operatorVersion = 1; packageType = 'DIRECT_APPLICATION_ONLY_BACKEND_WEB_V52'
+    schemaVersion = 1; operatorVersion = 3; packageType = 'DIRECT_APPLICATION_ONLY_BACKEND_WEB_V52'
     releaseId = '1.0.4-20260812.1'; sourceCommit = $sourceCommit
     releasePackage = [ordered]@{ bytes = [long]$releaseItem.Length; sha256 = Get-Sha256 $releaseZip }
     scope = [ordered]@{ backend = $true; web = $true; databaseMigrations = $false; app = $false }

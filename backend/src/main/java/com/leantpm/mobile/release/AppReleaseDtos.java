@@ -12,6 +12,7 @@ public final class AppReleaseDtos {
             String versionName,
             Integer versionCode,
             Integer minimumVersionCode,
+            boolean forceUpgrade,
             String fileName,
             Long fileSize,
             String sha256,
@@ -22,7 +23,7 @@ public final class AppReleaseDtos {
     ) {
         public static AndroidRelease unavailable() {
             return new AndroidRelease(
-                    false, false, null, null, null, null, null, null,
+                    false, false, null, null, null, false, null, null, null,
                     null, null, null, null
             );
         }

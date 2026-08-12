@@ -446,15 +446,16 @@ test('accepts the canonical version only when every component and schema agrees'
   const report = JSON.parse(result.stdout.trim())
   assert.equal(report.status, 'PASS')
   assert.equal(report.productVersion, '1.0.4')
-  assert.equal(report.appVersionName, '1.0.4')
-  assert.equal(report.appVersionCode, 103)
+  assert.equal(report.appVersionName, '1.0.11')
+  assert.equal(report.appVersionCode, 104)
   assert.equal(report.minimumSupportedAppVersionCode, 101)
-  assert.equal(report.appPackageName, 'com.leantpm.mobile')
-  assert.equal(report.databaseSchemaVersion, 52)
+  assert.equal(report.appPackageName, 'uni.app.UNICEE59D0')
+  assert.equal(report.databaseSchemaVersion, 53)
   const compatibility = JSON.parse(
     fs.readFileSync(path.join(repositoryRoot, 'release', 'compatibility-matrix.json'), 'utf8'),
   )
   assert.equal(compatibility.combinations[0].appVersionCodeRange.minimum, 101)
+  assert.equal(compatibility.combinations[0].appVersionCodeRange.maximum, 104)
   assert.equal(compatibility.combinations[1].status, 'BLOCKED')
   const exampleManifest = JSON.parse(
     fs.readFileSync(path.join(repositoryRoot, 'release', 'release-manifest.example.json'), 'utf8'),
@@ -499,7 +500,7 @@ test('rejects an unsigned manifest unless the caller explicitly allows a test ma
   assert.equal(accepted.status, 0, combinedOutput(accepted))
   const report = JSON.parse(accepted.stdout.trim())
   assert.equal(report.status, 'PASS')
-  assert.equal(report.artifactCount, 7)
+  assert.equal(report.artifactCount, 8)
 })
 
 test('rejects a tampered artifact and an unexpected package file', () => {
@@ -1284,8 +1285,8 @@ test('generates a canonical manifest from payload bytes instead of hand-maintain
     assert.equal(result.status, 0, combinedOutput(result))
     const manifest = JSON.parse(fs.readFileSync(output, 'utf8'))
     assert.equal(manifest.productVersion, '1.0.4')
-    assert.equal(manifest.components.database.schemaTo, 52)
-    assert.equal(manifest.artifacts.length, 7)
+    assert.equal(manifest.components.database.schemaTo, 53)
+    assert.equal(manifest.artifacts.length, 8)
     for (const artifact of manifest.artifacts) {
       const bytes = fs.readFileSync(path.join(repositoryRoot, 'release', 'sample-package', artifact.path))
       assert.equal(artifact.size, bytes.length)
@@ -1351,8 +1352,8 @@ test('generates and validates a PC API release manifest without an APP artifact'
 
     const manifest = JSON.parse(fs.readFileSync(output, 'utf8'))
     assert.equal(manifest.productVersion, '1.0.4')
-    assert.equal(manifest.components.app.version, '1.0.4')
-    assert.equal(manifest.components.app.versionCode, 103)
+    assert.equal(manifest.components.app.version, '1.0.11')
+    assert.equal(manifest.components.app.versionCode, 104)
     assert.equal(manifest.components.app.includedInRelease, false)
     assert.equal(manifest.artifacts.some((artifact) => artifact.component === 'app'), false)
 
@@ -1536,7 +1537,7 @@ test('generates a contiguous checksum-locked migration catalog for an explicit u
     const classificationPath = path.join(temporaryRoot, 'classification.json')
     fs.writeFileSync(classificationPath, JSON.stringify({
       schemaVersion: 1,
-      entries: Array.from({ length: 20 }, (_, index) => ({
+      entries: Array.from({ length: 21 }, (_, index) => ({
         version: index + 33,
         phase: 'EXPAND',
         backwardCompatible: true,
@@ -1557,9 +1558,9 @@ test('generates a contiguous checksum-locked migration catalog for an explicit u
     assert.equal(result.status, 0, combinedOutput(result))
     const catalog = JSON.parse(fs.readFileSync(output, 'utf8'))
     assert.equal(catalog.schemaFrom, 32)
-    assert.equal(catalog.schemaTo, 52)
+    assert.equal(catalog.schemaTo, 53)
     assert.deepEqual(catalog.migrations.map((migration) => migration.version),
-      Array.from({ length: 20 }, (_, index) => index + 33))
+      Array.from({ length: 21 }, (_, index) => index + 33))
     for (const migration of catalog.migrations) {
       const bytes = fs.readFileSync(path.join(
         repositoryRoot, 'backend', 'src', 'main', 'resources', 'db', 'migration', migration.script,
@@ -2557,13 +2558,13 @@ test('classifies every historical migration before building a first-install cata
   const classificationPath = path.join(
     repositoryRoot, 'release', 'migration-classification.json',
   )
-  assert.ok(fs.existsSync(classificationPath), 'V1-V52 classification evidence is required')
+  assert.ok(fs.existsSync(classificationPath), 'V1-V53 classification evidence is required')
   const classification = JSON.parse(fs.readFileSync(classificationPath, 'utf8'))
   assert.equal(classification.schemaVersion, 1)
-  assert.equal(classification.entries.length, 52)
+  assert.equal(classification.entries.length, 53)
   assert.deepEqual(
     classification.entries.map((entry) => entry.version),
-    Array.from({ length: 52 }, (_, index) => index + 1),
+    Array.from({ length: 53 }, (_, index) => index + 1),
   )
   for (const entry of classification.entries) {
     assert.equal(entry.reviewStatus, 'APPROVED')
@@ -2587,11 +2588,11 @@ test('classifies every historical migration before building a first-install cata
     ])
     assert.equal(result.status, 0, combinedOutput(result))
     const report = JSON.parse(result.stdout.trim())
-    assert.equal(report.migrationCount, 52)
+    assert.equal(report.migrationCount, 53)
     assert.equal(report.phase, 'CONTRACT')
     assert.equal(report.backwardCompatible, false)
     const catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'))
-    assert.equal(catalog.migrations.length, 52)
+    assert.equal(catalog.migrations.length, 53)
 
     const payload = path.join(temporaryRoot, 'payload')
     fs.cpSync(path.join(repositoryRoot, 'release', 'sample-package'), payload, {

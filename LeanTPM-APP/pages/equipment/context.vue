@@ -111,7 +111,7 @@
 	const context = ref(null)
 	const loading = ref(false)
 	const error = ref('')
-	const managementExpanded = ref(false)
+	const managementExpanded = ref(true)
 	const createVisible = ref(false)
 	const creating = ref(false)
 	const quickVisible = ref(false)

@@ -29,9 +29,9 @@
 <script setup>
 	import { ref } from 'vue'
 	import { onLoad, onPullDownRefresh } from '@dcloudio/uni-app'
-	import { equipmentApi } from '../../api/equipment.js'
+	import { mobileApi } from '../../api/mobile.js'
 	import { ROUTES, navigateTo, routeWithQuery } from '../../constants/routes.js'
-	import { errorMessage } from '../../utils/errors.js'
+	import { equipmentStatusErrorMessage } from '../../utils/equipment-status.js'
 
 	const statusOptions = [
 		{ label: '全部', value: '' }, { label: '空闲', value: 'IDLE' },
@@ -59,7 +59,7 @@
 		error.value = ''
 		if (reset) { page.value = 1; rows.value = [] }
 		try {
-			const result = await equipmentApi.page({
+			const result = await mobileApi.equipmentStatus({
 				currentStatusCode: status.value || undefined,
 				page: page.value,
 				pageSize: 30
@@ -69,7 +69,7 @@
 			total.value = Number(result?.total || rows.value.length)
 			page.value += 1
 		} catch (cause) {
-			error.value = errorMessage(cause, '设备清单加载失败')
+			error.value = equipmentStatusErrorMessage(cause)
 		} finally { loading.value = false }
 	}
 
