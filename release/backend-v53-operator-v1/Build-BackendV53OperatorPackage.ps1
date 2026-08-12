@@ -65,7 +65,7 @@ foreach ($entry in $contracts.GetEnumerator()) {
 }
 $executor = $executor.Replace('$releaseZipBytes = 0', '$releaseZipBytes = ' + (Get-Item -LiteralPath $releaseZip).Length)
 $executor = $executor.Replace('$releaseManifestBytes = 0', '$releaseManifestBytes = ' + (Get-Item -LiteralPath $releaseManifest).Length)
-if ($executor.Contains('__') -or [regex]::IsMatch($executor, '[^\x00-\x7F]')) {
+if ([regex]::IsMatch($executor, '__[A-Z][A-Z0-9_]+__') -or [regex]::IsMatch($executor, '[^\x00-\x7F]')) {
     throw 'Substituted executor contains a placeholder or non-ASCII byte'
 }
 $tokens = $null

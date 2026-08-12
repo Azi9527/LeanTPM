@@ -98,6 +98,8 @@ foreach ($placeholder in @('__RELEASE_ZIP_SHA256__', '__RELEASE_MANIFEST_SHA256_
     Assert-True ($operatorBuilder.Contains($placeholder)) "Operator builder does not bind placeholder: $placeholder"
 }
 Assert-True ($operatorBuilder.Contains('source must be a completely clean committed tree')) 'Operator builder must reject dirty source'
+Assert-True ($operatorBuilder.Contains("[regex]::IsMatch(`$executor, '__[A-Z][A-Z0-9_]+__')")) 'Operator builder must reject real placeholders without rejecting Flyway double-underscore filenames'
+Assert-True (-not $operatorBuilder.Contains("`$executor.Contains('__')")) 'Operator builder must not treat Flyway double-underscore filenames as placeholders'
 Assert-True ($operatorBuilder.Contains("'Build-BackendV53ReleasePackage.ps1'")) 'Operator package must include the release builder required by its server-side test'
 Assert-True ($operatorBuilder.Contains("'Build-BackendV53OperatorPackage.ps1'")) 'Operator package must include its builder required by its server-side test'
 Assert-True ($builder.Contains("'runtime\production-1.0.4-20260812.2-backend-v53-operator-v1'")) 'Release build output must stay under ignored runtime evidence'
