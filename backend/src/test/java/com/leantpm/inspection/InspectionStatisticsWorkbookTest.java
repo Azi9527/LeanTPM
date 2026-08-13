@@ -70,10 +70,47 @@ class InspectionStatisticsWorkbookTest {
         }
     }
 
+    @Test
+    void taskSheetShowsActualExecutorsCompletionTimeAndChineseStatus() throws Exception {
+        InspectionTaskService service = new InspectionTaskService(
+                null, null, null, null, null, null, null, null
+        );
+        var firstItem = row("DJ-001", "ITEM-01", "油位", "李四");
+        var secondItem = row("DJ-001", "ITEM-02", "温度", "王五");
+
+        Method method = InspectionTaskService.class.getDeclaredMethod(
+                "statisticsWorkbook", List.class
+        );
+        method.setAccessible(true);
+        byte[] content = (byte[]) method.invoke(service, List.of(firstItem, secondItem));
+
+        try (var workbook = new XSSFWorkbook(new ByteArrayInputStream(content))) {
+            var sheet = workbook.getSheet("任务清单");
+            assertThat(sheet.getRow(0).getCell(13).getStringCellValue()).isEqualTo("任务执行人");
+            assertThat(sheet.getRow(0).getCell(14).getStringCellValue()).isEqualTo("实际执行人");
+            assertThat(sheet.getRow(0).getCell(15).getStringCellValue()).isEqualTo("实际完成时间");
+            assertThat(sheet.getRow(0).getCell(16).getStringCellValue()).isEqualTo("任务状态");
+            assertThat(sheet.getRow(1).getCell(13).getStringCellValue()).isEqualTo("张三");
+            assertThat(sheet.getRow(1).getCell(14).getStringCellValue()).isEqualTo("李四、王五");
+            assertThat(sheet.getRow(1).getCell(15).getLocalDateTimeCellValue())
+                    .isEqualTo(LocalDateTime.of(2026, 8, 13, 7, 30));
+            assertThat(sheet.getRow(1).getCell(16).getStringCellValue()).isEqualTo("已完成");
+        }
+    }
+
     private InspectionDtos.StatisticsTaskExportRow row(
             String taskCode,
             String itemCode,
             String itemName
+    ) {
+        return row(taskCode, itemCode, itemName, "张三");
+    }
+
+    private InspectionDtos.StatisticsTaskExportRow row(
+            String taskCode,
+            String itemCode,
+            String itemName,
+            String executedByName
     ) {
         return new InspectionDtos.StatisticsTaskExportRow(
                 taskCode, "PLAN", "ON_TIME_COMPLETED", 0L,
@@ -85,7 +122,7 @@ class InspectionStatisticsWorkbookTest {
                 LocalDateTime.of(2026, 8, 13, 7, 30),
                 "张三", "COMPLETED", itemCode, itemName, "传动部",
                 "运行正常", "NORMAL", "NORMAL", BigDecimal.ONE,
-                null, null, false, null, "张三",
+                null, null, false, null, executedByName,
                 LocalDateTime.of(2026, 8, 13, 7, 30)
         );
     }

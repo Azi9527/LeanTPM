@@ -39,9 +39,11 @@ import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 @Service
@@ -1751,11 +1753,21 @@ public class InspectionTaskService {
             String[] taskHeaders = {
                     "任务编号", "任务来源", "完成时效", "逾期分钟", "组织",
                     "设备编号", "设备名称", "点检方案", "计划日期", "计划开始",
-                    "截止时间", "提交时间", "完成时间", "执行人", "任务状态"
+                    "截止时间", "提交时间", "完成时间", "任务执行人",
+                    "实际执行人", "实际完成时间", "任务状态"
             };
             writeHeader(taskSheet, taskHeaders, header);
             int taskRowIndex = 1;
             var exportedTaskCodes = new LinkedHashSet<String>();
+            Map<String, LinkedHashSet<String>> actualExecutors = new LinkedHashMap<>();
+            for (InspectionDtos.StatisticsTaskExportRow item : rows) {
+                if (item.executedByName() == null || item.executedByName().isBlank()) {
+                    continue;
+                }
+                actualExecutors.computeIfAbsent(
+                        item.taskCode(), ignored -> new LinkedHashSet<>()
+                ).add(item.executedByName());
+            }
             for (InspectionDtos.StatisticsTaskExportRow item : rows) {
                 if (!exportedTaskCodes.add(item.taskCode())) {
                     continue;
@@ -1776,7 +1788,12 @@ public class InspectionTaskService {
                 date(row, column++, item.submittedTime(), dateTime);
                 date(row, column++, item.completedTime(), dateTime);
                 text(row, column++, item.assigneeName());
-                text(row, column, item.taskStatus());
+                text(row, column++, String.join("、", actualExecutors.getOrDefault(
+                        item.taskCode(), new LinkedHashSet<>()
+                )));
+                date(row, column++, item.submittedTime() != null
+                        ? item.submittedTime() : item.completedTime(), dateTime);
+                text(row, column, taskStatusLabel(item.taskStatus()));
             }
             finishSheet(taskSheet, taskHeaders.length);
 
@@ -1835,6 +1852,18 @@ public class InspectionTaskService {
             case "PENDING" -> "待完成";
             case "CLOSED" -> "已取消/作废";
             default -> timelinessStatus == null ? "" : timelinessStatus;
+        };
+    }
+
+    private String taskStatusLabel(String taskStatus) {
+        return switch (taskStatus == null ? "" : taskStatus) {
+            case "PENDING" -> "待执行";
+            case "IN_PROGRESS" -> "执行中";
+            case "PENDING_REVIEW", "COMPLETED" -> "已完成";
+            case "OVERDUE" -> "已逾期";
+            case "CANCELLED" -> "已取消";
+            case "VOIDED" -> "已作废";
+            default -> taskStatus == null ? "" : taskStatus;
         };
     }
 
