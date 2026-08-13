@@ -1,0 +1,54 @@
+# 点检统计管理改造
+
+## 需求
+
+- 点检统计支持查询全部点检作业任务，包括超过截止时间后才执行/提交的任务。
+- 任务来源可区分计划任务、扫码直接点检、人工任务和补录任务。
+- 完成时效可区分按期完成、逾期完成、逾期未完成和未到期未完成。
+- 选择组织时同时查询其全部下属组织，但始终受当前账号数据权限约束。
+- 任务支持打开点检项目明细，并按相同筛选条件导出明细清单。
+
+## Given / When / Then
+
+1. Given 父组织下有多个层级的下属组织，When 选择父组织查询，Then 返回父组织及全部下属组织中当前账号有权查看的任务，And 不返回权限范围外数据。
+2. Given 计划生成、扫码直接创建、人工创建和补录任务，When 按来源筛选，Then 只返回对应来源并显示直白中文名称。
+3. Given 任务分别在截止前完成、截止后完成、截止后未完成、截止前未完成，When 按完成时效筛选，Then 分别归入按期完成、逾期完成、逾期未完成、未到期未完成。
+4. Given 逾期任务后来成功提交，When 查询历史期间，Then 仍可查到该任务及其项目结果，并标记为逾期完成。
+5. Given 当前筛选结果，When 点击导出明细，Then 导出任务与点检项目明细，并保留任务来源、完成时效、组织、设备、截止及实际完成时间。
+6. Given 无匹配数据，When 查询或导出，Then 页面显示空状态，导出仍生成只有表头的合法文件或给出明确提示。
+
+## 风险与治理
+
+- 风险等级：L3。涉及共享业务统计、组织权限、SQL 查询、导出合同和 Web 页面。
+- 数据库：复用 V53 已有 `source_type`、`due_time`、`submitted_time`、`completed_time`、`organization_id`，不新增迁移。
+- 角色：主代理负责需求、实现、集成和验证；只读架构角色核对数据模型/权限；只读测试角色独立核对验收和回归。
+- 回滚：删除统计专用 API/DTO/Mapper 查询并恢复统计页面；没有新表或数据写入需要回滚。
+
+## 影响分析
+
+- GitNexus：现有统计 Mapper → Service → Controller 链路为 LOW；共享前端 TaskQuery/Statistics 为 MEDIUM（13 个直接消费者），因此新增统计专用查询合同，避免扩展通用任务查询合同。
+- `InspectionMapper` 和 `InspectionTaskService` 类级影响为 MEDIUM，需覆盖原任务查询、统计汇总、组织权限和导出回归。
+
+## 测试策略
+
+- 先添加失败的 Mapper/页面合同测试，覆盖来源、时效、递归组织、权限和导出字段。
+- Backend：相关单元/合同测试，随后 MySQL 集成测试（本地 `root/root`，只创建隔离测试库）。
+- Web：统计页面合同测试、typecheck、production build。
+- 收尾：GitNexus detect-changes、impact recheck、`git diff --check`。
+
+## 实施结果
+
+- 新增统计专用任务分页和项目级 Excel 导出接口；统计权限可查看任务项目、附件和事件明细，导出仍单独要求 `inspection:task:export`。
+- 汇总、列表和导出共用同一筛选合同：日期、关键字、组织（含下属）、任务来源、完成时效、任务状态。
+- 时效统一以首次提交时间为准，缺失时兼容历史完成时间；不再依赖会被后续执行覆盖的 `OVERDUE` 状态。
+- 未增加数据库表或字段，继续使用 V53。
+
+## 验证证据
+
+- Backend 合同：`InspectionStatisticsManagementContractTest`、`InspectionMapperContractTest` 通过。
+- Web：统计合同测试、`vue-tsc -b`、Vite production build 通过。
+- MySQL 8.0.42：唯一隔离库从空库迁移到 V53；新增统计用例通过，覆盖下属组织、PLAN/QUICK_ENTRY、按期/逾期完成、逾期未完成和 Excel 项目明细；测试库已删除。
+- 完整点检 MySQL 类：新增用例通过；既有异常生命周期用例仍按旧 `OPEN` 状态查询，与当前异常登记后转 `PROCESSING` 的既有改动冲突，非本统计变更引入。
+- 后端全量：235 项中 234 通过、67 项无 MySQL 环境跳过；唯一失败为工作区既有二维码颜色断言，与本统计变更无关。
+- 浏览器：本地页面没有登录态，停留登录页；未使用或提交任何账号密码，因此视觉交互仅以构建和源码合同完成验证。
+- `git diff --check` 通过。GitNexus detect-changes 对整个脏工作区报告 CRITICAL（100 symbols/25 files），包含此前 APP、二维码、导入和小时周期改动；本统计链路单独的前置 impact 为 LOW/MEDIUM，无 HIGH/CRITICAL。

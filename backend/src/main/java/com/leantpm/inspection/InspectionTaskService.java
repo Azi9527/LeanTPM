@@ -39,6 +39,7 @@ import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HexFormat;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -57,6 +58,14 @@ public class InspectionTaskService {
             Set.of("UNASSIGNED", "ASSIGNED", "PENDING_EXECUTION", "COMPLETED");
     private static final Set<String> TASK_STATUS_GROUPS =
             Set.of("PENDING", "IN_PROGRESS", "COMPLETED");
+    private static final Set<String> STATISTICS_TASK_STATUSES = Set.of(
+            "PENDING", "IN_PROGRESS", "PENDING_REVIEW", "COMPLETED",
+            "OVERDUE", "CANCELLED", "VOIDED"
+    );
+    private static final Set<String> STATISTICS_SOURCE_TYPES =
+            Set.of("PLAN", "QUICK_ENTRY", "MANUAL", "BACKFILL");
+    private static final Set<String> TIMELINESS_STATUSES =
+            Set.of("ON_TIME_COMPLETED", "LATE_COMPLETED", "OVERDUE_INCOMPLETE", "PENDING", "CLOSED");
 
     private final InspectionMapper mapper;
     private final InspectionCalendarMapper calendarMapper;
@@ -280,34 +289,37 @@ public class InspectionTaskService {
         int generated = 0;
         int skipped = 0;
         for (InspectionMapper.GenerationPlan plan : plans) {
-            LocalDate occurrence = plan.nextGenerationDate();
+            LocalDateTime occurrence = plan.nextGenerationDate().atTime(
+                    plan.scheduledTime() == null ? LocalTime.of(8, 0)
+                            : plan.scheduledTime()
+            );
             while (true) {
-                if (plan.expiryDate() != null && occurrence.isAfter(plan.expiryDate())) {
+                LocalDate occurrenceDate = occurrence.toLocalDate();
+                if (plan.expiryDate() != null
+                        && occurrenceDate.isAfter(plan.expiryDate())) {
                     break;
                 }
-                LocalDateTime start = occurrence.atTime(
-                        plan.scheduledTime() == null ? LocalTime.of(8, 0)
-                                : plan.scheduledTime()
-                );
+                LocalDateTime start = occurrence;
                 if (start.minusMinutes(plan.generationLeadMinutes()).isAfter(cutoff)) {
                     break;
                 }
-                if (occurrence.isBefore(plan.effectiveDate())) {
-                    LocalDate completedOccurrence = occurrence;
+                if (occurrenceDate.isBefore(plan.effectiveDate())) {
+                    LocalDate completedOccurrence = occurrenceDate;
                     occurrence = nextOccurrence(plan, occurrence);
                     mapper.updatePlanGeneration(
-                            tenantId, plan.id(), completedOccurrence, occurrence, operatorId
+                            tenantId, plan.id(), completedOccurrence,
+                            occurrence.toLocalDate(), occurrence.toLocalTime(), operatorId
                     );
                     continue;
                 }
-                if (!isWorkday(tenantId, plan, occurrence)
-                        || (occurrence.isBefore(cutoff.toLocalDate())
-                        && !plan.backfillAllowed())) {
+                if (!isWorkday(tenantId, plan, occurrenceDate)
+                        || isMissedOccurrence(plan, occurrence, cutoff)) {
                     skipped++;
-                    LocalDate completedOccurrence = occurrence;
+                    LocalDate completedOccurrence = occurrenceDate;
                     occurrence = nextOccurrence(plan, occurrence);
                     mapper.updatePlanGeneration(
-                            tenantId, plan.id(), completedOccurrence, occurrence, operatorId
+                            tenantId, plan.id(), completedOccurrence,
+                            occurrence.toLocalDate(), occurrence.toLocalTime(), operatorId
                     );
                     continue;
                 }
@@ -324,9 +336,9 @@ public class InspectionTaskService {
                         String code = numberRuleService.generate(
                                 tenantId, operatorId, "INSPECTION_TASK"
                         ).businessNumber();
-                        LocalDateTime due = occurrence.atTime(23, 59, 59);
+                        LocalDateTime due = taskDueTime(plan, occurrence);
                         int inserted = mapper.insertTask(
-                                tenantId, code, plan, equipment, occurrence, start, due,
+                                tenantId, code, plan, equipment, occurrenceDate, start, due,
                                 occurrenceKey, "PLAN", false, null, operatorId
                         );
                         Long taskId = inserted == 0
@@ -358,10 +370,11 @@ public class InspectionTaskService {
                 } else {
                     skipped++;
                 }
-                LocalDate completedOccurrence = occurrence;
+                LocalDate completedOccurrence = occurrenceDate;
                 occurrence = nextOccurrence(plan, occurrence);
                 mapper.updatePlanGeneration(
-                        tenantId, plan.id(), completedOccurrence, occurrence, operatorId
+                        tenantId, plan.id(), completedOccurrence,
+                        occurrence.toLocalDate(), occurrence.toLocalTime(), operatorId
                 );
             }
         }
@@ -932,25 +945,103 @@ public class InspectionTaskService {
             LocalDate endDate,
             Long organizationId
     ) {
+        return statistics(new InspectionDtos.StatisticsQuery(
+                null, startDate, endDate, organizationId, null, null, null
+        ));
+    }
+
+    @Transactional(readOnly = true)
+    public InspectionDtos.Statistics statistics(InspectionDtos.StatisticsQuery requestedQuery) {
         var current = SecurityUtils.currentUser();
-        LocalDate effectiveStart = startDate == null ? LocalDate.now() : startDate;
-        LocalDate effectiveEnd = endDate == null ? effectiveStart : endDate;
-        if (effectiveEnd.isBefore(effectiveStart)) {
-            throw new BusinessException("INSPECTION_STATISTICS_DATE_INVALID", "结束日期不能早于开始日期");
-        }
-        if (effectiveStart.plusYears(2).isBefore(effectiveEnd)) {
-            throw new BusinessException("INSPECTION_STATISTICS_RANGE_TOO_LARGE", "统计日期范围不能超过两年");
-        }
+        InspectionDtos.StatisticsQuery query = normalizeStatisticsQuery(requestedQuery);
         InspectionDtos.Statistics value = mapper.statistics(
-                current.tenantId(), dataPermissionService.current(), effectiveStart,
-                effectiveEnd, organizationId
+                current.tenantId(), dataPermissionService.current(), query
         );
         if (value != null) {
             return value;
         }
         return new InspectionDtos.Statistics(
                 0, 0, 0, 0, 0, BigDecimal.ZERO.setScale(2),
-                BigDecimal.ZERO.setScale(2)
+                BigDecimal.ZERO.setScale(2), 0, 0, 0, 0, 0, 0, 0
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public PageResult<InspectionDtos.TaskRow> statisticsTasks(
+            InspectionDtos.StatisticsQuery requestedQuery,
+            int page,
+            int pageSize
+    ) {
+        var current = SecurityUtils.currentUser();
+        DataPermission scope = dataPermissionService.current();
+        InspectionDtos.StatisticsQuery query = normalizeStatisticsQuery(requestedQuery);
+        int offset = (page - 1) * pageSize;
+        return PageResult.of(
+                mapper.findStatisticsTasks(
+                        current.tenantId(), scope, query, offset, pageSize
+                ),
+                mapper.countStatisticsTasks(current.tenantId(), scope, query),
+                page,
+                pageSize
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public byte[] exportStatisticsDetails(InspectionDtos.StatisticsQuery requestedQuery) {
+        var current = SecurityUtils.currentUser();
+        InspectionDtos.StatisticsQuery query = normalizeStatisticsQuery(requestedQuery);
+        List<InspectionDtos.StatisticsTaskExportRow> rows = mapper.findStatisticsExportRows(
+                current.tenantId(), dataPermissionService.current(), query,
+                EXPORT_RESULT_LIMIT + 1
+        );
+        if (rows.size() > EXPORT_RESULT_LIMIT) {
+            throw new BusinessException(
+                    "INSPECTION_STATISTICS_EXPORT_TOO_LARGE",
+                    "点检统计明细超过 " + EXPORT_RESULT_LIMIT + " 行，请缩小筛选范围"
+            );
+        }
+        return statisticsWorkbook(rows);
+    }
+
+    private InspectionDtos.StatisticsQuery normalizeStatisticsQuery(
+            InspectionDtos.StatisticsQuery requestedQuery
+    ) {
+        InspectionDtos.StatisticsQuery source = requestedQuery == null
+                ? new InspectionDtos.StatisticsQuery(null, null, null, null, null, null, null)
+                : requestedQuery;
+        LocalDate startDate = source.startDate() == null ? LocalDate.now() : source.startDate();
+        LocalDate endDate = source.endDate() == null ? startDate : source.endDate();
+        if (endDate.isBefore(startDate)) {
+            throw new BusinessException(
+                    "INSPECTION_STATISTICS_DATE_INVALID", "结束日期不能早于开始日期"
+            );
+        }
+        if (startDate.plusYears(2).isBefore(endDate)) {
+            throw new BusinessException(
+                    "INSPECTION_STATISTICS_RANGE_TOO_LARGE", "统计日期范围不能超过两年"
+            );
+        }
+        String sourceType = upper(source.sourceType());
+        if (sourceType != null && !STATISTICS_SOURCE_TYPES.contains(sourceType)) {
+            throw new BusinessException(
+                    "INSPECTION_STATISTICS_SOURCE_INVALID", "点检任务来源不正确"
+            );
+        }
+        String timelinessStatus = upper(source.timelinessStatus());
+        if (timelinessStatus != null && !TIMELINESS_STATUSES.contains(timelinessStatus)) {
+            throw new BusinessException(
+                    "INSPECTION_STATISTICS_TIMELINESS_INVALID", "点检完成时效不正确"
+            );
+        }
+        String taskStatus = upper(source.taskStatus());
+        if (taskStatus != null && !STATISTICS_TASK_STATUSES.contains(taskStatus)) {
+            throw new BusinessException(
+                    "INSPECTION_STATISTICS_TASK_STATUS_INVALID", "点检任务状态不正确"
+            );
+        }
+        return new InspectionDtos.StatisticsQuery(
+                clean(source.keyword()), startDate, endDate, source.organizationId(),
+                sourceType, timelinessStatus, taskStatus
         );
     }
 
@@ -1257,19 +1348,55 @@ public class InspectionTaskService {
         );
     }
 
-    private LocalDate nextOccurrence(InspectionMapper.GenerationPlan plan, LocalDate current) {
-        return switch (plan.cycleType()) {
-            case "DAILY", "INTERVAL_DAYS" -> current.plusDays(plan.cycleInterval());
+    static LocalDateTime nextOccurrence(
+            InspectionMapper.GenerationPlan plan,
+            LocalDateTime current
+    ) {
+        if ("HOURLY".equals(plan.cycleType())) {
+            return current.plusHours(plan.cycleInterval());
+        }
+        LocalDate nextDate = switch (plan.cycleType()) {
+            case "DAILY", "INTERVAL_DAYS" ->
+                    current.toLocalDate().plusDays(plan.cycleInterval());
             case "WEEKLY" -> nextMatchingDay(
-                    current, plan.weekDays(), true, plan.cycleInterval()
+                    current.toLocalDate(), plan.weekDays(), true, plan.cycleInterval()
             );
             case "MONTHLY" -> nextMatchingDay(
-                    current, plan.monthDays(), false, plan.cycleInterval()
+                    current.toLocalDate(), plan.monthDays(), false, plan.cycleInterval()
             );
             default -> throw new BusinessException(
                     "INSPECTION_PLAN_CYCLE_INVALID", "点检计划周期不正确"
             );
         };
+        LocalTime scheduledTime = plan.scheduledTime() == null
+                ? LocalTime.of(8, 0) : plan.scheduledTime();
+        return nextDate.atTime(scheduledTime);
+    }
+
+    static LocalDateTime taskDueTime(
+            InspectionMapper.GenerationPlan plan,
+            LocalDateTime occurrence
+    ) {
+        if ("HOURLY".equals(plan.cycleType())) {
+            return nextOccurrence(plan, occurrence).minusSeconds(1);
+        }
+        return occurrence.toLocalDate().atTime(23, 59, 59);
+    }
+
+    static boolean isMissedOccurrence(
+            InspectionMapper.GenerationPlan plan,
+            LocalDateTime occurrence,
+            LocalDateTime cutoff
+    ) {
+        if (plan.backfillAllowed()) {
+            return false;
+        }
+        if (!"HOURLY".equals(plan.cycleType())) {
+            return occurrence.toLocalDate().isBefore(cutoff.toLocalDate());
+        }
+        LocalDateTime nextReadyTime = nextOccurrence(plan, occurrence)
+                .minusMinutes(plan.generationLeadMinutes());
+        return !nextReadyTime.isAfter(cutoff);
     }
 
     private boolean isWorkday(
@@ -1298,7 +1425,7 @@ public class InspectionTaskService {
         return false;
     }
 
-    private LocalDate nextMatchingDay(
+    private static LocalDate nextMatchingDay(
             LocalDate current,
             String configuredDays,
             boolean weekDay,
@@ -1607,6 +1734,108 @@ public class InspectionTaskService {
                     HttpStatus.INTERNAL_SERVER_ERROR
             );
         }
+    }
+
+    private byte[] statisticsWorkbook(
+            List<InspectionDtos.StatisticsTaskExportRow> rows
+    ) {
+        try (var workbook = new XSSFWorkbook(); var output = new ByteArrayOutputStream()) {
+            CellStyle header = headerStyle(workbook);
+            CellStyle dateTime = workbook.createCellStyle();
+            dateTime.setDataFormat(workbook.getCreationHelper()
+                    .createDataFormat().getFormat("yyyy-mm-dd hh:mm:ss"));
+            CellStyle dateOnly = workbook.createCellStyle();
+            dateOnly.setDataFormat(workbook.getCreationHelper()
+                    .createDataFormat().getFormat("yyyy-mm-dd"));
+            Sheet taskSheet = workbook.createSheet("任务清单");
+            String[] taskHeaders = {
+                    "任务编号", "任务来源", "完成时效", "逾期分钟", "组织",
+                    "设备编号", "设备名称", "点检方案", "计划日期", "计划开始",
+                    "截止时间", "提交时间", "完成时间", "执行人", "任务状态"
+            };
+            writeHeader(taskSheet, taskHeaders, header);
+            int taskRowIndex = 1;
+            var exportedTaskCodes = new LinkedHashSet<String>();
+            for (InspectionDtos.StatisticsTaskExportRow item : rows) {
+                if (!exportedTaskCodes.add(item.taskCode())) {
+                    continue;
+                }
+                Row row = taskSheet.createRow(taskRowIndex++);
+                int column = 0;
+                text(row, column++, item.taskCode());
+                text(row, column++, sourceTypeLabel(item.sourceType()));
+                text(row, column++, timelinessLabel(item.timelinessStatus()));
+                number(row, column++, item.overdueMinutes());
+                text(row, column++, item.organizationName());
+                text(row, column++, item.equipmentCode());
+                text(row, column++, item.equipmentName());
+                text(row, column++, item.schemeName());
+                date(row, column++, item.plannedDate(), dateOnly);
+                date(row, column++, item.plannedStartTime(), dateTime);
+                date(row, column++, item.dueTime(), dateTime);
+                date(row, column++, item.submittedTime(), dateTime);
+                date(row, column++, item.completedTime(), dateTime);
+                text(row, column++, item.assigneeName());
+                text(row, column, item.taskStatus());
+            }
+            finishSheet(taskSheet, taskHeaders.length);
+
+            Sheet itemSheet = workbook.createSheet("点检项目明细");
+            String[] itemHeaders = {
+                    "任务编号", "项目编码", "点检项目", "点检部位", "点检标准", "结果状态",
+                    "结果编码", "数值结果", "文本结果", "选择结果", "是否异常",
+                    "异常说明", "实际执行人", "执行时间"
+            };
+            writeHeader(itemSheet, itemHeaders, header);
+            int itemRowIndex = 1;
+            for (InspectionDtos.StatisticsTaskExportRow item : rows) {
+                Row row = itemSheet.createRow(itemRowIndex++);
+                int column = 0;
+                text(row, column++, item.taskCode());
+                text(row, column++, item.itemCode());
+                text(row, column++, item.itemName());
+                text(row, column++, item.inspectionPart());
+                text(row, column++, item.inspectionStandard());
+                text(row, column++, item.resultStatus());
+                text(row, column++, item.resultCode());
+                decimal(row, column++, item.numericValue());
+                text(row, column++, item.textValue());
+                text(row, column++, item.selectedValue());
+                text(row, column++, Boolean.TRUE.equals(item.abnormalFlag()) ? "是" : "否");
+                text(row, column++, item.abnormalDescription());
+                text(row, column++, item.executedByName());
+                date(row, column, item.executedTime(), dateTime);
+            }
+            finishSheet(itemSheet, itemHeaders.length);
+            workbook.write(output);
+            return output.toByteArray();
+        } catch (IOException exception) {
+            throw new BusinessException(
+                    "INSPECTION_STATISTICS_EXPORT_FAILED", "点检统计明细导出失败",
+                    HttpStatus.INTERNAL_SERVER_ERROR
+            );
+        }
+    }
+
+    private String sourceTypeLabel(String sourceType) {
+        return switch (sourceType == null ? "" : sourceType) {
+            case "PLAN" -> "计划任务";
+            case "QUICK_ENTRY" -> "扫码直接点检";
+            case "MANUAL" -> "人工任务";
+            case "BACKFILL" -> "补录任务";
+            default -> sourceType == null ? "" : sourceType;
+        };
+    }
+
+    private String timelinessLabel(String timelinessStatus) {
+        return switch (timelinessStatus == null ? "" : timelinessStatus) {
+            case "ON_TIME_COMPLETED" -> "按期完成";
+            case "LATE_COMPLETED" -> "逾期完成";
+            case "OVERDUE_INCOMPLETE" -> "逾期未完成";
+            case "PENDING" -> "待完成";
+            case "CLOSED" -> "已取消/作废";
+            default -> timelinessStatus == null ? "" : timelinessStatus;
+        };
     }
 
     private CellStyle headerStyle(XSSFWorkbook workbook) {

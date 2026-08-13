@@ -74,6 +74,7 @@ const typeLabels: Record<string, string> = {
 }
 const cycleLabels: Record<string, string> = {
   DAILY: '每日',
+  HOURLY: '每小时',
   WEEKLY: '每周',
   MONTHLY: '每月',
   INTERVAL_DAYS: '间隔天数',
@@ -385,8 +386,8 @@ function csvNumbers(value?: string) {
         <el-form-item label="方案名称" required><el-input v-model="form.schemeName" /></el-form-item>
         <el-form-item label="点检类型" required><el-select v-model="form.inspectionType"><el-option v-for="(label, value) in typeLabels" :key="value" :label="label" :value="value" /></el-select></el-form-item>
         <el-form-item label="周期类型" required><el-select v-model="form.cycleType"><el-option v-for="(label, value) in cycleLabels" :key="value" :label="label" :value="value" /></el-select></el-form-item>
-        <el-form-item label="周期间隔"><el-input-number v-model="form.cycleInterval" :min="1" /></el-form-item>
-        <el-form-item label="计划时间"><el-time-picker v-model="form.scheduledTime" value-format="HH:mm:ss" /></el-form-item>
+        <el-form-item :label="form.cycleType === 'HOURLY' ? '间隔小时' : '周期间隔'"><el-input-number v-model="form.cycleInterval" :min="1" /></el-form-item>
+        <el-form-item :label="form.cycleType === 'HOURLY' ? '首次计划时间' : '计划时间'"><el-time-picker v-model="form.scheduledTime" value-format="HH:mm:ss" /></el-form-item>
         <el-form-item label="提前生成（分钟）"><el-input-number v-model="form.generationLeadMinutes" :min="0" :max="43200" :step="30" /><div class="field-hint">默认提前 60 分钟，最大 30 天</div></el-form-item>
         <el-form-item label="点检工作日历" required><el-select v-model="form.workCalendarId" filterable><el-option v-for="calendar in calendars" :key="calendar.id" :label="calendar.defaultFlag ? `${calendar.calendarName}（默认）` : calendar.calendarName" :value="calendar.id" /></el-select></el-form-item>
         <el-form-item v-if="form.cycleType === 'WEEKLY'" label="执行星期" class="full"><el-checkbox-group v-model="form.weekDays"><el-checkbox v-for="day in 7" :key="day" :value="day">周{{ '一二三四五六日'[day - 1] }}</el-checkbox></el-checkbox-group></el-form-item>

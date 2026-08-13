@@ -74,6 +74,7 @@ class ImportTemplateContractTest {
             assertThat(value(sheet, headers, "结果类型")).isEqualTo("数值");
             assertThat(value(sheet, headers, "异常等级")).isEqualTo("中");
             assertThat(value(sheet, headers, "标准分钟")).isEqualTo("2");
+            assertThat(sheetValues(workbook.getSheet("填写规范"))).contains("每小时");
         }
     }
 
@@ -99,6 +100,15 @@ class ImportTemplateContractTest {
                 .findFirst().orElseThrow();
         return new DataFormatter(Locale.SIMPLIFIED_CHINESE)
                 .formatCellValue(sheet.getRow(1).getCell(index)).trim();
+    }
+
+    private String sheetValues(Sheet sheet) {
+        DataFormatter formatter = new DataFormatter(Locale.SIMPLIFIED_CHINESE);
+        StringBuilder content = new StringBuilder();
+        sheet.forEach(row -> row.forEach(cell -> content
+                .append(formatter.formatCellValue(cell))
+                .append('\n')));
+        return content.toString();
     }
 
     private EquipmentService equipmentService() {

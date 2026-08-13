@@ -212,7 +212,7 @@ public final class InspectionDtos {
             @NotBlank @Size(max = 32) String inspectionType,
             @NotBlank
             @Pattern(
-                    regexp = "^(DAILY|WEEKLY|MONTHLY|INTERVAL_DAYS)$",
+                    regexp = "^(DAILY|HOURLY|WEEKLY|MONTHLY|INTERVAL_DAYS)$",
                     message = "点检周期类型不正确"
             )
             String cycleType,
@@ -738,7 +738,57 @@ public final class InspectionDtos {
             long overdue,
             long abnormal,
             BigDecimal completionRate,
-            BigDecimal onTimeRate
+            BigDecimal onTimeRate,
+            long planCount,
+            long quickEntryCount,
+            long manualCount,
+            long backfillCount,
+            long onTimeCompleted,
+            long lateCompleted,
+            long overdueIncomplete
+    ) {
+    }
+
+    public record StatisticsQuery(
+            String keyword,
+            LocalDate startDate,
+            LocalDate endDate,
+            Long organizationId,
+            String sourceType,
+            String timelinessStatus,
+            String taskStatus
+    ) {
+    }
+
+    public record StatisticsTaskExportRow(
+            String taskCode,
+            String sourceType,
+            String timelinessStatus,
+            Long overdueMinutes,
+            String organizationName,
+            String equipmentCode,
+            String equipmentName,
+            String schemeName,
+            LocalDate plannedDate,
+            LocalDateTime plannedStartTime,
+            LocalDateTime dueTime,
+            LocalDateTime submittedTime,
+            LocalDateTime completedTime,
+            String assigneeName,
+            String taskStatus,
+            String itemCode,
+            String itemName,
+            String inspectionPart,
+            String inspectionStandard,
+            String resultStatus,
+            String resultCode,
+            BigDecimal numericValue,
+            String textValue,
+            String selectedValue,
+            Boolean abnormalFlag,
+            String abnormalDescription,
+            String executedByName,
+            LocalDateTime executedTime
     ) {
     }
 }

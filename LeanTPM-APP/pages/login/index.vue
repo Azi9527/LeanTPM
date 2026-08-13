@@ -112,9 +112,13 @@
 				username,
 				password: form.password
 			}, remember.value)
+			if (user.mustChangePassword) {
+				await reLaunchTo('/pages/login/change-password')
+				return
+			}
 			const bootstrap = await refreshMobileBootstrap()
 			if (checkAndroidUpgrade(bootstrap?.androidVersion)) return
-			await reLaunchTo(user.mustChangePassword ? '/pages/login/change-password' : ROUTES.workbench)
+			await reLaunchTo(ROUTES.workbench)
 		} catch (error) {
 			uni.showModal({
 				title: isServiceUnavailable(error) ? '企业服务暂时不可用' : '登录失败',

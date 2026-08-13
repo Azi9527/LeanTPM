@@ -850,7 +850,7 @@ public class EquipmentService {
                     width / 2,
                     scaled(88, scale),
                     scaled(510, scale),
-                    new Font("Microsoft YaHei", Font.BOLD, scaled(42, scale)),
+                    new Font("Microsoft YaHei", Font.BOLD, titleFontSize(scale)),
                     LABEL_DEEP_BLUE
             );
 
@@ -875,17 +875,19 @@ public class EquipmentService {
 
             drawInfoPanel(
                     graphics,
-                    scaled(73, scale), scaled(611, scale),
+                    scaled(73, scale), scaled(606, scale),
                     scaled(454, scale), scaled(48, scale),
-                    "设备名称：", cleanLabel(equipmentName, "未命名设备"),
-                    false, scale
+                    equipmentNameText(equipmentName),
+                    false,
+                    scale
             );
             drawInfoPanel(
                     graphics,
-                    scaled(73, scale), scaled(669, scale),
+                    scaled(73, scale), scaled(662, scale),
                     scaled(454, scale), scaled(48, scale),
-                    "设备编号：", cleanLabel(equipmentCode, "—"),
-                    true, scale
+                    equipmentCodeText(equipmentCode),
+                    true,
+                    scale
             );
             drawCallToAction(graphics, scale);
         } finally {
@@ -1088,8 +1090,7 @@ public class EquipmentService {
             int y,
             int width,
             int height,
-            String label,
-            String value,
+            String text,
             boolean gearIcon,
             double scale
     ) {
@@ -1101,23 +1102,21 @@ public class EquipmentService {
         graphics.drawRoundRect(x, y, width, height, arc, arc);
         int dividerX = x + scaled(78, scale);
         graphics.drawLine(dividerX, y + scaled(5, scale), dividerX, y + height - scaled(5, scale));
-
-        graphics.setColor(Color.WHITE);
-        graphics.setFont(new Font("Microsoft YaHei", Font.BOLD, scaled(18, scale)));
-        FontMetrics metrics = graphics.getFontMetrics();
-        String text = label + fitText(graphics, value, width - scaled(210, scale));
-        graphics.drawString(
-                text,
-                x + scaled(96, scale),
-                y + (height - metrics.getHeight()) / 2 + metrics.getAscent()
-        );
-
         drawPanelIcon(
                 graphics,
                 x + scaled(39, scale),
                 y + height / 2,
                 scaled(25, scale),
                 gearIcon
+        );
+        drawCenteredText(
+                graphics,
+                text,
+                dividerX + (x + width - dividerX) / 2,
+                y + (height + infoFontSize(scale)) / 2 - scaled(4, scale),
+                width - scaled(100, scale),
+                new Font("Microsoft YaHei", Font.BOLD, infoFontSize(scale)),
+                Color.WHITE
         );
     }
 
@@ -1176,20 +1175,21 @@ public class EquipmentService {
 
     private static void drawCallToAction(Graphics2D graphics, double scale) {
         int x = scaled(73, scale);
-        int y = scaled(730, scale);
+        int y = scaled(718, scale);
         int width = scaled(454, scale);
-        int height = scaled(54, scale);
+        int height = scaled(66, scale);
         int arc = scaled(22, scale);
         graphics.setColor(Color.WHITE);
         graphics.fillRoundRect(x, y, width, height, arc, arc);
+        int iconPanelWidth = scaled(82, scale);
         graphics.setColor(LABEL_TEAL);
-        graphics.fillRoundRect(x, y, scaled(105, scale), height, arc, arc);
-        graphics.fillRect(x + scaled(55, scale), y, scaled(60, scale), height);
+        graphics.fillRoundRect(x, y, iconPanelWidth, height, arc, arc);
+        graphics.fillRect(x + scaled(42, scale), y, scaled(50, scale), height);
         graphics.setColor(Color.WHITE);
         graphics.setStroke(new BasicStroke(Math.max(1.5f, scaled(4, scale))));
-        int iconX = x + scaled(28, scale);
-        int iconY = y + scaled(15, scale);
-        int iconSize = scaled(24, scale);
+        int iconX = x + scaled(29, scale);
+        int iconY = y + scaled(20, scale);
+        int iconSize = scaled(25, scale);
         int corner = scaled(8, scale);
         graphics.drawLine(iconX, iconY + corner, iconX, iconY);
         graphics.drawLine(iconX, iconY, iconX + corner, iconY);
@@ -1204,12 +1204,32 @@ public class EquipmentService {
         drawCenteredText(
                 graphics,
                 "扫码查看设备档案",
-                x + scaled(105, scale) + (width - scaled(105, scale)) / 2,
-                y + scaled(37, scale),
-                width - scaled(130, scale),
-                new Font("Microsoft YaHei", Font.BOLD, scaled(25, scale)),
+                x + iconPanelWidth + (width - iconPanelWidth) / 2,
+                y + scaled(46, scale),
+                width - iconPanelWidth - scaled(20, scale),
+                new Font("Microsoft YaHei", Font.BOLD, actionFontSize(scale)),
                 LABEL_DEEP_BLUE
         );
+    }
+
+    static String equipmentNameText(String equipmentName) {
+        return "设备名称：" + cleanLabel(equipmentName, "未命名设备");
+    }
+
+    static String equipmentCodeText(String equipmentCode) {
+        return "设备编码：" + cleanLabel(equipmentCode, "—");
+    }
+
+    static int titleFontSize(double scale) {
+        return scaled(48, scale);
+    }
+
+    static int infoFontSize(double scale) {
+        return scaled(30, scale);
+    }
+
+    static int actionFontSize(double scale) {
+        return scaled(34, scale);
     }
 
     private static void drawCenteredText(
@@ -1482,7 +1502,8 @@ public class EquipmentService {
             if (entry.getValue().size() > 1) {
                 for (ImportCandidate candidate : entry.getValue()) {
                     errors.add(new EquipmentDtos.ImportError(
-                            candidate.rowNumber(), "设备编码", "设备编码在当前 Excel 中重复"
+                            candidate.rowNumber(), "设备编码", entry.getKey(),
+                            "设备编码在当前 Excel 中重复"
                     ));
                 }
                 continue;
@@ -1490,7 +1511,7 @@ public class EquipmentService {
             if (mapper.countEquipmentCode(tenantId, entry.getKey(), null) > 0) {
                 ImportCandidate candidate = entry.getValue().getFirst();
                 errors.add(new EquipmentDtos.ImportError(
-                        candidate.rowNumber(), "设备编码", "设备编码已存在"
+                        candidate.rowNumber(), "设备编码", entry.getKey(), "设备编码已存在"
                 ));
             }
         }
@@ -1862,20 +1883,23 @@ public class EquipmentService {
             List<EquipmentDtos.ImportError> errors
     ) {
         int rowNumber = row.getRowNum() + 1;
+        String categoryOriginalValue = cell(row, columns, formatter, "设备分类");
+        String organizationOriginalValue = cell(row, columns, formatter, "所属组织");
         String categoryValue = importValue(
-                rowNumber, "设备分类", errors,
+                rowNumber, "设备分类", categoryOriginalValue, errors,
                 () -> requiredCell(row, columns, formatter, "设备分类")
         );
         String organizationValue = importValue(
-                rowNumber, "所属组织", errors,
+                rowNumber, "所属组织", organizationOriginalValue, errors,
                 () -> requiredCell(row, columns, formatter, "所属组织")
         );
         String categoryCode = normalizeCategoryCode(categoryValue);
         String organizationCode = upper(organizationValue);
-        String locationCode = upper(cell(row, columns, formatter, "物理位置"));
+        String locationOriginalValue = cell(row, columns, formatter, "物理位置");
+        String locationCode = upper(locationOriginalValue);
         EquipmentMapper.LookupRow category = null;
         if (categoryCode != null) {
-            category = importValue(rowNumber, "设备分类", errors, () -> {
+            category = importValue(rowNumber, "设备分类", categoryOriginalValue, errors, () -> {
                 EquipmentMapper.LookupRow found = mapper.findCategoryByCode(tenantId, categoryCode);
                 if (found == null || found.status() != 1) {
                     throw new BusinessException("IMPORT_CATEGORY_INVALID", "设备分类不存在或已停用");
@@ -1885,41 +1909,45 @@ public class EquipmentService {
         }
         EquipmentMapper.LookupRow organization = null;
         if (organizationCode != null) {
-            organization = importValue(rowNumber, "所属组织", errors, () -> {
-                EquipmentMapper.LookupRow found =
-                        mapper.findOrganizationByCode(tenantId, organizationCode);
-                if (found == null || found.status() != 1) {
-                    throw new BusinessException(
-                            "IMPORT_ORGANIZATION_INVALID", "所属组织编码不存在或已停用"
-                    );
-                }
-                if (!scope.canCreateIn(found.id())) {
-                    throw new BusinessException(
-                            "IMPORT_ORGANIZATION_FORBIDDEN", "无权在该组织下创建设备"
-                    );
-                }
-                return found;
-            });
+            organization = importValue(
+                    rowNumber, "所属组织", organizationOriginalValue, errors, () -> {
+                        EquipmentMapper.LookupRow found =
+                                mapper.findOrganizationByCode(tenantId, organizationCode);
+                        if (found == null || found.status() != 1) {
+                            throw new BusinessException(
+                                    "IMPORT_ORGANIZATION_INVALID", "所属组织编码不存在或已停用"
+                            );
+                        }
+                        if (!scope.canCreateIn(found.id())) {
+                            throw new BusinessException(
+                                    "IMPORT_ORGANIZATION_FORBIDDEN", "无权在该组织下创建设备"
+                            );
+                        }
+                        return found;
+                    });
         }
         EquipmentMapper.LocationLookup location = null;
         if (locationCode != null) {
             EquipmentMapper.LookupRow selectedOrganization = organization;
-            location = importValue(rowNumber, "物理位置", errors, () -> {
-                EquipmentMapper.LocationLookup found = mapper.findLocationByCode(tenantId, locationCode);
-                if (found == null || found.status() != 1
-                        || (selectedOrganization != null
-                        && found.organizationId() != selectedOrganization.id())) {
-                    throw new BusinessException(
-                            "IMPORT_LOCATION_INVALID", "位置编码不存在、已停用或不属于所选组织"
-                    );
-                }
-                return found;
-            });
+            location = importValue(
+                    rowNumber, "物理位置", locationOriginalValue, errors, () -> {
+                        EquipmentMapper.LocationLookup found =
+                                mapper.findLocationByCode(tenantId, locationCode);
+                        if (found == null || found.status() != 1
+                                || (selectedOrganization != null
+                                && found.organizationId() != selectedOrganization.id())) {
+                            throw new BusinessException(
+                                    "IMPORT_LOCATION_INVALID",
+                                    "位置编码不存在、已停用或不属于所选组织"
+                            );
+                        }
+                        return found;
+                    });
         }
         String username = cell(row, columns, formatter, "主负责人");
         EquipmentMapper.UserLookup user = null;
         if (username != null) {
-            user = importValue(rowNumber, "主负责人", errors, () -> {
+            user = importValue(rowNumber, "主负责人", username, errors, () -> {
                 EquipmentMapper.UserLookup found = mapper.findUserByUsername(tenantId, username);
                 if (found == null || found.status() != 1) {
                     throw new BusinessException(
@@ -1930,34 +1958,41 @@ public class EquipmentService {
             });
         }
         String equipmentCode = cleanUpper(cell(row, columns, formatter, "设备编码"));
+        String equipmentNameOriginalValue = cell(row, columns, formatter, "设备名称");
         String equipmentName = importValue(
-                rowNumber, "设备名称", errors,
+                rowNumber, "设备名称", equipmentNameOriginalValue, errors,
                 () -> requiredCell(row, columns, formatter, "设备名称")
         );
         String lifecycleStage = normalizeLifecycleStage(cell(row, columns, formatter, "生命周期"));
+        String productionDateOriginalValue = cell(row, columns, formatter, "生产日期");
         LocalDate productionDate = importValue(
-                rowNumber, "生产日期", errors,
+                rowNumber, "生产日期", productionDateOriginalValue, errors,
                 () -> dateCell(row, columns, formatter, "生产日期")
         );
+        String commissioningDateOriginalValue = cell(row, columns, formatter, "投产日期");
         LocalDate commissioningDate = importValue(
-                rowNumber, "投产日期", errors,
+                rowNumber, "投产日期", commissioningDateOriginalValue, errors,
                 () -> dateCell(row, columns, formatter, "投产日期")
         );
+        String criticalOriginalValue = cell(row, columns, formatter, "关键设备");
         Boolean critical = importValue(
-                rowNumber, "关键设备", errors,
-                () -> parseBoolean(cell(row, columns, formatter, "关键设备"), false)
+                rowNumber, "关键设备", criticalOriginalValue, errors,
+                () -> parseBoolean(criticalOriginalValue, false)
         );
+        String specialOriginalValue = cell(row, columns, formatter, "特种设备");
         Boolean special = importValue(
-                rowNumber, "特种设备", errors,
-                () -> parseBoolean(cell(row, columns, formatter, "特种设备"), false)
+                rowNumber, "特种设备", specialOriginalValue, errors,
+                () -> parseBoolean(specialOriginalValue, false)
         );
+        String oeeEnabledOriginalValue = cell(row, columns, formatter, "OEE启用");
         Boolean oeeEnabled = importValue(
-                rowNumber, "OEE启用", errors,
-                () -> parseBoolean(cell(row, columns, formatter, "OEE启用"), true)
+                rowNumber, "OEE启用", oeeEnabledOriginalValue, errors,
+                () -> parseBoolean(oeeEnabledOriginalValue, true)
         );
+        String enabledOriginalValue = cell(row, columns, formatter, "启用");
         Boolean enabled = importValue(
-                rowNumber, "启用", errors,
-                () -> parseBoolean(cell(row, columns, formatter, "启用"), true)
+                rowNumber, "启用", enabledOriginalValue, errors,
+                () -> parseBoolean(enabledOriginalValue, true)
         );
         EquipmentDtos.SaveEquipmentRequest request = new EquipmentDtos.SaveEquipmentRequest(
                 equipmentCode,
@@ -1988,7 +2023,8 @@ public class EquipmentService {
         if (productionDate != null && commissioningDate != null
                 && productionDate.isAfter(commissioningDate)) {
             errors.add(new EquipmentDtos.ImportError(
-                    rowNumber, "生产日期", "生产日期不能晚于投产日期"
+                    rowNumber, "生产日期", productionDateOriginalValue,
+                    "生产日期不能晚于投产日期"
             ));
         }
         return new ImportCandidate(rowNumber, request);
@@ -1999,7 +2035,7 @@ public class EquipmentService {
             EquipmentDtos.SaveEquipmentRequest request,
             List<EquipmentDtos.ImportError> errors
     ) {
-        importValidation(rowNumber, "设备编码", errors, () -> {
+        importValidation(rowNumber, "设备编码", request.equipmentCode(), errors, () -> {
             String code = request.equipmentCode();
             if (code != null && (code.length() > 64
                     || !IMPORT_EQUIPMENT_CODE_PATTERN.matcher(code).matches())) {
@@ -2009,28 +2045,28 @@ public class EquipmentService {
                 );
             }
         });
-        importValidation(rowNumber, "设备名称", errors, () -> {
+        importValidation(rowNumber, "设备名称", request.equipmentName(), errors, () -> {
             if (request.equipmentName().length() > 150) {
                 throw new BusinessException(
                         "IMPORT_EQUIPMENT_NAME_INVALID", "设备名称最多 150 个字符"
                 );
             }
         });
-        importValidation(rowNumber, "型号", errors,
+        importValidation(rowNumber, "型号", request.model(), errors,
                 () -> validateImportLength("IMPORT_MODEL_INVALID", "型号", request.model(), 100));
-        importValidation(rowNumber, "规格", errors,
+        importValidation(rowNumber, "规格", request.specification(), errors,
                 () -> validateImportLength("IMPORT_SPECIFICATION_INVALID", "规格", request.specification(), 200));
-        importValidation(rowNumber, "品牌", errors,
+        importValidation(rowNumber, "品牌", request.brand(), errors,
                 () -> validateImportLength("IMPORT_BRAND_INVALID", "品牌", request.brand(), 100));
-        importValidation(rowNumber, "制造商", errors,
+        importValidation(rowNumber, "制造商", request.manufacturer(), errors,
                 () -> validateImportLength("IMPORT_MANUFACTURER_INVALID", "制造商", request.manufacturer(), 150));
-        importValidation(rowNumber, "出厂编号", errors,
+        importValidation(rowNumber, "出厂编号", request.factorySerialNumber(), errors,
                 () -> validateImportLength("IMPORT_FACTORY_SERIAL_INVALID", "出厂编号", request.factorySerialNumber(), 100));
-        importValidation(rowNumber, "资产编号", errors,
+        importValidation(rowNumber, "资产编号", request.assetNumber(), errors,
                 () -> validateImportLength("IMPORT_ASSET_NUMBER_INVALID", "资产编号", request.assetNumber(), 100));
-        importValidation(rowNumber, "设备说明", errors,
+        importValidation(rowNumber, "设备说明", request.description(), errors,
                 () -> validateImportLength("IMPORT_DESCRIPTION_INVALID", "设备说明", request.description(), 1000));
-        importValidation(rowNumber, "生命周期", errors, () -> {
+        importValidation(rowNumber, "生命周期", request.lifecycleStage(), errors, () -> {
             if (!IMPORT_LIFECYCLE_VALUES.contains(request.lifecycleStage())) {
                 throw new BusinessException(
                         "IMPORT_LIFECYCLE_INVALID",
@@ -2043,13 +2079,16 @@ public class EquipmentService {
     private <T> T importValue(
             int rowNumber,
             String field,
+            String originalValue,
             List<EquipmentDtos.ImportError> errors,
             Supplier<T> supplier
     ) {
         try {
             return supplier.get();
         } catch (BusinessException | IllegalArgumentException exception) {
-            errors.add(new EquipmentDtos.ImportError(rowNumber, field, exception.getMessage()));
+            errors.add(new EquipmentDtos.ImportError(
+                    rowNumber, field, originalValue, exception.getMessage()
+            ));
             return null;
         }
     }
@@ -2057,13 +2096,16 @@ public class EquipmentService {
     private void importValidation(
             int rowNumber,
             String field,
+            String originalValue,
             List<EquipmentDtos.ImportError> errors,
             Runnable validation
     ) {
         try {
             validation.run();
         } catch (BusinessException | IllegalArgumentException exception) {
-            errors.add(new EquipmentDtos.ImportError(rowNumber, field, exception.getMessage()));
+            errors.add(new EquipmentDtos.ImportError(
+                    rowNumber, field, originalValue, exception.getMessage()
+            ));
         }
     }
 

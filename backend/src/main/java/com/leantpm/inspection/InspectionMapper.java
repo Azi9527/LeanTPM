@@ -6,6 +6,7 @@ import org.apache.ibatis.annotations.Param;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 
 public interface InspectionMapper {
@@ -312,6 +313,7 @@ public interface InspectionMapper {
             @Param("id") long id,
             @Param("lastGenerationDate") LocalDate lastGenerationDate,
             @Param("nextGenerationDate") LocalDate nextGenerationDate,
+            @Param("nextScheduledTime") LocalTime nextScheduledTime,
             @Param("operatorId") long operatorId
     );
 
@@ -804,9 +806,28 @@ public interface InspectionMapper {
     InspectionDtos.Statistics statistics(
             @Param("tenantId") long tenantId,
             @Param("scope") DataPermission scope,
-            @Param("startDate") LocalDate startDate,
-            @Param("endDate") LocalDate endDate,
-            @Param("organizationId") Long organizationId
+            @Param("query") InspectionDtos.StatisticsQuery query
+    );
+
+    List<InspectionDtos.TaskRow> findStatisticsTasks(
+            @Param("tenantId") long tenantId,
+            @Param("scope") DataPermission scope,
+            @Param("query") InspectionDtos.StatisticsQuery query,
+            @Param("offset") int offset,
+            @Param("pageSize") int pageSize
+    );
+
+    long countStatisticsTasks(
+            @Param("tenantId") long tenantId,
+            @Param("scope") DataPermission scope,
+            @Param("query") InspectionDtos.StatisticsQuery query
+    );
+
+    List<InspectionDtos.StatisticsTaskExportRow> findStatisticsExportRows(
+            @Param("tenantId") long tenantId,
+            @Param("scope") DataPermission scope,
+            @Param("query") InspectionDtos.StatisticsQuery query,
+            @Param("limit") int limit
     );
 
     record ApplicableEquipment(long id, long organizationId, Long locationId) {

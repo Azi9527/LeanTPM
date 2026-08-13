@@ -3,11 +3,21 @@ package com.leantpm.inspection;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class InspectionMapperContractTest {
+
+    @Test
+    void hourlyPlanGenerationPersistsTheNextScheduledTime() throws IOException {
+        String mapper = new ClassPathResource(
+                "mapper/inspection/InspectionMapper.xml"
+        ).getContentAsString(StandardCharsets.UTF_8);
+
+        assertThat(mapper).contains("scheduled_time = #{nextScheduledTime}");
+    }
 
     @Test
     void onlyPlanActivationRequiresALiveScheme() throws Exception {

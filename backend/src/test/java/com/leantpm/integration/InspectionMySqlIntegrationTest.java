@@ -196,6 +196,94 @@ class InspectionMySqlIntegrationTest {
         SecurityContextHolder.clearContext();
     }
 
+    @Test
+    void statisticsClassifiesLateWorkAndIncludesSelectedOrganizationDescendants() throws Exception {
+        long equipmentId = createEquipment(
+                "EQ-INSPECTION-STATS-IT",
+                "点检统计集成测试设备",
+                "INSPECTION-STATS-SN"
+        );
+        LocalDate today = LocalDate.now();
+        LocalDateTime now = LocalDateTime.now();
+        jdbc.update("""
+                INSERT INTO inspection_task
+                    (id, tenant_id, task_code, inspection_type, equipment_id,
+                     organization_id, location_id, planned_date, planned_start_time,
+                     due_time, task_status, source_type, submitted_time,
+                     completed_time, submitted_by, created_by, updated_by)
+                VALUES
+                    (9201, 1, 'DJ-STATS-ON-TIME', 'DAILY', ?, 4, 4, ?, ?, ?,
+                     'COMPLETED', 'PLAN', ?, ?, ?, ?, ?),
+                    (9202, 1, 'DJ-STATS-LATE', 'DAILY', ?, 5, 4, ?, ?, ?,
+                     'COMPLETED', 'QUICK_ENTRY', ?, ?, ?, ?, ?),
+                    (9203, 1, 'DJ-STATS-OVERDUE', 'DAILY', ?, 5, 4, ?, ?, ?,
+                     'IN_PROGRESS', 'PLAN', NULL, NULL, NULL, ?, ?),
+                    (9204, 1, 'DJ-STATS-PARENT-OUTSIDE', 'DAILY', ?, 2, 4, ?, ?, ?,
+                     'PENDING', 'MANUAL', NULL, NULL, NULL, ?, ?)
+                """,
+                equipmentId, today, now.minusHours(2), now.plusHours(1),
+                now.minusHours(1), now.minusHours(1), USER_ID, USER_ID, USER_ID,
+                equipmentId, today, now.minusHours(4), now.minusHours(2),
+                now.minusHours(1), now.minusHours(1), USER_ID, USER_ID, USER_ID,
+                equipmentId, today, now.minusHours(4), now.minusHours(1),
+                USER_ID, USER_ID,
+                equipmentId, today, now.minusHours(1), now.plusHours(2),
+                USER_ID, USER_ID
+        );
+        for (long taskId = 9201; taskId <= 9204; taskId++) {
+            jdbc.update("""
+                    INSERT INTO inspection_task_item
+                        (tenant_id, task_id, item_code, item_name, item_category,
+                         inspection_content, inspection_standard, result_type,
+                         sort_order)
+                    VALUES (1, ?, ?, ?, 'GENERAL', '检查内容', '检查标准',
+                            'NORMAL_ABNORMAL', 10)
+                    """, taskId, "STATS-" + taskId, "统计项目" + taskId);
+        }
+
+        InspectionDtos.StatisticsQuery allDescendants = new InspectionDtos.StatisticsQuery(
+                null, today, today, 3L, null, null, null
+        );
+        InspectionDtos.Statistics statistics = taskService.statistics(allDescendants);
+        assertThat(statistics.dueToday()).isEqualTo(3);
+        assertThat(statistics.planCount()).isEqualTo(2);
+        assertThat(statistics.quickEntryCount()).isEqualTo(1);
+        assertThat(statistics.onTimeCompleted()).isEqualTo(1);
+        assertThat(statistics.lateCompleted()).isEqualTo(1);
+        assertThat(statistics.overdueIncomplete()).isEqualTo(1);
+
+        assertThat(taskService.statisticsTasks(
+                new InspectionDtos.StatisticsQuery(
+                        null, today, today, 3L, "QUICK_ENTRY", null, null
+                ), 1, 20
+        ).records()).singleElement()
+                .extracting(InspectionDtos.TaskRow::taskCode)
+                .isEqualTo("DJ-STATS-LATE");
+        assertThat(taskService.statisticsTasks(
+                new InspectionDtos.StatisticsQuery(
+                        null, today, today, 3L, null, "OVERDUE_INCOMPLETE", null
+                ), 1, 20
+        ).records()).singleElement()
+                .extracting(InspectionDtos.TaskRow::taskCode)
+                .isEqualTo("DJ-STATS-OVERDUE");
+
+        try (var workbook = new XSSFWorkbook(new ByteArrayInputStream(
+                taskService.exportStatisticsDetails(allDescendants)
+        ))) {
+            assertThat(workbook.getNumberOfSheets()).isEqualTo(2);
+            var taskSheet = workbook.getSheet("任务清单");
+            var itemSheet = workbook.getSheet("点检项目明细");
+            assertThat(taskSheet).isNotNull();
+            assertThat(itemSheet).isNotNull();
+            assertThat(taskSheet.getLastRowNum()).isEqualTo(3);
+            assertThat(itemSheet.getLastRowNum()).isEqualTo(3);
+            assertThat(taskSheet.getRow(0).getCell(1).getStringCellValue()).isEqualTo("任务来源");
+            assertThat(taskSheet.getRow(0).getCell(2).getStringCellValue()).isEqualTo("完成时效");
+            assertThat(itemSheet.getRow(0).getCell(0).getStringCellValue()).isEqualTo("任务编号");
+            assertThat(itemSheet.getRow(0).getCell(1).getStringCellValue()).isEqualTo("项目编码");
+        }
+    }
+
     private long createEquipment(String code, String name, String serialNumber) {
         return equipmentService.create(new EquipmentDtos.SaveEquipmentRequest(
                 code,

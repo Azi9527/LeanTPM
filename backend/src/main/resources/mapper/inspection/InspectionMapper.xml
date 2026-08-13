@@ -766,6 +766,7 @@
         UPDATE inspection_plan
         SET last_generation_date = #{lastGenerationDate},
             next_generation_date = #{nextGenerationDate},
+            scheduled_time = #{nextScheduledTime},
             updated_by = #{operatorId}, version = version + 1
         WHERE tenant_id = #{tenantId} AND id = #{id} AND deleted = 0
     </update>
@@ -2629,12 +2630,162 @@
           AND version = #{request.version} AND abnormal_status = 'PENDING_VERIFY'
     </update>
 
+    <sql id="statisticsTaskFilters">
+        task.tenant_id = #{tenantId} AND task.deleted = 0
+        AND task.planned_date BETWEEN #{query.startDate} AND #{query.endDate}
+        <if test="query.keyword != null and query.keyword != ''">
+            AND (task.task_code LIKE CONCAT('%', #{query.keyword}, '%')
+                 OR e.equipment_code LIKE CONCAT('%', #{query.keyword}, '%')
+                 OR e.equipment_name LIKE CONCAT('%', #{query.keyword}, '%')
+                 OR task.scheme_name_snapshot LIKE CONCAT('%', #{query.keyword}, '%'))
+        </if>
+        <if test="query.organizationId != null">
+            AND task.organization_id IN (SELECT id FROM selected_organization_tree)
+        </if>
+        <if test="query.sourceType != null and query.sourceType != ''">
+            AND task.source_type = #{query.sourceType}
+        </if>
+        <if test="query.taskStatus != null and query.taskStatus != ''">
+            AND task.task_status = #{query.taskStatus}
+        </if>
+        <if test="query.timelinessStatus != null and query.timelinessStatus != ''">
+            <choose>
+                <when test="query.timelinessStatus == 'ON_TIME_COMPLETED'">
+                    AND COALESCE(task.submitted_time, task.completed_time) IS NOT NULL
+                    AND COALESCE(task.submitted_time, task.completed_time) &lt;= task.due_time
+                </when>
+                <when test="query.timelinessStatus == 'LATE_COMPLETED'">
+                    AND COALESCE(task.submitted_time, task.completed_time) &gt; task.due_time
+                </when>
+                <when test="query.timelinessStatus == 'OVERDUE_INCOMPLETE'">
+                    AND COALESCE(task.submitted_time, task.completed_time) IS NULL
+                    AND task.due_time &lt; CURRENT_TIMESTAMP(3)
+                    AND task.task_status NOT IN ('CANCELLED', 'VOIDED')
+                </when>
+                <when test="query.timelinessStatus == 'PENDING'">
+                    AND COALESCE(task.submitted_time, task.completed_time) IS NULL
+                    AND task.due_time &gt;= CURRENT_TIMESTAMP(3)
+                    AND task.task_status NOT IN ('CANCELLED', 'VOIDED')
+                </when>
+                <when test="query.timelinessStatus == 'CLOSED'">
+                    AND task.task_status IN ('CANCELLED', 'VOIDED')
+                </when>
+            </choose>
+        </if>
+        AND <include refid="equipmentScope"/>
+    </sql>
+
+    <select id="findStatisticsTasks"
+            resultType="com.leantpm.inspection.InspectionDtos$TaskRow">
+        WITH RECURSIVE selected_organization_tree AS (
+            SELECT id FROM organization
+            WHERE tenant_id = #{tenantId} AND id = #{query.organizationId} AND deleted = 0
+            UNION ALL
+            SELECT child.id FROM organization child
+            JOIN selected_organization_tree parent ON child.parent_id = parent.id
+            WHERE child.tenant_id = #{tenantId} AND child.deleted = 0
+        )
+        SELECT <include refid="taskColumns"/>
+        FROM inspection_task task
+        <include refid="taskJoins"/>
+        WHERE <include refid="statisticsTaskFilters"/>
+        ORDER BY task.planned_date DESC, task.due_time DESC, task.id DESC
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
+    <select id="countStatisticsTasks" resultType="long">
+        WITH RECURSIVE selected_organization_tree AS (
+            SELECT id FROM organization
+            WHERE tenant_id = #{tenantId} AND id = #{query.organizationId} AND deleted = 0
+            UNION ALL
+            SELECT child.id FROM organization child
+            JOIN selected_organization_tree parent ON child.parent_id = parent.id
+            WHERE child.tenant_id = #{tenantId} AND child.deleted = 0
+        )
+        SELECT COUNT(*)
+        FROM inspection_task task
+        <include refid="taskJoins"/>
+        WHERE <include refid="statisticsTaskFilters"/>
+    </select>
+
+    <select id="findStatisticsExportRows"
+            resultType="com.leantpm.inspection.InspectionDtos$StatisticsTaskExportRow">
+        WITH RECURSIVE selected_organization_tree AS (
+            SELECT id FROM organization
+            WHERE tenant_id = #{tenantId} AND id = #{query.organizationId} AND deleted = 0
+            UNION ALL
+            SELECT child.id FROM organization child
+            JOIN selected_organization_tree parent ON child.parent_id = parent.id
+            WHERE child.tenant_id = #{tenantId} AND child.deleted = 0
+        )
+        SELECT task.task_code, task.source_type,
+               CASE
+                   WHEN task.task_status IN ('CANCELLED', 'VOIDED') THEN 'CLOSED'
+                   WHEN COALESCE(task.submitted_time, task.completed_time) &lt;= task.due_time
+                       THEN 'ON_TIME_COMPLETED'
+                   WHEN COALESCE(task.submitted_time, task.completed_time) &gt; task.due_time
+                       THEN 'LATE_COMPLETED'
+                   WHEN task.due_time &lt; CURRENT_TIMESTAMP(3) THEN 'OVERDUE_INCOMPLETE'
+                   ELSE 'PENDING'
+               END AS timeliness_status,
+               CASE
+                   WHEN COALESCE(task.submitted_time, task.completed_time) &gt; task.due_time
+                       THEN TIMESTAMPDIFF(MINUTE, task.due_time,
+                            COALESCE(task.submitted_time, task.completed_time))
+                   WHEN COALESCE(task.submitted_time, task.completed_time) IS NULL
+                        AND task.due_time &lt; CURRENT_TIMESTAMP(3)
+                       THEN TIMESTAMPDIFF(MINUTE, task.due_time, CURRENT_TIMESTAMP(3))
+                   ELSE 0
+               END AS overdue_minutes,
+               organization.organization_name, e.equipment_code, e.equipment_name,
+               task.scheme_name_snapshot AS scheme_name, task.planned_date,
+               task.planned_start_time, task.due_time, task.submitted_time,
+               task.completed_time, COALESCE(
+                   (SELECT GROUP_CONCAT(u.real_name ORDER BY r.sort_order, r.id SEPARATOR '、')
+                    FROM inspection_task_assignee r
+                    JOIN system_user u ON u.tenant_id = r.tenant_id AND u.id = r.user_id
+                         AND u.deleted = 0
+                    WHERE r.tenant_id = task.tenant_id AND r.task_id = task.id
+                      AND r.deleted = 0), assignee.real_name
+               ) AS assignee_name, task.task_status,
+               item.item_code, item.item_name, item.inspection_part,
+               item.inspection_standard, result.result_status, result.result_code,
+               result.numeric_value, result.text_value, result.selected_value,
+               result.abnormal_flag, result.abnormal_description,
+               executor.real_name AS executed_by_name, result.executed_time
+        FROM inspection_task task
+        <include refid="taskJoins"/>
+        JOIN inspection_task_item item
+          ON item.tenant_id = task.tenant_id AND item.task_id = task.id AND item.deleted = 0
+        LEFT JOIN inspection_task_result result
+          ON result.tenant_id = item.tenant_id AND result.task_item_id = item.id
+         AND result.deleted = 0
+        LEFT JOIN system_user executor
+          ON executor.tenant_id = result.tenant_id AND executor.id = result.executed_by
+        WHERE <include refid="statisticsTaskFilters"/>
+        ORDER BY task.planned_date DESC, task.due_time DESC, task.id DESC,
+                 item.sort_order, item.id
+        LIMIT #{limit}
+    </select>
+
     <select id="statistics" resultType="com.leantpm.inspection.InspectionDtos$Statistics">
+        WITH RECURSIVE selected_organization_tree AS (
+          SELECT id FROM organization
+          WHERE tenant_id = #{tenantId} AND id = #{query.organizationId} AND deleted = 0
+          UNION ALL
+          SELECT child.id FROM organization child
+          JOIN selected_organization_tree parent ON child.parent_id = parent.id
+          WHERE child.tenant_id = #{tenantId} AND child.deleted = 0
+        )
         SELECT
-          COALESCE(COUNT(*), 0) AS due_today,
+          COALESCE(SUM(task.task_status NOT IN ('CANCELLED','VOIDED')), 0) AS due_today,
           COALESCE(SUM(task.task_status IN ('COMPLETED','PENDING_REVIEW')), 0) AS completed_today,
-          COALESCE(SUM(task.task_status IN ('PENDING','IN_PROGRESS')), 0) AS pending_today,
-          COALESCE(SUM(task.task_status = 'OVERDUE'), 0) AS overdue,
+          COALESCE(SUM(COALESCE(task.submitted_time, task.completed_time) IS NULL
+                       AND task.due_time &gt;= CURRENT_TIMESTAMP(3)
+                       AND task.task_status NOT IN ('CANCELLED','VOIDED')), 0) AS pending_today,
+          COALESCE(SUM(COALESCE(task.submitted_time, task.completed_time) IS NULL
+                       AND task.due_time &lt; CURRENT_TIMESTAMP(3)
+                       AND task.task_status NOT IN ('CANCELLED','VOIDED')), 0) AS overdue,
           COALESCE(SUM(CASE WHEN EXISTS (
               SELECT 1 FROM inspection_abnormal abnormal
               WHERE abnormal.tenant_id = task.tenant_id AND abnormal.task_id = task.id
@@ -2642,19 +2793,29 @@
           ) THEN 1 ELSE 0 END), 0) AS abnormal,
           COALESCE(ROUND(
               100 * SUM(task.task_status IN ('COMPLETED','PENDING_REVIEW'))
-              / NULLIF(COUNT(*), 0), 2
+              / NULLIF(SUM(task.task_status NOT IN ('CANCELLED','VOIDED')), 0), 2
           ), 0) AS completion_rate,
           COALESCE(ROUND(
               100 * SUM(task.task_status IN ('COMPLETED','PENDING_REVIEW')
-                        AND task.completed_time &lt;= task.due_time)
+                        AND COALESCE(task.submitted_time, task.completed_time) &lt;= task.due_time)
               / NULLIF(SUM(task.task_status IN ('COMPLETED','PENDING_REVIEW')), 0), 2
-          ), 0) AS on_time_rate
+          ), 0) AS on_time_rate,
+          COALESCE(SUM(task.source_type = 'PLAN'), 0) AS plan_count,
+          COALESCE(SUM(task.source_type = 'QUICK_ENTRY'), 0) AS quick_entry_count,
+          COALESCE(SUM(task.source_type = 'MANUAL'), 0) AS manual_count,
+          COALESCE(SUM(task.source_type = 'BACKFILL'), 0) AS backfill_count,
+          COALESCE(SUM(COALESCE(task.submitted_time, task.completed_time) IS NOT NULL
+                       AND COALESCE(task.submitted_time, task.completed_time) &lt;= task.due_time), 0)
+              AS on_time_completed,
+          COALESCE(SUM(COALESCE(task.submitted_time, task.completed_time) &gt; task.due_time), 0)
+              AS late_completed,
+          COALESCE(SUM(COALESCE(task.submitted_time, task.completed_time) IS NULL
+                       AND task.due_time &lt; CURRENT_TIMESTAMP(3)
+                       AND task.task_status NOT IN ('CANCELLED','VOIDED')), 0)
+              AS overdue_incomplete
         FROM inspection_task task
         JOIN equipment e
           ON e.tenant_id = task.tenant_id AND e.id = task.equipment_id AND e.deleted = 0
-        WHERE task.tenant_id = #{tenantId} AND task.deleted = 0
-          AND task.planned_date BETWEEN #{startDate} AND #{endDate}
-          <if test="organizationId != null">AND task.organization_id = #{organizationId}</if>
-          AND <include refid="equipmentScope"/>
+        WHERE <include refid="statisticsTaskFilters"/>
     </select>
 </mapper>

@@ -476,13 +476,13 @@ public class InspectionController {
     }
 
     @GetMapping("/tasks/{id}")
-    @PreAuthorize("hasAnyAuthority('inspection:task:view','inspection:my-task:view')")
+    @PreAuthorize("hasAnyAuthority('inspection:task:view','inspection:my-task:view','inspection:statistics:view')")
     public ApiResponse<InspectionDtos.TaskDetail> task(@PathVariable long id) {
         return ApiResponse.success(taskService.detail(id));
     }
 
     @GetMapping("/tasks/{id}/attachments")
-    @PreAuthorize("hasAnyAuthority('inspection:task:view','inspection:my-task:view')")
+    @PreAuthorize("hasAnyAuthority('inspection:task:view','inspection:my-task:view','inspection:statistics:view')")
     public ApiResponse<List<InspectionDtos.InspectionAttachmentRow>> taskAttachments(
             @PathVariable long id
     ) {
@@ -490,7 +490,7 @@ public class InspectionController {
     }
 
     @GetMapping("/tasks/{taskId}/attachments/{attachmentId}/content")
-    @PreAuthorize("hasAnyAuthority('inspection:task:view','inspection:my-task:view')")
+    @PreAuthorize("hasAnyAuthority('inspection:task:view','inspection:my-task:view','inspection:statistics:view')")
     public ResponseEntity<Resource> taskAttachmentContent(
             @PathVariable long taskId,
             @PathVariable long attachmentId
@@ -655,11 +655,70 @@ public class InspectionController {
     @GetMapping("/statistics")
     @PreAuthorize("hasAuthority('inspection:statistics:view')")
     public ApiResponse<InspectionDtos.Statistics> statistics(
+            @RequestParam(required = false) String keyword,
             @RequestParam(required = false) LocalDate startDate,
             @RequestParam(required = false) LocalDate endDate,
-            @RequestParam(required = false) Long organizationId
+            @RequestParam(required = false) Long organizationId,
+            @RequestParam(required = false) String sourceType,
+            @RequestParam(required = false) String timelinessStatus,
+            @RequestParam(required = false) String taskStatus
     ) {
-        return ApiResponse.success(taskService.statistics(startDate, endDate, organizationId));
+        return ApiResponse.success(taskService.statistics(new InspectionDtos.StatisticsQuery(
+                keyword, startDate, endDate, organizationId,
+                sourceType, timelinessStatus, taskStatus
+        )));
+    }
+
+    @GetMapping("/statistics/tasks")
+    @PreAuthorize("hasAuthority('inspection:statistics:view')")
+    public ApiResponse<PageResult<InspectionDtos.TaskRow>> statisticsTasks(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) LocalDate startDate,
+            @RequestParam(required = false) LocalDate endDate,
+            @RequestParam(required = false) Long organizationId,
+            @RequestParam(required = false) String sourceType,
+            @RequestParam(required = false) String timelinessStatus,
+            @RequestParam(required = false) String taskStatus,
+            @RequestParam(defaultValue = "1") @Min(1) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(200) int pageSize
+    ) {
+        return ApiResponse.success(taskService.statisticsTasks(
+                new InspectionDtos.StatisticsQuery(
+                        keyword, startDate, endDate, organizationId,
+                        sourceType, timelinessStatus, taskStatus
+                ), page, pageSize
+        ));
+    }
+
+    @GetMapping("/statistics/export")
+    @PreAuthorize("hasAuthority('inspection:task:export')")
+    public ResponseEntity<byte[]> exportStatisticsDetails(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) LocalDate startDate,
+            @RequestParam(required = false) LocalDate endDate,
+            @RequestParam(required = false) Long organizationId,
+            @RequestParam(required = false) String sourceType,
+            @RequestParam(required = false) String timelinessStatus,
+            @RequestParam(required = false) String taskStatus
+    ) {
+        byte[] workbook = taskService.exportStatisticsDetails(
+                new InspectionDtos.StatisticsQuery(
+                        keyword, startDate, endDate, organizationId,
+                        sourceType, timelinessStatus, taskStatus
+                )
+        );
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                ))
+                .contentLength(workbook.length)
+                .header(
+                        HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment()
+                                .filename("点检统计明细.xlsx", StandardCharsets.UTF_8)
+                                .build().toString()
+                )
+                .body(workbook);
     }
 
     private ResponseEntity<Resource> attachmentResponse(

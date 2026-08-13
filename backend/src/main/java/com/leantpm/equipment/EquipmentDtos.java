@@ -270,7 +270,15 @@ public final class EquipmentDtos {
     ) {
     }
 
-    public record ImportError(int rowNumber, String field, String message) {
+    public record ImportError(
+            int rowNumber,
+            String field,
+            String originalValue,
+            String message
+    ) {
+        public ImportError(int rowNumber, String field, String message) {
+            this(rowNumber, field, null, message);
+        }
     }
 
     public record ImportResult(

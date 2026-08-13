@@ -107,6 +107,20 @@ test('login checks the Android policy before entering any business page', () => 
 	assert.ok(launchIndex > signInIndex)
 })
 
+test('first-login users enter password change before requesting business bootstrap', () => {
+	const login = source('pages/login/index.vue')
+	const signInIndex = login.indexOf('const user = await signIn')
+	const passwordChangeIndex = login.indexOf('if (user.mustChangePassword)', signInIndex)
+	const bootstrapIndex = login.indexOf('await refreshMobileBootstrap()', signInIndex)
+	assert.ok(signInIndex > 0)
+	assert.ok(passwordChangeIndex > signInIndex)
+	assert.ok(bootstrapIndex > passwordChangeIndex)
+	assert.match(
+		login.slice(passwordChangeIndex, bootstrapIndex),
+		/await reLaunchTo\('\/pages\/login\/change-password'\)[\s\S]*return/
+	)
+})
+
 test('app launch checks the public Android policy even without a restored session', () => {
 	const app = source('App.vue')
 	const publicCheckIndex = app.indexOf('await checkPublicAndroidUpgrade()')
@@ -117,8 +131,8 @@ test('app launch checks the public Android policy even without a restored sessio
 
 test('the package metadata matches the Android release declared by the server', () => {
 	const manifest = source('manifest.json')
-	assert.match(manifest, /"versionName"\s*:\s*"1\.0\.11"/)
-	assert.match(manifest, /"versionCode"\s*:\s*"?104"?/)
+	assert.match(manifest, /"versionName"\s*:\s*"1\.0\.12"/)
+	assert.match(manifest, /"versionCode"\s*:\s*"?105"?/)
 	assert.match(manifest, /"packagename"\s*:\s*"uni\.app\.UNICEE59D0"/)
 })
 

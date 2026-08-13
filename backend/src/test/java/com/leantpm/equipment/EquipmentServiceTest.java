@@ -152,7 +152,32 @@ class EquipmentServiceTest {
         assertThat(label.getHeight()).isEqualTo(320);
         assertThat(label.getRGB(8, 8) & 0xFFFFFF).isEqualTo(0xFFFFFF);
         assertThat(label.getRGB(8, 150) & 0xFFFFFF).isNotEqualTo(0xFFFFFF);
-        assertThat(label.getRGB(120, 302) & 0xFFFFFF).isEqualTo(0xFFFFFF);
+        assertThat(label.getRGB(70, 290) & 0xFFFFFF).isEqualTo(0xFFFFFF);
+    }
+
+    @Test
+    void rendersTitleDeviceNameDeviceCodeAndScanHintAsLargeSeparateLines() {
+        BufferedImage qrCode = new BufferedImage(600, 600, BufferedImage.TYPE_INT_RGB);
+        var graphics = qrCode.createGraphics();
+        graphics.setColor(Color.WHITE);
+        graphics.fillRect(0, 0, qrCode.getWidth(), qrCode.getHeight());
+        graphics.dispose();
+
+        BufferedImage label = EquipmentService.withPremiumEquipmentLabel(
+                qrCode,
+                "大宝山设备管理系统",
+                "浮选机",
+                "硐扫二2#"
+        );
+
+        assertThat(label.getHeight()).isEqualTo(800);
+        assertThat(EquipmentService.equipmentNameText("浮选机"))
+                .isEqualTo("设备名称：浮选机");
+        assertThat(EquipmentService.equipmentCodeText("硐扫二2#"))
+                .isEqualTo("设备编码：硐扫二2#");
+        assertThat(EquipmentService.titleFontSize(1.0)).isEqualTo(48);
+        assertThat(EquipmentService.infoFontSize(1.0)).isEqualTo(30);
+        assertThat(EquipmentService.actionFontSize(1.0)).isEqualTo(34);
     }
 
     @Test
@@ -216,6 +241,18 @@ class EquipmentServiceTest {
         assertThat(result.errors())
                 .extracting(EquipmentDtos.ImportError::field)
                 .contains("设备名称", "设备分类", "所属组织", "型号", "生产日期", "投产日期", "关键设备");
+        assertThat(result.errors())
+                .filteredOn(error -> "设备分类".equals(error.field()))
+                .extracting(EquipmentDtos.ImportError::originalValue)
+                .containsExactly("不存在分类");
+        assertThat(result.errors())
+                .filteredOn(error -> "所属组织".equals(error.field()))
+                .extracting(EquipmentDtos.ImportError::originalValue)
+                .containsExactly("不存在组织");
+        assertThat(result.errors())
+                .filteredOn(error -> "关键设备".equals(error.field()))
+                .extracting(EquipmentDtos.ImportError::originalValue)
+                .containsExactly("不确定");
         verify(mapper, never()).insertEquipment(anyLong(), any(), any(), anyLong());
     }
 

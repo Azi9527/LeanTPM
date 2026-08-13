@@ -181,7 +181,12 @@ export interface PublicEquipmentView {
 export interface ImportResult {
   totalRows: number
   importedRows: number
-  errors: Array<{ rowNumber: number; field?: string; message: string }>
+  errors: Array<{
+    rowNumber: number
+    field?: string
+    originalValue?: string
+    message: string
+  }>
 }
 
 async function getData<T>(url: string, params?: object): Promise<T> {

@@ -1,12 +1,22 @@
 export interface EquipmentImportError {
   rowNumber: number
   field?: string
+  originalValue?: string
   message: string
 }
 
 export interface EquipmentImportErrorGroup {
   rowNumber: number
   issues: EquipmentImportError[]
+}
+
+export interface EquipmentImportErrorRow {
+  key: string
+  rowNumber: number
+  field: string
+  originalValue: string
+  message: string
+  suggestion: string
 }
 
 const FIELD_REFERENCES: Record<string, { value: string; source: string }> = {
@@ -60,4 +70,28 @@ export function equipmentImportSuggestion(error: EquipmentImportError): string {
     return `请按错误说明调整“${field}”的填写格式。`
   }
   return `请根据问题说明修改“${field}”，然后重新选择 Excel 进行预校验。`
+}
+
+export function buildEquipmentImportErrorRows(
+  errors: EquipmentImportError[] = [],
+): EquipmentImportErrorRow[] {
+  return errors.map((error, index) => {
+    const normalizedError: EquipmentImportError = {
+      ...error,
+      rowNumber: Number(error.rowNumber) || 0,
+      field: error.field?.trim() || undefined,
+      originalValue: error.originalValue == null
+        ? undefined
+        : String(error.originalValue),
+      message: error.message?.trim() || '',
+    }
+    return {
+      key: `${normalizedError.rowNumber}-${index}`,
+      rowNumber: normalizedError.rowNumber,
+      field: normalizedError.field || '整行数据',
+      originalValue: normalizedError.originalValue?.trim() || '（空）',
+      message: normalizedError.message || '服务端未返回具体错误说明',
+      suggestion: equipmentImportSuggestion(normalizedError),
+    }
+  })
 }

@@ -41,6 +41,7 @@ const statusMeta: Record<string, { label: string; type: 'success' | 'warning' | 
 }
 const cycleLabels: Record<string, string> = {
   DAILY: '每日',
+  HOURLY: '每小时',
   WEEKLY: '每周',
   MONTHLY: '每月',
   INTERVAL_DAYS: '间隔天数',
@@ -71,6 +72,12 @@ function optionLabel(...parts: unknown[]) {
     .map((part) => String(part ?? '').trim())
     .filter((part) => part && !['undefined', 'null'].includes(part.toLowerCase()))
     .join(' · ')
+}
+
+function nextGenerationLabel(row: PlanRow) {
+  if (!row.nextGenerationDate) return '—'
+  const time = row.scheduledTime?.slice(0, 5)
+  return time ? `${row.nextGenerationDate} ${time}` : row.nextGenerationDate
 }
 
 function schemeOptionLabel(scheme: SchemeRow) {
@@ -234,7 +241,7 @@ async function removePlan(row: PlanRow) {
         <el-table-column prop="locationName" label="物理位置" min-width="140"><template #default="{ row }">{{ row.locationName || '未设置' }}</template></el-table-column>
         <el-table-column prop="cycleType" label="周期" smart-filter="select" width="130"><template #default="{ row }">{{ cycleLabels[row.cycleType] || row.cycleType }} × {{ row.cycleInterval }}</template></el-table-column>
         <el-table-column prop="assigneeName" label="执行人" width="120"><template #default="{ row }">{{ row.assigneeName || '待派工' }}</template></el-table-column>
-        <el-table-column prop="nextGenerationDate" label="下次生成日" smart-filter="date" width="130" />
+        <el-table-column prop="nextGenerationDate" label="下次生成" smart-filter="date" width="170"><template #default="{ row }">{{ nextGenerationLabel(row) }}</template></el-table-column>
         <el-table-column prop="planStatus" label="状态" smart-filter="select" width="100"><template #default="{ row }"><el-tag :type="statusMeta[row.planStatus].type">{{ statusMeta[row.planStatus].label }}</el-tag></template></el-table-column>
         <el-table-column v-if="auth.can('inspection:plan:manage')" label="操作" smart-filter="none" width="220" fixed="right">
           <template #default="{ row }">

@@ -384,7 +384,7 @@ async function remove(row: ParameterRow) {
       </div>
       <div class="barcode-label-grid">
         <div class="qr-label-preview">
-          <strong>大宝山设备管理系统</strong>
+          <strong class="qr-preview-title">大宝山设备管理系统</strong>
           <div class="qr-wave-lines" />
           <div class="qr-code-card">
             <div class="qr-dot-field">
@@ -402,7 +402,7 @@ async function remove(row: ParameterRow) {
             </div>
           </div>
           <div class="qr-device-row"><span>▣</span><b>设备名称：循环泵站一号</b></div>
-          <div class="qr-device-row"><span>⚙</span><b>设备编号：VIZ-PUMP-01</b></div>
+          <div class="qr-device-row"><span>⚙</span><b>设备编码：VIZ-PUMP-01</b></div>
           <div class="qr-scan-action"><span>⌗</span><b>扫码查看设备档案</b></div>
         </div>
         <div class="barcode-label-settings">
@@ -711,9 +711,9 @@ async function remove(row: ParameterRow) {
     linear-gradient(-45deg, transparent 46%, #42a1ef 47% 49%, transparent 50%) 0 0 / 34px 34px;
   content: '';
 }
-.qr-label-preview > strong {
+.qr-preview-title {
   position: relative; z-index: 2; display: block; overflow: hidden; margin: 0 -2% 18%; color: #074ca7;
-  font-size: clamp(18px, 2.1vw, 36px); font-weight: 900; letter-spacing: .04em; text-align: center; white-space: nowrap;
+  font-size: clamp(24px, 3vw, 48px); font-weight: 900; letter-spacing: .02em; text-align: center; white-space: nowrap;
 }
 .qr-wave-lines {
   position: absolute; top: 19%; right: -8%; left: -8%; z-index: 1; height: 15%; opacity: .72;
@@ -747,17 +747,17 @@ async function remove(row: ParameterRow) {
 .qr-center-logo img, .barcode-logo-thumb img { width: 100%; height: 100%; object-fit: contain; background: #fff; }
 .qr-device-row, .qr-scan-action { position: relative; z-index: 2; display: grid; align-items: center; border: 2px solid rgba(255, 255, 255, .88); }
 .qr-device-row {
-  grid-template-columns: 22% 1fr; min-height: 7%; margin-top: 2.4%; border-radius: 12px;
-  background: rgba(0, 59, 145, .56); font-size: clamp(11px, 1.25vw, 20px);
+  grid-template-columns: 18% 1fr; min-height: 7.5%; margin-top: 2%; border-radius: 12px;
+  background: rgba(0, 59, 145, .56); font-size: clamp(17px, 1.9vw, 30px);
 }
-.qr-device-row span { display: grid; height: 100%; place-items: center; border-right: 1px solid rgba(255, 255, 255, .8); font-size: 1.35em; }
-.qr-device-row b { padding: 2.5% 5%; white-space: nowrap; }
+.qr-device-row span { display: grid; height: 100%; place-items: center; border-right: 1px solid rgba(255, 255, 255, .8); font-size: 1.25em; }
+.qr-device-row b { overflow: hidden; padding: 2% 3%; text-overflow: ellipsis; white-space: nowrap; }
 .qr-scan-action {
-  grid-template-columns: 22% 1fr; min-height: 8.5%; margin-top: 3.3%; border-radius: 14px; color: #074ca7;
-  background: #fff; font-size: clamp(12px, 1.45vw, 22px); letter-spacing: .08em;
+  grid-template-columns: 18% 1fr; min-height: 9%; margin-top: 2.4%; border-radius: 14px; color: #074ca7;
+  background: #fff; font-size: clamp(19px, 2.2vw, 34px); letter-spacing: .02em;
 }
-.qr-scan-action span { display: grid; height: 100%; place-items: center; border-radius: 11px 0 0 11px; color: #fff; background: #0aa99b; font-size: 1.5em; }
-.qr-scan-action b { padding: 2.5% 5%; text-align: center; white-space: nowrap; }
+.qr-scan-action span { display: grid; height: 100%; place-items: center; border-radius: 11px 0 0 11px; color: #fff; background: #0aa99b; font-size: 1.05em; }
+.qr-scan-action b { padding: 2.5% 3%; text-align: center; white-space: nowrap; }
 .barcode-label-settings { align-self: start; }
 .settings-callout { margin-bottom: 20px; padding: 16px 18px; border: 1px solid #cfe4fb; border-radius: 12px; background: #f5faff; }
 .settings-callout strong { color: #0757b9; }

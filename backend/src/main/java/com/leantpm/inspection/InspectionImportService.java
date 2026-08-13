@@ -119,6 +119,7 @@ public class InspectionImportService {
     );
     private static final Map<String, String> CYCLE_TYPE_CODES = Map.ofEntries(
             Map.entry("每日", "DAILY"), Map.entry("DAILY", "DAILY"),
+            Map.entry("每小时", "HOURLY"), Map.entry("HOURLY", "HOURLY"),
             Map.entry("每周", "WEEKLY"), Map.entry("WEEKLY", "WEEKLY"),
             Map.entry("每月", "MONTHLY"), Map.entry("MONTHLY", "MONTHLY"),
             Map.entry("间隔天数", "INTERVAL_DAYS"), Map.entry("INTERVAL_DAYS", "INTERVAL_DAYS")
@@ -134,7 +135,7 @@ public class InspectionImportService {
             "LOW", "MEDIUM", "HIGH", "CRITICAL"
     );
     private static final Set<String> CYCLE_TYPES = Set.of(
-            "DAILY", "WEEKLY", "MONTHLY", "INTERVAL_DAYS"
+            "DAILY", "HOURLY", "WEEKLY", "MONTHLY", "INTERVAL_DAYS"
     );
 
     private final JdbcTemplate jdbc;
@@ -1195,7 +1196,7 @@ public class InspectionImportService {
                 {SCHEME_SHEET, "方案编码", "必填", "唯一编码；使用大写英文字母开头，可含数字、下划线和短横线", "IMP-SCHEME-001"},
                 {SCHEME_SHEET, "方案名称", "必填", "点检方案中文名称", "日常点检"},
                 {SCHEME_SHEET, "点检类型", "选填", "中文填写：日常点检、班前点检、班后点检、专业点检、精密点检、安全点检、专项点检", "日常点检"},
-                {SCHEME_SHEET, "周期类型", "必填", "中文填写：每日、每周、每月、间隔天数", "每日"},
+                {SCHEME_SHEET, "周期类型", "必填", "中文填写：每日、每小时、每周、每月、间隔天数", "每日"},
                 {SCHEME_SHEET, "生效日期", "必填", "日期格式 yyyy-MM-dd", "2026-08-10"},
                 {SCHEME_ITEM_SHEET, "方案编码/项目编码", "必填", "必须与前两个工作表中的编码一致", "IMP-SCHEME-001 / IMP-LUB-001"},
                 {APPLICABILITY_SHEET, "方案编码", "必填", "必须与点检方案工作表中的编码一致", "IMP-SCHEME-001"},

@@ -22,7 +22,7 @@ import { useAuthStore } from '@/stores/auth'
 import { errorMessage } from '@/utils/http'
 import { equipmentStatusLabel, equipmentStatusType } from '@/utils/equipment-status'
 import {
-  equipmentImportSuggestion,
+  buildEquipmentImportErrorRows,
   groupEquipmentImportErrors,
 } from '@/utils/equipment-import-errors'
 import { useRoute } from 'vue-router'
@@ -64,6 +64,7 @@ const detail = ref<EquipmentDetail | null>(null)
 const importFile = ref<File | null>(null)
 const importResult = ref<Awaited<ReturnType<typeof equipmentApi.importWorkbook>> | null>(null)
 const importErrorGroups = computed(() => groupEquipmentImportErrors(importResult.value?.errors || []))
+const importErrorRows = computed(() => buildEquipmentImportErrorRows(importResult.value?.errors || []))
 
 const form = reactive({
   equipmentCode: '',
@@ -877,21 +878,15 @@ function enabledLabel(value: unknown) {
             </p>
           </div>
         </div>
-        <div class="import-error-list">
-          <article v-for="group in importErrorGroups" :key="group.rowNumber" class="import-error-group">
-            <header>
-              <strong>Excel 第 {{ group.rowNumber }} 行</strong>
-              <el-tag type="danger" effect="light">{{ group.issues.length }} 个问题</el-tag>
-            </header>
-            <div v-for="(issue, index) in group.issues" :key="`${group.rowNumber}-${index}`" class="import-error-item">
-              <span class="import-error-field">{{ issue.field || '整行数据' }}</span>
-              <div>
-                <strong>{{ issue.message }}</strong>
-                <p>{{ equipmentImportSuggestion(issue) }}</p>
-              </div>
-            </div>
-          </article>
-        </div>
+        <el-table :data="importErrorRows" row-key="key" max-height="430" class="import-error-table" border>
+          <el-table-column prop="rowNumber" label="Excel 行号" width="105" fixed />
+          <el-table-column prop="field" label="错误字段" min-width="120" />
+          <el-table-column label="Excel 原值" min-width="150">
+            <template #default="{ row }"><code>{{ row.originalValue }}</code></template>
+          </el-table-column>
+          <el-table-column prop="message" label="错误原因" min-width="210" />
+          <el-table-column prop="suggestion" label="修改建议" min-width="300" />
+        </el-table>
       </section>
       <el-result
         v-else-if="importResult"
@@ -979,8 +974,7 @@ function enabledLabel(value: unknown) {
 }
 
 .import-error-summary h3,
-.import-error-summary p,
-.import-error-item p {
+.import-error-summary p {
   margin: 0;
 }
 
@@ -1008,61 +1002,17 @@ function enabledLabel(value: unknown) {
   font-weight: 800;
 }
 
-.import-error-list {
-  display: grid;
-  gap: 12px;
-  max-height: 430px;
-  padding-right: 4px;
-  overflow-y: auto;
-}
-
-.import-error-group {
-  overflow: hidden;
-  border: 1px solid var(--el-border-color-light);
-  border-radius: 12px;
-  background: var(--el-bg-color);
-}
-
-.import-error-group header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 16px;
-  background: var(--el-fill-color-light);
-}
-
-.import-error-item {
-  display: grid;
-  grid-template-columns: minmax(110px, 150px) minmax(0, 1fr);
-  gap: 16px;
-  padding: 14px 16px;
-  line-height: 1.55;
-}
-
-.import-error-item + .import-error-item {
-  border-top: 1px solid var(--el-border-color-lighter);
-}
-
-.import-error-field {
-  align-self: start;
-  padding: 3px 9px;
-  border-radius: 6px;
-  color: var(--el-color-danger-dark-2);
-  background: var(--el-color-danger-light-9);
-  font-weight: 700;
-  text-align: center;
-  overflow-wrap: anywhere;
-}
-
-.import-error-item strong {
+.import-error-table :deep(.cell) {
   color: var(--el-text-color-primary);
+  line-height: 1.5;
   overflow-wrap: anywhere;
+  white-space: normal;
 }
 
-.import-error-item p {
-  margin-top: 4px;
-  color: var(--el-text-color-secondary);
-  overflow-wrap: anywhere;
+.import-error-table code {
+  color: var(--el-color-danger-dark-2);
+  font-family: inherit;
+  font-weight: 700;
 }
 
 @media (max-width: 900px) {
@@ -1085,16 +1035,6 @@ function enabledLabel(value: unknown) {
 
   .header-actions {
     flex-wrap: wrap;
-  }
-
-  .import-error-item {
-    grid-template-columns: 1fr;
-    gap: 8px;
-  }
-
-  .import-error-field {
-    justify-self: start;
-    text-align: left;
   }
 }
 </style>

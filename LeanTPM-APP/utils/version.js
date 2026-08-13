@@ -31,8 +31,8 @@ export function evaluateAndroidVersionPolicy(currentCode, policy = {}) {
 }
 
 export function currentAppInfo() {
-	let version = '1.0.11'
-	let versionCode = 104
+	let version = '1.0.12'
+	let versionCode = 105
 	try {
 		const info = uni.getAppBaseInfo?.() || {}
 		version = info.appVersion || version

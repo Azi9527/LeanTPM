@@ -5,14 +5,23 @@ import {
   inspectionApi,
   type InspectionAttachmentRow,
   type Statistics,
+  type StatisticsQuery,
+  type StatisticsSourceType,
   type TaskDetail,
   type TaskRow,
   type TaskStatus,
+  type TimelinessStatus,
 } from '@/api/inspection'
 import { masterDataApi, type OrganizationRow } from '@/api/masterData'
 import InspectionAttachmentList from '@/components/InspectionAttachmentList.vue'
 import { errorMessage } from '@/utils/http'
-import { applySmartTableQuery, type SmartTableServerQuery } from '@/components/table/smart-table-context'
+import { useAuthStore } from '@/stores/auth'
+
+interface OrganizationTreeNode extends OrganizationRow {
+  children: OrganizationTreeNode[]
+}
+
+const auth = useAuthStore()
 
 const loading = ref(false)
 const detailLoading = ref(false)
@@ -26,11 +35,6 @@ const detail = ref<TaskDetail | null>(null)
 const attachments = ref<InspectionAttachmentRow[]>([])
 const refreshedAt = ref('')
 const activeShortcut = ref<'TODAY' | 'WEEK' | 'MONTH' | 'LAST_MONTH' | 'CUSTOM'>('MONTH')
-const smartTableQuery = reactive({
-  tableFilters: undefined as string | undefined,
-  sortBy: undefined as string | undefined,
-  sortDirection: undefined as 'asc' | 'desc' | undefined,
-})
 
 const summary = ref<Statistics>({
   dueToday: 0,
@@ -40,14 +44,40 @@ const summary = ref<Statistics>({
   abnormal: 0,
   completionRate: 0,
   onTimeRate: 0,
+  planCount: 0,
+  quickEntryCount: 0,
+  manualCount: 0,
+  backfillCount: 0,
+  onTimeCompleted: 0,
+  lateCompleted: 0,
+  overdueIncomplete: 0,
 })
 
 const filters = reactive({
   dateRange: currentMonthRange() as [string, string],
   organizationId: undefined as number | undefined,
+  sourceType: undefined as StatisticsSourceType | undefined,
+  timelinessStatus: undefined as TimelinessStatus | undefined,
   taskStatus: undefined as TaskStatus | undefined,
   keyword: '',
 })
+
+const organizationTree = computed(() => buildOrganizationTree(organizations.value))
+
+const sourceOptions: Array<{ value: StatisticsSourceType; label: string }> = [
+  { value: 'PLAN', label: '计划产生' },
+  { value: 'QUICK_ENTRY', label: '扫码直接点检' },
+  { value: 'MANUAL', label: '人工创建' },
+  { value: 'BACKFILL', label: '补录任务' },
+]
+
+const timelinessOptions: Array<{ value: TimelinessStatus; label: string }> = [
+  { value: 'ON_TIME_COMPLETED', label: '按期完成' },
+  { value: 'LATE_COMPLETED', label: '逾期完成' },
+  { value: 'OVERDUE_INCOMPLETE', label: '逾期未完成' },
+  { value: 'PENDING', label: '待完成' },
+  { value: 'CLOSED', label: '已取消/作废' },
+]
 
 const statusMeta: Record<TaskStatus, { label: string; type: '' | 'success' | 'warning' | 'danger' | 'info' }> = {
   PENDING: { label: '待执行', type: 'info' },
@@ -86,19 +116,19 @@ async function loadOrganizations() {
 async function load() {
   loading.value = true
   try {
-    const params = {
+    const params: StatisticsQuery = {
       startDate: filters.dateRange[0],
       endDate: filters.dateRange[1],
       organizationId: filters.organizationId,
+      keyword: filters.keyword || undefined,
+      sourceType: filters.sourceType,
+      timelinessStatus: filters.timelinessStatus,
+      taskStatus: filters.taskStatus,
     }
     const [statistics, tasks] = await Promise.all([
       inspectionApi.statistics(params),
-      inspectionApi.tasks({
+      inspectionApi.statisticsTasks({
         ...params,
-        ...smartTableQuery,
-        keyword: filters.keyword || undefined,
-        taskStatus: filters.taskStatus,
-        timeField: 'PLANNED_DATE',
         page: page.value,
         pageSize: pageSize.value,
       }),
@@ -112,12 +142,6 @@ async function load() {
   } finally {
     loading.value = false
   }
-}
-
-function applyTableQuery(query: SmartTableServerQuery) {
-  applySmartTableQuery(smartTableQuery, query)
-  page.value = 1
-  load()
 }
 
 function applyShortcut(shortcut: typeof activeShortcut.value) {
@@ -148,11 +172,30 @@ function search() {
 function reset() {
   filters.dateRange = currentMonthRange()
   filters.organizationId = undefined
+  filters.sourceType = undefined
+  filters.timelinessStatus = undefined
   filters.taskStatus = undefined
   filters.keyword = ''
   activeShortcut.value = 'MONTH'
   page.value = 1
   load()
+}
+
+async function exportDetails() {
+  try {
+    await inspectionApi.exportStatisticsDetails({
+      startDate: filters.dateRange[0],
+      endDate: filters.dateRange[1],
+      organizationId: filters.organizationId,
+      keyword: filters.keyword || undefined,
+      sourceType: filters.sourceType,
+      timelinessStatus: filters.timelinessStatus,
+      taskStatus: filters.taskStatus,
+    })
+    ElMessage.success('点检项目明细已导出')
+  } catch (error) {
+    ElMessage.error(errorMessage(error, '点检项目明细导出失败'))
+  }
 }
 
 async function openDetail(row: TaskRow) {
@@ -191,6 +234,49 @@ function progress(row: TaskRow) {
 
 function taskStatusMeta(status: TaskStatus) {
   return statusMeta[status] || { label: status, type: 'info' as const }
+}
+
+function sourceLabel(source: StatisticsSourceType) {
+  return sourceOptions.find((item) => item.value === source)?.label || source
+}
+
+function timelinessStatus(row: TaskRow): TimelinessStatus {
+  if (row.taskStatus === 'CANCELLED' || row.taskStatus === 'VOIDED') return 'CLOSED'
+  const completion = row.submittedTime || row.completedTime
+  if (completion) {
+    return new Date(completion).getTime() <= new Date(row.dueTime).getTime()
+      ? 'ON_TIME_COMPLETED'
+      : 'LATE_COMPLETED'
+  }
+  return new Date(row.dueTime).getTime() < Date.now() ? 'OVERDUE_INCOMPLETE' : 'PENDING'
+}
+
+function timelinessLabel(row: TaskRow) {
+  const status = timelinessStatus(row)
+  return timelinessOptions.find((item) => item.value === status)?.label || status
+}
+
+function timelinessTagType(row: TaskRow): 'success' | 'warning' | 'danger' | 'info' {
+  const status = timelinessStatus(row)
+  if (status === 'ON_TIME_COMPLETED') return 'success'
+  if (status === 'LATE_COMPLETED') return 'warning'
+  if (status === 'OVERDUE_INCOMPLETE') return 'danger'
+  return 'info'
+}
+
+function buildOrganizationTree(source: OrganizationRow[]): OrganizationTreeNode[] {
+  const nodes = new Map<number, OrganizationTreeNode>()
+  source.forEach((item) => nodes.set(item.id, { ...item, children: [] }))
+  const roots: OrganizationTreeNode[] = []
+  nodes.forEach((node) => {
+    const parent = nodes.get(node.parentId)
+    if (parent && parent.id !== node.id) parent.children.push(node)
+    else roots.push(node)
+  })
+  const sort = (items: OrganizationTreeNode[]): OrganizationTreeNode[] => items
+    .sort((left, right) => left.sortOrder - right.sortOrder || left.id - right.id)
+    .map((item) => ({ ...item, children: sort(item.children) }))
+  return sort(roots)
 }
 
 function currentMonthRange(): [string, string] {
@@ -234,14 +320,21 @@ function formatDateTime(value: Date) {
       </div>
       <div class="filter-grid">
         <el-date-picker v-model="filters.dateRange" type="daterange" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" />
-        <el-select v-model="filters.organizationId" clearable filterable placeholder="全部组织">
-          <el-option v-for="org in organizations" :key="org.id" :label="org.organizationName" :value="org.id" />
+        <div class="organization-filter">
+          <el-tree-select v-model="filters.organizationId" :data="organizationTree" node-key="id" :props="{ label: 'organizationName', children: 'children' }" clearable filterable check-strictly default-expand-all placeholder="全部组织" />
+          <small>包含下属组织</small>
+        </div>
+        <el-select v-model="filters.sourceType" clearable placeholder="全部任务来源">
+          <el-option v-for="option in sourceOptions" :key="option.value" :label="option.label" :value="option.value" />
+        </el-select>
+        <el-select v-model="filters.timelinessStatus" clearable placeholder="全部完成时效">
+          <el-option v-for="option in timelinessOptions" :key="option.value" :label="option.label" :value="option.value" />
         </el-select>
         <el-select v-model="filters.taskStatus" clearable placeholder="全部任务状态">
           <el-option v-for="(meta, key) in statusMeta" :key="key" :label="meta.label" :value="key" />
         </el-select>
         <el-input v-model="filters.keyword" clearable placeholder="任务、设备或方案" @keyup.enter="search" />
-        <div class="filter-actions"><el-button type="primary" @click="search">查询</el-button><el-button @click="reset">重置</el-button></div>
+        <div class="filter-actions"><el-button type="primary" @click="search">查询</el-button><el-button @click="reset">重置</el-button><el-button v-if="auth.can('inspection:task:export')" @click="exportDetails">导出明细清单</el-button></div>
       </div>
     </section>
 
@@ -250,7 +343,12 @@ function formatDateTime(value: Date) {
       <article class="metric-card completed"><span>已完成</span><strong>{{ summary.completedToday }}</strong><small>完成率 {{ summary.completionRate }}%</small></article>
       <article class="metric-card pending"><span>待完成</span><strong>{{ incomplete }}</strong><small>待执行 {{ summary.pendingToday }} · 逾期 {{ summary.overdue }}</small></article>
       <article class="metric-card abnormal"><span>异常任务</span><strong>{{ summary.abnormal }}</strong><small>异常率 {{ abnormalRate }}%</small></article>
-      <article class="metric-card ontime"><span>准时完成率</span><strong>{{ summary.onTimeRate }}%</strong><small>完成时间不晚于截止时间</small></article>
+      <article class="metric-card ontime"><span>准时完成率</span><strong>{{ summary.onTimeRate }}%</strong><small>提交时间不晚于截止时间</small></article>
+    </section>
+
+    <section class="surface-card breakdown-card">
+      <div><span>任务来源</span><strong>计划产生 {{ summary.planCount }}</strong><small>扫码直接点检 {{ summary.quickEntryCount }} · 人工创建 {{ summary.manualCount }} · 补录 {{ summary.backfillCount }}</small></div>
+      <div><span>完成时效</span><strong>按期完成 {{ summary.onTimeCompleted }}</strong><small>逾期完成 {{ summary.lateCompleted }} · 逾期未完成 {{ summary.overdueIncomplete }}</small></div>
     </section>
 
     <section class="analysis-grid">
@@ -270,17 +368,21 @@ function formatDateTime(value: Date) {
     </section>
 
     <section class="surface-card ledger-card">
-      <div class="card-title ledger-title"><div><h2>点检任务明细</h2><p>共 {{ total }} 条，点击“查看明细”可查看项目结果、现场图片和事件轨迹</p></div></div>
-      <el-table :data="rows" stripe server-query empty-text="当前筛选范围内暂无点检任务" @smart-query-change="applyTableQuery">
+      <div class="card-title ledger-title"><div><h2>点检任务明细</h2><p>共 {{ total }} 条，包含延期后再点检的任务；点击“查看明细”查看点检项目、附件和事件轨迹</p></div></div>
+      <el-table :data="rows" stripe empty-text="当前筛选范围内暂无点检任务">
         <el-table-column prop="taskCode" label="任务编号" min-width="170" />
+        <el-table-column prop="sourceType" label="任务来源" min-width="120"><template #default="{ row }"><el-tag type="info">{{ sourceLabel(row.sourceType) }}</el-tag></template></el-table-column>
+        <el-table-column label="完成时效" min-width="120"><template #default="{ row }"><el-tag :type="timelinessTagType(row)">{{ timelinessLabel(row) }}</el-tag></template></el-table-column>
         <el-table-column prop="equipmentName" label="设备" min-width="180"><template #default="{ row }"><strong>{{ row.equipmentName }}</strong><div class="muted">{{ row.equipmentCode }}</div></template></el-table-column>
         <el-table-column prop="organizationName" label="组织" min-width="130" />
         <el-table-column prop="schemeNameSnapshot" label="点检方案" min-width="170" show-overflow-tooltip />
-        <el-table-column prop="plannedDate" label="计划日期" smart-filter="date" width="120" />
+        <el-table-column prop="plannedDate" label="计划日期" width="120" />
+        <el-table-column prop="dueTime" label="截止时间" min-width="170" />
+        <el-table-column prop="submittedTime" label="提交时间" min-width="170"><template #default="{ row }">{{ row.submittedTime || '未提交' }}</template></el-table-column>
         <el-table-column prop="assigneeName" label="执行人" min-width="140"><template #default="{ row }">{{ row.assigneeName || '未派工' }}</template></el-table-column>
-        <el-table-column prop="completedItemCount" label="完成进度" smart-filter="number" width="150"><template #default="{ row }"><el-progress :percentage="progress(row)" :stroke-width="8" /><span class="progress-text">{{ row.completedItemCount }}/{{ row.itemCount }}</span></template></el-table-column>
+        <el-table-column prop="completedItemCount" label="完成进度" width="150"><template #default="{ row }"><el-progress :percentage="progress(row)" :stroke-width="8" /><span class="progress-text">{{ row.completedItemCount }}/{{ row.itemCount }}</span></template></el-table-column>
         <el-table-column label="异常" width="85" align="center"><template #default="{ row }"><el-tag v-if="row.abnormalItemCount" type="danger">{{ row.abnormalItemCount }} 项</el-tag><span v-else>—</span></template></el-table-column>
-        <el-table-column prop="taskStatus" label="状态" smart-filter="select" width="105"><template #default="{ row }"><el-tag :type="taskStatusMeta(row.taskStatus).type">{{ taskStatusMeta(row.taskStatus).label }}</el-tag></template></el-table-column>
+        <el-table-column prop="taskStatus" label="状态" width="105"><template #default="{ row }"><el-tag :type="taskStatusMeta(row.taskStatus).type">{{ taskStatusMeta(row.taskStatus).label }}</el-tag></template></el-table-column>
         <el-table-column label="操作" width="105" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="openDetail(row)">查看明细</el-button></template></el-table-column>
       </el-table>
       <el-pagination v-model:current-page="page" v-model:page-size="pageSize" layout="total, sizes, prev, pager, next" :page-sizes="[20, 50, 100]" :total="total" @change="load" />
@@ -295,7 +397,9 @@ function formatDateTime(value: Date) {
             <el-descriptions-item label="组织/位置">{{ detail.task.organizationName }} / {{ detail.task.locationName || '未设置' }}</el-descriptions-item>
             <el-descriptions-item label="执行人">{{ detail.task.assigneeName || '未派工' }}</el-descriptions-item>
             <el-descriptions-item label="计划/截止">{{ detail.task.plannedDate }} / {{ detail.task.dueTime }}</el-descriptions-item>
-            <el-descriptions-item label="完成时间">{{ detail.task.completedTime || '未完成' }}</el-descriptions-item>
+            <el-descriptions-item label="任务来源">{{ sourceLabel(detail.task.sourceType) }}</el-descriptions-item>
+            <el-descriptions-item label="完成时效"><el-tag :type="timelinessTagType(detail.task)">{{ timelinessLabel(detail.task) }}</el-tag></el-descriptions-item>
+            <el-descriptions-item label="提交/完成">{{ detail.task.submittedTime || '未提交' }} / {{ detail.task.completedTime || '未完成' }}</el-descriptions-item>
           </el-descriptions>
 
           <section class="detail-section"><h3>项目执行明细</h3>
@@ -338,8 +442,9 @@ function formatDateTime(value: Date) {
 .filter-card { display: grid; gap: 14px; }
 .shortcut-row { display: flex; gap: 8px; }
 .shortcut-row :deep(.el-button + .el-button) { margin-left: 0; }
-.filter-grid { display: grid; grid-template-columns: minmax(280px, 1.4fr) repeat(3, minmax(150px, 1fr)) auto; gap: 10px; }
+.filter-grid { display: grid; grid-template-columns: minmax(280px, 1.4fr) repeat(4, minmax(150px, 1fr)); gap: 10px; }
 .filter-actions { display: flex; }
+.organization-filter { display: grid; gap: 2px; }.organization-filter small { padding-left: 2px; color: var(--el-text-color-secondary); }
 .metric-grid { display: grid; grid-template-columns: repeat(5, minmax(150px, 1fr)); gap: 12px; }
 .metric-card { position: relative; display: grid; gap: 7px; padding: 18px; overflow: hidden; border: 1px solid var(--tpm-border); border-radius: 12px; background: #fff; }
 .metric-card::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--metric-color); }
@@ -348,6 +453,7 @@ function formatDateTime(value: Date) {
 .metric-card small { color: var(--el-text-color-placeholder); }
 .metric-card.total { --metric-color: #1976a3; }.metric-card.completed,.metric-card.ontime { --metric-color: #1c7d50; }.metric-card.pending { --metric-color: #d08a00; }.metric-card.abnormal { --metric-color: #c4000a; }
 .analysis-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.breakdown-card { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }.breakdown-card div { display: grid; gap: 6px; }.breakdown-card span,.breakdown-card small { color: var(--el-text-color-secondary); }.breakdown-card strong { font-size: 18px; color: #174936; }
 .card-title { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; }
 .card-title h2 { margin: 0 0 4px; font-size: 18px; }.card-title p { margin: 0; color: var(--el-text-color-secondary); }
 .completion-content { display: grid; grid-template-columns: 210px 1fr; align-items: center; margin-top: 18px; }
@@ -357,5 +463,5 @@ function formatDateTime(value: Date) {
 .muted { margin-top: 3px; color: var(--el-text-color-secondary); font-size: 12px; }.progress-text { color: var(--el-text-color-secondary); font-size: 11px; }
 .detail-body { min-height: 320px; }.detail-section { margin-top: 20px; }.detail-section h3 { margin: 0 0 12px; }.detail-title { display: flex; align-items: center; justify-content: space-between; }
 @media (max-width: 1180px) { .metric-grid { grid-template-columns: repeat(3, 1fr); }.filter-grid { grid-template-columns: repeat(2, 1fr); }.filter-actions { grid-column: 1 / -1; }.analysis-grid { grid-template-columns: 1fr; } }
-@media (max-width: 720px) { .statistics-header { align-items: flex-start; }.header-meta { justify-items: start; }.metric-grid,.filter-grid { grid-template-columns: 1fr; }.completion-content { grid-template-columns: 1fr; }.shortcut-row { flex-wrap: wrap; } }
+@media (max-width: 720px) { .statistics-header { align-items: flex-start; }.header-meta { justify-items: start; }.metric-grid,.filter-grid,.breakdown-card { grid-template-columns: 1fr; }.completion-content { grid-template-columns: 1fr; }.shortcut-row { flex-wrap: wrap; } }
 </style>

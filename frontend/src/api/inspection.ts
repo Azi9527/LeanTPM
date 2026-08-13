@@ -89,7 +89,7 @@ export interface SchemeVersionRow {
   schemeId: number
   versionNumber: number
   versionStatus: 'DRAFT' | 'PUBLISHED' | 'RETIRED'
-  cycleType: 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'INTERVAL_DAYS'
+  cycleType: 'DAILY' | 'HOURLY' | 'WEEKLY' | 'MONTHLY' | 'INTERVAL_DAYS'
   cycleInterval: number
   weekDays?: string
   monthDays?: string
@@ -371,6 +371,33 @@ export interface Statistics {
   abnormal: number
   completionRate: number
   onTimeRate: number
+  planCount: number
+  quickEntryCount: number
+  manualCount: number
+  backfillCount: number
+  onTimeCompleted: number
+  lateCompleted: number
+  overdueIncomplete: number
+}
+
+export type StatisticsSourceType = 'PLAN' | 'QUICK_ENTRY' | 'MANUAL' | 'BACKFILL'
+export type TimelinessStatus =
+  | 'ON_TIME_COMPLETED'
+  | 'LATE_COMPLETED'
+  | 'OVERDUE_INCOMPLETE'
+  | 'PENDING'
+  | 'CLOSED'
+
+export interface StatisticsQuery {
+  keyword?: string
+  startDate?: string
+  endDate?: string
+  organizationId?: number
+  sourceType?: StatisticsSourceType
+  timelinessStatus?: TimelinessStatus
+  taskStatus?: TaskStatus
+  page?: number
+  pageSize?: number
 }
 
 export interface GenerationResult {
@@ -551,6 +578,20 @@ export const inspectionApi = {
 
   tasks: (params: TaskQuery) =>
     getData<PageResult<TaskRow>>('/inspection/tasks', params),
+  statisticsTasks: (params: StatisticsQuery) =>
+    getData<PageResult<TaskRow>>('/inspection/statistics/tasks', params),
+  exportStatisticsDetails: async (params: StatisticsQuery) => {
+    const response = await http.get<Blob>('/inspection/statistics/export', {
+      params,
+      responseType: 'blob',
+    })
+    const url = URL.createObjectURL(response.data)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = '点检统计明细.xlsx'
+    anchor.click()
+    URL.revokeObjectURL(url)
+  },
   exportResults: async (params: TaskQuery) => {
     const response = await http.get<Blob>('/inspection/results/export', {
       params,
@@ -629,6 +670,6 @@ export const inspectionApi = {
     http.put(`/inspection/abnormalities/${id}`, data),
   verifyAbnormal: (id: number, data: object) =>
     http.post(`/inspection/abnormalities/${id}/verify`, data),
-  statistics: (params?: { startDate?: string; endDate?: string; organizationId?: number }) =>
+  statistics: (params?: StatisticsQuery) =>
     getData<Statistics>('/inspection/statistics', params),
 }
