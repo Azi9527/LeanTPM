@@ -32,6 +32,37 @@ const numberOperators: Array<{ value: SmartFilterOperator; label: string }> = [
   { value: 'NOT_EMPTY', label: '不为空' },
 ]
 
+const SmartTableFilterInput = defineComponent({
+  name: 'LeanSmartTableFilterInput',
+  inheritAttrs: false,
+  props: {
+    modelValue: { type: String, default: '' },
+    type: { type: String, default: 'text' },
+    placeholder: { type: String, default: '' },
+    clearable: Boolean,
+  },
+  emits: ['update:modelValue'],
+  setup(props, { attrs, emit }) {
+    const draft = ref(props.modelValue ?? '')
+
+    watch(() => props.modelValue, (next) => {
+      draft.value = next ?? ''
+    })
+
+    return () => h(ElInput, {
+      ...attrs,
+      modelValue: draft.value,
+      type: props.type,
+      placeholder: props.placeholder,
+      clearable: props.clearable,
+      'onUpdate:modelValue': (next: string) => {
+        draft.value = next
+        emit('update:modelValue', next)
+      },
+    })
+  },
+})
+
 export default defineComponent({
   name: 'LeanSmartTableColumn',
   inheritAttrs: false,
@@ -130,7 +161,7 @@ export default defineComponent({
               value: String(item.value),
             })),
           })
-        : h(ElInput, {
+        : h(SmartTableFilterInput, {
             modelValue: value.value,
             type: filterType.value === 'number' ? 'number' : filterType.value === 'date' ? 'date' : 'text',
             clearable: true,
@@ -151,7 +182,7 @@ export default defineComponent({
           })),
         }),
         ...(['EMPTY', 'NOT_EMPTY'].includes(operator.value) ? [] : [valueControl]),
-        ...(operator.value === 'BETWEEN' ? [h(ElInput, {
+        ...(operator.value === 'BETWEEN' ? [h(SmartTableFilterInput, {
           modelValue: secondValue.value,
           type: filterType.value === 'number' ? 'number' : filterType.value === 'date' ? 'date' : 'text',
           placeholder: '结束值',

@@ -310,9 +310,9 @@ function escapeHtml(value: string) {
         />
       </el-select>
       <el-checkbox v-model="activeOnly">仅显示有效条码</el-checkbox>
-      <el-input-number v-model="label.widthMm" :min="20" :max="200" controls-position="right" />
+      <el-input-number v-model="label.widthMm" :min="20" :max="500" controls-position="right" />
       <span>宽 mm</span>
-      <el-input-number v-model="label.heightMm" :min="20" :max="200" controls-position="right" />
+      <el-input-number v-model="label.heightMm" :min="20" :max="500" controls-position="right" />
       <span>高 mm</span>
       <el-select v-model="label.imagePixels" style="width: 125px">
         <el-option label="清晰 600px" :value="600" />

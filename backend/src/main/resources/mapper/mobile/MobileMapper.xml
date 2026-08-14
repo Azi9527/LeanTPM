@@ -373,6 +373,475 @@
           )
     </select>
 
+    <sql id="inspectionPerformanceVisibility">
+        <choose>
+            <when test="scope.allData">1 = 1</when>
+            <when test="scope.selfData or (scope.organizationIds != null and !scope.organizationIds.isEmpty())">
+                (
+                    <if test="scope.selfData">
+                        COALESCE(task.submitted_by, task.assignee_user_id) = #{currentUserId}
+                    </if>
+                    <if test="scope.selfData and scope.organizationIds != null and !scope.organizationIds.isEmpty()">
+                        OR
+                    </if>
+                    <if test="scope.organizationIds != null and !scope.organizationIds.isEmpty()">
+                        task.organization_id IN
+                        <foreach collection="scope.organizationIds" item="scopeOrganizationId"
+                                 open="(" separator="," close=")">
+                            #{scopeOrganizationId}
+                        </foreach>
+                    </if>
+                )
+            </when>
+            <otherwise>1 = 0</otherwise>
+        </choose>
+    </sql>
+
+    <sql id="inspectionPerformanceCtes">
+        WITH RECURSIVE selected_organization_tree AS (
+            SELECT id
+            FROM organization
+            WHERE tenant_id = #{tenantId}
+              AND id = #{query.organizationId}
+              AND deleted = 0
+            UNION ALL
+            SELECT child.id
+            FROM organization child
+            JOIN selected_organization_tree parent ON child.parent_id = parent.id
+            WHERE child.tenant_id = #{tenantId}
+              AND child.deleted = 0
+        ),
+        assessment_tasks AS (
+            SELECT task.id AS task_id,
+                   task.organization_id,
+                   organization.organization_name,
+                   COALESCE(task.submitted_by, task.assignee_user_id) AS attributed_user_id,
+                   attributed_user.real_name AS attributed_user_name,
+                   attributed_user.organization_id AS user_organization_id,
+                   user_organization.organization_name AS user_organization_name,
+                   CASE WHEN task.submitted_time IS NOT NULL THEN 1 ELSE 0 END AS completed_task,
+                   CASE WHEN task.submitted_time IS NOT NULL
+                              AND task.submitted_time &lt;= task.due_time
+                        THEN 1 ELSE 0 END AS on_time_task,
+                   CASE WHEN task.submitted_time IS NOT NULL
+                              AND task.submitted_time &gt; task.due_time
+                        THEN 1 ELSE 0 END AS late_task,
+                   CASE WHEN task.submitted_time IS NULL
+                              AND task.due_time &gt;= CURRENT_TIMESTAMP(3)
+                        THEN 1 ELSE 0 END AS pending_task,
+                   CASE WHEN task.submitted_time IS NULL
+                              AND task.due_time &lt; CURRENT_TIMESTAMP(3)
+                        THEN 1 ELSE 0 END AS overdue_task,
+                   CASE WHEN EXISTS (
+                       SELECT 1
+                       FROM inspection_abnormal abnormal
+                       WHERE abnormal.tenant_id = task.tenant_id
+                         AND abnormal.task_id = task.id
+                         AND abnormal.deleted = 0
+                   ) THEN 1 ELSE 0 END AS abnormal_task
+            FROM inspection_task task
+            JOIN organization organization
+              ON organization.tenant_id = task.tenant_id
+             AND organization.id = task.organization_id
+             AND organization.deleted = 0
+            LEFT JOIN system_user attributed_user
+              ON attributed_user.tenant_id = task.tenant_id
+             AND attributed_user.id = COALESCE(task.submitted_by, task.assignee_user_id)
+             AND attributed_user.deleted = 0
+            LEFT JOIN organization user_organization
+              ON user_organization.tenant_id = attributed_user.tenant_id
+             AND user_organization.id = attributed_user.organization_id
+             AND user_organization.deleted = 0
+            WHERE task.tenant_id = #{tenantId}
+              AND task.deleted = 0
+              AND task.source_type = 'PLAN'
+              AND task.task_status NOT IN ('CANCELLED', 'VOIDED')
+              AND task.planned_date BETWEEN #{query.startDate} AND #{query.endDate}
+              AND (<include refid="inspectionPerformanceVisibility"/>)
+              <if test="query.organizationId != null">
+                  AND task.organization_id IN (SELECT id FROM selected_organization_tree)
+              </if>
+              <if test="query.userId != null">
+                  AND COALESCE(task.submitted_by, task.assignee_user_id) = #{query.userId}
+              </if>
+        )
+    </sql>
+
+    <select id="inspectionReportOrganizations"
+            resultType="com.leantpm.mobile.MobileDtos$InspectionReportOrganization">
+        SELECT organization.id AS organization_id,
+               organization.parent_id,
+               organization.organization_code,
+               organization.organization_name
+        FROM organization
+        WHERE organization.tenant_id = #{tenantId}
+          AND organization.status = 1
+          AND organization.deleted = 0
+          AND (
+              <choose>
+                  <when test="scope.allData">1 = 1</when>
+                  <when test="scope.organizationIds != null and !scope.organizationIds.isEmpty()">
+                      organization.id IN
+                      <foreach collection="scope.organizationIds" item="organizationId"
+                               open="(" separator="," close=")">
+                          #{organizationId}
+                      </foreach>
+                  </when>
+                  <otherwise>1 = 0</otherwise>
+              </choose>
+          )
+        ORDER BY organization.parent_id, organization.sort_order, organization.id
+    </select>
+
+    <select id="inspectionReportEmployees"
+            resultType="com.leantpm.mobile.MobileDtos$InspectionReportEmployee">
+        SELECT report_user.id AS user_id,
+               report_user.organization_id,
+               report_user.username,
+               report_user.real_name
+        FROM system_user report_user
+        WHERE report_user.tenant_id = #{tenantId}
+          AND report_user.organization_id IS NOT NULL
+          AND report_user.status = 1
+          AND report_user.deleted = 0
+          AND (
+              <choose>
+                  <when test="scope.allData">1 = 1</when>
+                  <when test="scope.selfData or (scope.organizationIds != null and !scope.organizationIds.isEmpty())">
+                      (
+                          <if test="scope.selfData">report_user.id = #{currentUserId}</if>
+                          <if test="scope.selfData and scope.organizationIds != null and !scope.organizationIds.isEmpty()">OR</if>
+                          <if test="scope.organizationIds != null and !scope.organizationIds.isEmpty()">
+                              report_user.organization_id IN
+                              <foreach collection="scope.organizationIds" item="organizationId"
+                                       open="(" separator="," close=")">
+                                  #{organizationId}
+                              </foreach>
+                          </if>
+                      )
+                  </when>
+                  <otherwise>1 = 0</otherwise>
+              </choose>
+          )
+        ORDER BY report_user.real_name, report_user.id
+    </select>
+
+    <select id="inspectionPerformanceSummary"
+            resultType="com.leantpm.mobile.MobileDtos$InspectionPerformanceSummary">
+        <include refid="inspectionPerformanceCtes"/>
+        SELECT COUNT(*) AS due_task_count,
+               COALESCE(SUM(completed_task), 0) AS completed_task_count,
+               COALESCE(SUM(on_time_task), 0) AS on_time_task_count,
+               COALESCE(SUM(late_task), 0) AS late_task_count,
+               COALESCE(SUM(pending_task), 0) AS pending_task_count,
+               COALESCE(SUM(overdue_task), 0) AS overdue_task_count,
+               COALESCE(SUM(abnormal_task), 0) AS abnormal_task_count
+        FROM assessment_tasks
+    </select>
+
+    <select id="inspectionEmployeePerformance"
+            resultType="com.leantpm.mobile.MobileDtos$InspectionEmployeePerformance">
+        <include refid="inspectionPerformanceCtes"/>
+        SELECT attributed_user_id AS user_id,
+               COALESCE(MAX(attributed_user_name), '未分配') AS user_name,
+               MAX(user_organization_id) AS organization_id,
+               COALESCE(MAX(user_organization_name), '未分配') AS organization_name,
+               COUNT(*) AS due_task_count,
+               COALESCE(SUM(completed_task), 0) AS completed_task_count,
+               COALESCE(SUM(on_time_task), 0) AS on_time_task_count,
+               COALESCE(SUM(late_task), 0) AS late_task_count,
+               COALESCE(SUM(pending_task), 0) AS pending_task_count,
+               COALESCE(SUM(overdue_task), 0) AS overdue_task_count,
+               COALESCE(SUM(abnormal_task), 0) AS abnormal_task_count
+        FROM assessment_tasks
+        GROUP BY attributed_user_id
+        ORDER BY completed_task_count DESC, on_time_task_count DESC,
+                 attributed_user_id IS NULL, attributed_user_id
+        LIMIT 500
+    </select>
+
+    <select id="inspectionOrganizationPerformance"
+            resultType="com.leantpm.mobile.MobileDtos$InspectionOrganizationPerformance">
+        <include refid="inspectionPerformanceCtes"/>
+        SELECT organization_id,
+               MAX(organization_name) AS organization_name,
+               COUNT(*) AS due_task_count,
+               COALESCE(SUM(completed_task), 0) AS completed_task_count,
+               COALESCE(SUM(on_time_task), 0) AS on_time_task_count,
+               COALESCE(SUM(late_task), 0) AS late_task_count,
+               COALESCE(SUM(pending_task), 0) AS pending_task_count,
+               COALESCE(SUM(overdue_task), 0) AS overdue_task_count,
+               COALESCE(SUM(abnormal_task), 0) AS abnormal_task_count
+        FROM assessment_tasks
+        GROUP BY organization_id
+        ORDER BY organization_name, organization_id
+        LIMIT 500
+    </select>
+
+    <sql id="inspectionPerformanceDetailCtes">
+        WITH RECURSIVE selected_organization_tree AS (
+            SELECT id
+            FROM organization
+            WHERE tenant_id = #{tenantId}
+              AND id = #{query.organizationId}
+              AND deleted = 0
+            UNION ALL
+            SELECT child.id
+            FROM organization child
+            JOIN selected_organization_tree parent ON child.parent_id = parent.id
+            WHERE child.tenant_id = #{tenantId}
+              AND child.deleted = 0
+        ),
+        performance_detail_items AS (
+            SELECT task.id AS task_id,
+                   task.task_code,
+                   task.source_type,
+                   task.task_status,
+                   task.planned_date,
+                   task.due_time,
+                   task.submitted_time,
+                   task.organization_id,
+                   organization.organization_name,
+                   task.equipment_id,
+                   equipment.equipment_code,
+                   equipment.equipment_name,
+                   task.scheme_name_snapshot AS scheme_name,
+                   item.id AS task_item_id,
+                   item.item_code,
+                   item.item_name,
+                   result.result_status,
+                   result.result_code,
+                   COALESCE(
+                       result.text_value,
+                       result.selected_value,
+                       CAST(result.numeric_value AS CHAR),
+                       result.result_code
+                   ) AS result_value,
+                   COALESCE(task.submitted_by, task.assignee_user_id) AS attributed_user_id,
+                   attributed_user.real_name AS attributed_user_name,
+                   CASE
+                       WHEN task.source_type = 'QUICK_ENTRY' THEN 'QUICK'
+                       WHEN task.submitted_time IS NOT NULL
+                            AND task.submitted_time &lt;= task.due_time THEN 'ON_TIME'
+                       WHEN task.submitted_time IS NOT NULL
+                            AND task.submitted_time &gt; task.due_time THEN 'LATE'
+                       WHEN task.submitted_time IS NULL
+                            AND task.due_time &lt; CURRENT_TIMESTAMP(3) THEN 'OVERDUE'
+                       ELSE 'PENDING'
+                   END AS timeliness,
+                   CASE WHEN abnormal.id IS NULL THEN FALSE ELSE TRUE END AS abnormal,
+                   abnormal.id AS abnormal_id,
+                   abnormal.abnormal_code,
+                   abnormal.abnormal_title,
+                   abnormal.abnormal_description,
+                   abnormal.abnormal_status
+            FROM inspection_task task
+            JOIN organization organization
+              ON organization.tenant_id = task.tenant_id
+             AND organization.id = task.organization_id
+             AND organization.deleted = 0
+            JOIN equipment equipment
+              ON equipment.tenant_id = task.tenant_id
+             AND equipment.id = task.equipment_id
+             AND equipment.deleted = 0
+            JOIN inspection_task_item item
+              ON item.tenant_id = task.tenant_id
+             AND item.task_id = task.id
+             AND item.deleted = 0
+            LEFT JOIN inspection_task_result result
+              ON result.tenant_id = item.tenant_id
+             AND result.task_item_id = item.id
+             AND result.deleted = 0
+            LEFT JOIN system_user attributed_user
+              ON attributed_user.tenant_id = task.tenant_id
+             AND attributed_user.id = COALESCE(task.submitted_by, task.assignee_user_id)
+             AND attributed_user.deleted = 0
+            LEFT JOIN inspection_abnormal abnormal
+              ON abnormal.tenant_id = item.tenant_id
+             AND abnormal.task_item_id = item.id
+             AND abnormal.deleted = 0
+             AND abnormal.id = (
+                 SELECT MAX(latest_abnormal.id)
+                 FROM inspection_abnormal latest_abnormal
+                 WHERE latest_abnormal.tenant_id = item.tenant_id
+                   AND latest_abnormal.task_item_id = item.id
+                   AND latest_abnormal.deleted = 0
+             )
+            WHERE task.tenant_id = #{tenantId}
+              AND task.deleted = 0
+              AND task.source_type IN ('PLAN', 'QUICK_ENTRY')
+              AND task.task_status NOT IN ('CANCELLED', 'VOIDED')
+              AND (
+                  (task.source_type = 'PLAN'
+                   AND task.planned_date BETWEEN #{query.startDate} AND #{query.endDate})
+                  OR
+                  (task.source_type = 'QUICK_ENTRY'
+                   AND task.submitted_time &gt;= #{query.startDate}
+                   AND task.submitted_time &lt; DATE_ADD(#{query.endDate}, INTERVAL 1 DAY))
+              )
+              AND (<include refid="inspectionPerformanceVisibility"/>)
+              <if test="query.organizationId != null">
+                  AND task.organization_id IN (SELECT id FROM selected_organization_tree)
+              </if>
+              <if test="query.userId != null">
+                  AND COALESCE(task.submitted_by, task.assignee_user_id) = #{query.userId}
+              </if>
+        ),
+        performance_detail_tasks AS (
+            SELECT task_id,
+                   MAX(task_code) AS task_code,
+                   MAX(source_type) AS source_type,
+                   MAX(task_status) AS task_status,
+                   MAX(planned_date) AS planned_date,
+                   MAX(due_time) AS due_time,
+                   MAX(submitted_time) AS submitted_time,
+                   MAX(organization_id) AS organization_id,
+                   MAX(organization_name) AS organization_name,
+                   MAX(equipment_id) AS equipment_id,
+                   MAX(equipment_code) AS equipment_code,
+                   MAX(equipment_name) AS equipment_name,
+                   MAX(scheme_name) AS scheme_name,
+                   MAX(attributed_user_id) AS attributed_user_id,
+                   MAX(attributed_user_name) AS attributed_user_name,
+                   MAX(timeliness) AS timeliness,
+                   COUNT(*) AS item_count,
+                   COALESCE(SUM(CASE WHEN result_status = 'SUBMITTED'
+                                     THEN 1 ELSE 0 END), 0) AS completed_item_count,
+                   COALESCE(SUM(CASE WHEN abnormal = TRUE
+                                     THEN 1 ELSE 0 END), 0) AS abnormal_item_count,
+                   MAX(abnormal) AS abnormal
+            FROM performance_detail_items
+            GROUP BY task_id
+        )
+    </sql>
+
+    <sql id="inspectionPerformanceDetailMetricFilter">
+        <choose>
+            <when test="metric == 'COMPLETED'">
+                source_type = 'PLAN' AND timeliness IN ('ON_TIME', 'LATE')
+            </when>
+            <when test="metric == 'PENDING'">
+                source_type = 'PLAN' AND timeliness = 'PENDING'
+            </when>
+            <when test="metric == 'OVERDUE'">
+                source_type = 'PLAN' AND timeliness = 'OVERDUE'
+            </when>
+            <when test="metric == 'ON_TIME'">
+                source_type = 'PLAN' AND timeliness = 'ON_TIME'
+            </when>
+            <when test="metric == 'LATE'">
+                source_type = 'PLAN' AND timeliness = 'LATE'
+            </when>
+            <when test="metric == 'ABNORMAL'">
+                source_type = 'PLAN' AND abnormal = TRUE
+            </when>
+            <when test="metric == 'QUICK'">
+                source_type = 'QUICK_ENTRY'
+            </when>
+            <when test="metric == 'QUICK_ABNORMAL'">
+                source_type = 'QUICK_ENTRY' AND abnormal = TRUE
+            </when>
+            <otherwise>
+                source_type = 'PLAN'
+            </otherwise>
+        </choose>
+    </sql>
+
+    <select id="inspectionPerformanceTasks"
+            resultType="com.leantpm.mobile.MobileDtos$InspectionPerformanceTask">
+        <include refid="inspectionPerformanceDetailCtes"/>
+        SELECT task_id, task_code, source_type, task_status,
+               planned_date, due_time, submitted_time,
+               organization_id, organization_name,
+               equipment_id, equipment_code, equipment_name, scheme_name,
+               attributed_user_id, attributed_user_name, timeliness,
+               item_count, completed_item_count, abnormal_item_count
+        FROM performance_detail_tasks
+        WHERE <include refid="inspectionPerformanceDetailMetricFilter"/>
+        ORDER BY COALESCE(submitted_time, due_time) DESC, task_id DESC
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
+    <select id="inspectionPerformanceTaskTotal" resultType="long">
+        <include refid="inspectionPerformanceDetailCtes"/>
+        SELECT COUNT(*)
+        FROM performance_detail_tasks
+        WHERE <include refid="inspectionPerformanceDetailMetricFilter"/>
+    </select>
+
+    <select id="inspectionPerformanceTaskItems"
+            resultType="com.leantpm.mobile.MobileDtos$InspectionPerformanceDetail">
+        <include refid="inspectionPerformanceDetailCtes"/>
+        SELECT task_id, task_code, source_type, task_status,
+               planned_date, due_time, submitted_time,
+               organization_id, organization_name,
+               equipment_id, equipment_code, equipment_name, scheme_name,
+               task_item_id, item_code, item_name, result_code, result_value,
+               attributed_user_id, attributed_user_name, timeliness,
+               abnormal, abnormal_id, abnormal_code, abnormal_title,
+               abnormal_description, abnormal_status
+        FROM performance_detail_items
+        WHERE task_id = #{taskId}
+        ORDER BY task_item_id
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
+    <select id="inspectionPerformanceTaskItemTotal" resultType="long">
+        <include refid="inspectionPerformanceDetailCtes"/>
+        SELECT COUNT(*)
+        FROM performance_detail_items
+        WHERE task_id = #{taskId}
+    </select>
+
+    <select id="quickInspectionSummary"
+            resultType="com.leantpm.mobile.MobileDtos$QuickInspectionSummary">
+        WITH RECURSIVE selected_organization_tree AS (
+            SELECT id
+            FROM organization
+            WHERE tenant_id = #{tenantId}
+              AND id = #{query.organizationId}
+              AND deleted = 0
+            UNION ALL
+            SELECT child.id
+            FROM organization child
+            JOIN selected_organization_tree parent ON child.parent_id = parent.id
+            WHERE child.tenant_id = #{tenantId}
+              AND child.deleted = 0
+        )
+        SELECT COUNT(DISTINCT task.id) AS completed_task_count,
+               COUNT(DISTINCT CASE WHEN result.result_status = 'SUBMITTED'
+                                   THEN item.id END) AS completed_item_count,
+               COUNT(DISTINCT task.equipment_id) AS equipment_covered,
+               COUNT(DISTINCT CASE WHEN abnormal.id IS NOT NULL
+                                   THEN task.id END) AS abnormal_task_count
+        FROM inspection_task task
+        LEFT JOIN inspection_task_item item
+          ON item.tenant_id = task.tenant_id
+         AND item.task_id = task.id
+         AND item.deleted = 0
+        LEFT JOIN inspection_task_result result
+          ON result.tenant_id = item.tenant_id
+         AND result.task_item_id = item.id
+         AND result.deleted = 0
+        LEFT JOIN inspection_abnormal abnormal
+          ON abnormal.tenant_id = item.tenant_id
+         AND abnormal.task_item_id = item.id
+         AND abnormal.deleted = 0
+        WHERE task.tenant_id = #{tenantId}
+          AND task.deleted = 0
+          AND task.source_type = 'QUICK_ENTRY'
+          AND task.task_status NOT IN ('CANCELLED', 'VOIDED')
+          AND task.submitted_time &gt;= #{query.startDate}
+          AND task.submitted_time &lt; DATE_ADD(#{query.endDate}, INTERVAL 1 DAY)
+          AND (<include refid="inspectionPerformanceVisibility"/>)
+          <if test="query.organizationId != null">
+              AND task.organization_id IN (SELECT id FROM selected_organization_tree)
+          </if>
+          <if test="query.userId != null">
+              AND task.submitted_by = #{query.userId}
+          </if>
+    </select>
+
     <select id="todayInspections"
             resultType="com.leantpm.mobile.MobileDtos$TodayInspectionRecord">
         SELECT task.id AS task_id,

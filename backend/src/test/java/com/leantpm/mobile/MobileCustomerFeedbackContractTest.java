@@ -52,6 +52,41 @@ class MobileCustomerFeedbackContractTest {
         assertThat(releaseService).contains("mobile.android-force-upgrade");
     }
 
+    @Test
+    void managementInspectionReportUsesAuthorizedOrganizationsAndActualPerformanceOwners()
+            throws IOException {
+        String controller = source("src/main/java/com/leantpm/mobile/MobileController.java");
+        String service = source("src/main/java/com/leantpm/mobile/MobileService.java");
+        String dtos = source("src/main/java/com/leantpm/mobile/MobileDtos.java");
+        String mapper = source("src/main/resources/mapper/mobile/MobileMapper.xml");
+
+        assertThat(controller).contains(
+                "@GetMapping(\"/inspection-performance-report\")",
+                "service.inspectionPerformanceReport("
+        );
+        assertThat(service).contains(
+                "dataPermissionService.current()",
+                "MOBILE_REPORT_ORGANIZATION_FORBIDDEN",
+                "MOBILE_REPORT_USER_FORBIDDEN"
+        );
+        assertThat(dtos).contains(
+                "record ManagementInspectionReport(",
+                "record InspectionEmployeePerformance(",
+                "long completedTaskCount",
+                "record InspectionPerformanceTask("
+        );
+        assertThat(mapper).contains(
+                "id=\"inspectionEmployeePerformance\"",
+                "task.source_type = 'PLAN'",
+                "task.submitted_by",
+                "task.assignee_user_id",
+                "task.submitted_time IS NOT NULL",
+                "ORDER BY completed_task_count DESC",
+                "id=\"inspectionPerformanceTasks\"",
+                "id=\"inspectionPerformanceTaskItems\""
+        );
+    }
+
     private String source(String path) throws IOException {
         return Files.readString(Path.of(path), StandardCharsets.UTF_8);
     }

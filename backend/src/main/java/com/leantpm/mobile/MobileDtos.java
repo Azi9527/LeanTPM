@@ -60,6 +60,147 @@ public final class MobileDtos {
     ) {
     }
 
+    public record InspectionPerformanceQuery(
+            LocalDate startDate,
+            LocalDate endDate,
+            Long organizationId,
+            Long userId
+    ) {
+    }
+
+    public record InspectionReportOrganization(
+            long organizationId,
+            Long parentId,
+            String organizationCode,
+            String organizationName
+    ) {
+    }
+
+    public record InspectionReportEmployee(
+            long userId,
+            long organizationId,
+            String username,
+            String realName
+    ) {
+    }
+
+    public record InspectionPerformanceSummary(
+            long dueTaskCount,
+            long completedTaskCount,
+            long onTimeTaskCount,
+            long lateTaskCount,
+            long pendingTaskCount,
+            long overdueTaskCount,
+            long abnormalTaskCount
+    ) {
+    }
+
+    public record QuickInspectionSummary(
+            long completedTaskCount,
+            long completedItemCount,
+            long equipmentCovered,
+            long abnormalTaskCount
+    ) {
+    }
+
+    public record InspectionEmployeePerformance(
+            Long userId,
+            String userName,
+            Long organizationId,
+            String organizationName,
+            long dueTaskCount,
+            long completedTaskCount,
+            long onTimeTaskCount,
+            long lateTaskCount,
+            long pendingTaskCount,
+            long overdueTaskCount,
+            long abnormalTaskCount
+    ) {
+    }
+
+    public record InspectionOrganizationPerformance(
+            long organizationId,
+            String organizationName,
+            long dueTaskCount,
+            long completedTaskCount,
+            long onTimeTaskCount,
+            long lateTaskCount,
+            long pendingTaskCount,
+            long overdueTaskCount,
+            long abnormalTaskCount
+    ) {
+    }
+
+    public record ManagementInspectionReport(
+            LocalDate startDate,
+            LocalDate endDate,
+            boolean canManage,
+            Long selectedOrganizationId,
+            Long selectedUserId,
+            List<InspectionReportOrganization> organizations,
+            List<InspectionReportEmployee> employees,
+            InspectionPerformanceSummary summary,
+            QuickInspectionSummary quickInspection,
+            List<InspectionEmployeePerformance> topEmployees,
+            List<InspectionOrganizationPerformance> organizationPerformance,
+            List<InspectionEmployeePerformance> employeePerformance
+    ) {
+    }
+
+    public record InspectionPerformanceTask(
+            long taskId,
+            String taskCode,
+            String sourceType,
+            String taskStatus,
+            LocalDate plannedDate,
+            LocalDateTime dueTime,
+            LocalDateTime submittedTime,
+            long organizationId,
+            String organizationName,
+            long equipmentId,
+            String equipmentCode,
+            String equipmentName,
+            String schemeName,
+            Long attributedUserId,
+            String attributedUserName,
+            String timeliness,
+            long itemCount,
+            long completedItemCount,
+            long abnormalItemCount
+    ) {
+    }
+
+    public record InspectionPerformanceDetail(
+            long taskId,
+            String taskCode,
+            String sourceType,
+            String taskStatus,
+            LocalDate plannedDate,
+            LocalDateTime dueTime,
+            LocalDateTime submittedTime,
+            long organizationId,
+            String organizationName,
+            long equipmentId,
+            String equipmentCode,
+            String equipmentName,
+            String schemeName,
+            long taskItemId,
+            String itemCode,
+            String itemName,
+            String resultCode,
+            String resultValue,
+            Long attributedUserId,
+            String attributedUserName,
+            String timeliness,
+            boolean abnormal,
+            Long abnormalId,
+            String abnormalCode,
+            String abnormalTitle,
+            String abnormalDescription,
+            String abnormalStatus
+    ) {
+    }
+
     public record MessageItem(
             long id,
             String messageType,

@@ -53,6 +53,65 @@ public class MobileController {
         return ApiResponse.success(service.personalInspectionReport(startDate, endDate));
     }
 
+    @GetMapping("/inspection-performance-report")
+    @PreAuthorize(
+            "hasAuthority('mobile:access') and hasAuthority('mobile:workbench:view')"
+    )
+    public ApiResponse<MobileDtos.ManagementInspectionReport> inspectionPerformanceReport(
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+            @RequestParam(required = false) Long organizationId,
+            @RequestParam(required = false) Long userId
+    ) {
+        return ApiResponse.success(service.inspectionPerformanceReport(
+                startDate, endDate, organizationId, userId
+        ));
+    }
+
+    @GetMapping("/inspection-performance-tasks")
+    @PreAuthorize(
+            "hasAuthority('mobile:access') and hasAuthority('mobile:workbench:view')"
+    )
+    public ApiResponse<PageResult<MobileDtos.InspectionPerformanceTask>> inspectionPerformanceTasks(
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+            @RequestParam(required = false) Long organizationId,
+            @RequestParam(required = false) Long userId,
+            @RequestParam(defaultValue = "DUE")
+            @Pattern(
+                    regexp = "^(DUE|COMPLETED|PENDING|OVERDUE|ON_TIME|LATE|ABNORMAL|QUICK|QUICK_ABNORMAL)$",
+                    message = "点检报表明细类型不正确"
+            ) String metric,
+            @RequestParam(defaultValue = "1") @Min(1) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int pageSize
+    ) {
+        return ApiResponse.success(service.inspectionPerformanceTasks(
+                startDate, endDate, organizationId, userId, metric, page, pageSize
+        ));
+    }
+
+    @GetMapping("/inspection-performance-tasks/{taskId}/items")
+    @PreAuthorize(
+            "hasAuthority('mobile:access') and hasAuthority('mobile:workbench:view')"
+    )
+    public ApiResponse<PageResult<MobileDtos.InspectionPerformanceDetail>> inspectionPerformanceTaskItems(
+            @PathVariable @Min(1) long taskId,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+            @RequestParam(defaultValue = "1") @Min(1) int page,
+            @RequestParam(defaultValue = "50") @Min(1) @Max(100) int pageSize
+    ) {
+        return ApiResponse.success(service.inspectionPerformanceTaskItems(
+                taskId, startDate, endDate, page, pageSize
+        ));
+    }
+
     @GetMapping("/equipment-status")
     @PreAuthorize("hasAuthority('mobile:access') and hasAuthority('mobile:scan')")
     public ApiResponse<PageResult<MobileDtos.EquipmentStatusRow>> equipmentStatus(

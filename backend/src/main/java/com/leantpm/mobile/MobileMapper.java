@@ -64,6 +64,81 @@ public interface MobileMapper {
             @Param("endExclusive") java.time.LocalDateTime endExclusive
     );
 
+    List<MobileDtos.InspectionReportOrganization> inspectionReportOrganizations(
+            @Param("tenantId") long tenantId,
+            @Param("scope") DataPermission scope
+    );
+
+    List<MobileDtos.InspectionReportEmployee> inspectionReportEmployees(
+            @Param("tenantId") long tenantId,
+            @Param("scope") DataPermission scope,
+            @Param("currentUserId") long currentUserId
+    );
+
+    MobileDtos.InspectionPerformanceSummary inspectionPerformanceSummary(
+            @Param("tenantId") long tenantId,
+            @Param("scope") DataPermission scope,
+            @Param("currentUserId") long currentUserId,
+            @Param("query") MobileDtos.InspectionPerformanceQuery query
+    );
+
+    MobileDtos.QuickInspectionSummary quickInspectionSummary(
+            @Param("tenantId") long tenantId,
+            @Param("scope") DataPermission scope,
+            @Param("currentUserId") long currentUserId,
+            @Param("query") MobileDtos.InspectionPerformanceQuery query
+    );
+
+    List<MobileDtos.InspectionEmployeePerformance> inspectionEmployeePerformance(
+            @Param("tenantId") long tenantId,
+            @Param("scope") DataPermission scope,
+            @Param("currentUserId") long currentUserId,
+            @Param("query") MobileDtos.InspectionPerformanceQuery query
+    );
+
+    List<MobileDtos.InspectionOrganizationPerformance> inspectionOrganizationPerformance(
+            @Param("tenantId") long tenantId,
+            @Param("scope") DataPermission scope,
+            @Param("currentUserId") long currentUserId,
+            @Param("query") MobileDtos.InspectionPerformanceQuery query
+    );
+
+    List<MobileDtos.InspectionPerformanceTask> inspectionPerformanceTasks(
+            @Param("tenantId") long tenantId,
+            @Param("scope") DataPermission scope,
+            @Param("currentUserId") long currentUserId,
+            @Param("query") MobileDtos.InspectionPerformanceQuery query,
+            @Param("metric") String metric,
+            @Param("offset") int offset,
+            @Param("pageSize") int pageSize
+    );
+
+    long inspectionPerformanceTaskTotal(
+            @Param("tenantId") long tenantId,
+            @Param("scope") DataPermission scope,
+            @Param("currentUserId") long currentUserId,
+            @Param("query") MobileDtos.InspectionPerformanceQuery query,
+            @Param("metric") String metric
+    );
+
+    List<MobileDtos.InspectionPerformanceDetail> inspectionPerformanceTaskItems(
+            @Param("tenantId") long tenantId,
+            @Param("scope") DataPermission scope,
+            @Param("currentUserId") long currentUserId,
+            @Param("query") MobileDtos.InspectionPerformanceQuery query,
+            @Param("taskId") long taskId,
+            @Param("offset") int offset,
+            @Param("pageSize") int pageSize
+    );
+
+    long inspectionPerformanceTaskItemTotal(
+            @Param("tenantId") long tenantId,
+            @Param("scope") DataPermission scope,
+            @Param("currentUserId") long currentUserId,
+            @Param("query") MobileDtos.InspectionPerformanceQuery query,
+            @Param("taskId") long taskId
+    );
+
     MobileDtos.WorkCount maintenanceCount(
             @Param("tenantId") long tenantId,
             @Param("userId") long userId

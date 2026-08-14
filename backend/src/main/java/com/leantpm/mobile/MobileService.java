@@ -25,6 +25,10 @@ import static com.leantpm.foundation.service.PhotoWatermarkSettingsService.DEFAU
 
 @Service
 public class MobileService {
+    private static final Set<String> INSPECTION_PERFORMANCE_DETAIL_METRICS = Set.of(
+            "DUE", "COMPLETED", "PENDING", "OVERDUE", "ON_TIME", "LATE",
+            "ABNORMAL", "QUICK", "QUICK_ABNORMAL"
+    );
     private final MobileMapper mapper;
     private final DataPermissionService dataPermissionService;
     private final NotificationService notificationService;
@@ -158,6 +162,290 @@ public class MobileService {
                 startDate, endDate,
                 startDate.atStartOfDay(), endDate.plusDays(1).atStartOfDay()
         );
+    }
+
+    @Transactional(readOnly = true)
+    public MobileDtos.ManagementInspectionReport inspectionPerformanceReport(
+            LocalDate requestedStartDate,
+            LocalDate requestedEndDate,
+            Long requestedOrganizationId,
+            Long requestedUserId
+    ) {
+        var current = SecurityUtils.currentUser();
+        assertMobileEnabled(current.tenantId(), current.userId());
+        LocalDate today = LocalDate.now();
+        LocalDate startDate = requestedStartDate == null
+                ? today.withDayOfMonth(1) : requestedStartDate;
+        LocalDate endDate = requestedEndDate == null ? today : requestedEndDate;
+        if (endDate.isBefore(startDate)) {
+            throw new BusinessException(
+                    "MOBILE_REPORT_DATE_RANGE_INVALID", "报表结束日期不能早于开始日期"
+            );
+        }
+        if (ChronoUnit.DAYS.between(startDate, endDate) > 366) {
+            throw new BusinessException(
+                    "MOBILE_REPORT_DATE_RANGE_TOO_LARGE", "报表单次查询范围不能超过 366 天"
+            );
+        }
+
+        DataPermission resolvedScope = dataPermissionService.current();
+        boolean canManage = current.permissions().contains("inspection:task:view")
+                && (resolvedScope.allData() || !resolvedScope.organizationIds().isEmpty());
+        DataPermission reportScope = canManage
+                ? resolvedScope
+                : DataPermission.restricted(current.userId(), true, Set.of());
+        List<MobileDtos.InspectionReportOrganization> organizations = canManage
+                ? mapper.inspectionReportOrganizations(current.tenantId(), reportScope)
+                : List.of();
+        List<MobileDtos.InspectionReportEmployee> employees = canManage
+                ? mapper.inspectionReportEmployees(
+                        current.tenantId(), reportScope, current.userId()
+                )
+                : List.of();
+
+        Long organizationId = requestedOrganizationId;
+        Long userId = requestedUserId;
+        if (!canManage) {
+            if (organizationId != null) {
+                throw new BusinessException(
+                        "MOBILE_REPORT_ORGANIZATION_FORBIDDEN",
+                        "无权查看该部门的点检绩效",
+                        HttpStatus.FORBIDDEN
+                );
+            }
+            if (userId != null && userId != current.userId()) {
+                throw new BusinessException(
+                        "MOBILE_REPORT_USER_FORBIDDEN",
+                        "无权查看该员工的点检绩效",
+                        HttpStatus.FORBIDDEN
+                );
+            }
+            userId = current.userId();
+        } else {
+            if (organizationId != null && organizations.stream().noneMatch(
+                    item -> java.util.Objects.equals(item.organizationId(), organizationId)
+            )) {
+                throw new BusinessException(
+                        "MOBILE_REPORT_ORGANIZATION_FORBIDDEN",
+                        "无权查看该部门的点检绩效",
+                        HttpStatus.FORBIDDEN
+                );
+            }
+            Long selectedUserId = userId;
+            if (selectedUserId != null && employees.stream().noneMatch(
+                    item -> java.util.Objects.equals(item.userId(), selectedUserId)
+            )) {
+                throw new BusinessException(
+                        "MOBILE_REPORT_USER_FORBIDDEN",
+                        "无权查看该员工的点检绩效",
+                        HttpStatus.FORBIDDEN
+                );
+            }
+        }
+
+        MobileDtos.InspectionPerformanceQuery query =
+                new MobileDtos.InspectionPerformanceQuery(
+                        startDate, endDate, organizationId, userId
+                );
+        List<MobileDtos.InspectionEmployeePerformance> employeePerformance =
+                mapper.inspectionEmployeePerformance(
+                        current.tenantId(), reportScope, current.userId(), query
+                );
+        List<MobileDtos.InspectionEmployeePerformance> topEmployees = employeePerformance.stream()
+                .filter(item -> item.userId() != null)
+                .limit(10)
+                .toList();
+        return new MobileDtos.ManagementInspectionReport(
+                startDate,
+                endDate,
+                canManage,
+                organizationId,
+                userId,
+                organizations,
+                employees,
+                mapper.inspectionPerformanceSummary(
+                        current.tenantId(), reportScope, current.userId(), query
+                ),
+                mapper.quickInspectionSummary(
+                        current.tenantId(), reportScope, current.userId(), query
+                ),
+                topEmployees,
+                mapper.inspectionOrganizationPerformance(
+                        current.tenantId(), reportScope, current.userId(), query
+                ),
+                employeePerformance
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public PageResult<MobileDtos.InspectionPerformanceTask> inspectionPerformanceTasks(
+            LocalDate requestedStartDate,
+            LocalDate requestedEndDate,
+            Long requestedOrganizationId,
+            Long requestedUserId,
+            String requestedMetric,
+            int page,
+            int pageSize
+    ) {
+        var current = SecurityUtils.currentUser();
+        assertMobileEnabled(current.tenantId(), current.userId());
+        LocalDate today = LocalDate.now();
+        LocalDate startDate = requestedStartDate == null
+                ? today.withDayOfMonth(1) : requestedStartDate;
+        LocalDate endDate = requestedEndDate == null ? today : requestedEndDate;
+        if (endDate.isBefore(startDate)) {
+            throw new BusinessException(
+                    "MOBILE_REPORT_DATE_RANGE_INVALID", "报表结束日期不能早于开始日期"
+            );
+        }
+        if (ChronoUnit.DAYS.between(startDate, endDate) > 366) {
+            throw new BusinessException(
+                    "MOBILE_REPORT_DATE_RANGE_TOO_LARGE", "报表单次查询范围不能超过 366 天"
+            );
+        }
+        String metric = requestedMetric == null
+                ? "DUE" : requestedMetric.trim().toUpperCase(Locale.ROOT);
+        if (!INSPECTION_PERFORMANCE_DETAIL_METRICS.contains(metric)) {
+            throw new BusinessException(
+                    "MOBILE_REPORT_DETAIL_METRIC_INVALID", "点检报表明细类型不正确"
+            );
+        }
+        if (page < 1 || pageSize < 1 || pageSize > 100) {
+            throw new BusinessException(
+                    "MOBILE_REPORT_DETAIL_PAGE_INVALID", "点检报表明细分页参数不正确"
+            );
+        }
+
+        DataPermission resolvedScope = dataPermissionService.current();
+        boolean canManage = current.permissions().contains("inspection:task:view")
+                && (resolvedScope.allData() || !resolvedScope.organizationIds().isEmpty());
+        DataPermission reportScope = canManage
+                ? resolvedScope
+                : DataPermission.restricted(current.userId(), true, Set.of());
+        List<MobileDtos.InspectionReportOrganization> organizations = canManage
+                ? mapper.inspectionReportOrganizations(current.tenantId(), reportScope)
+                : List.of();
+        List<MobileDtos.InspectionReportEmployee> employees = canManage
+                ? mapper.inspectionReportEmployees(
+                        current.tenantId(), reportScope, current.userId()
+                )
+                : List.of();
+
+        Long organizationId = requestedOrganizationId;
+        Long userId = requestedUserId;
+        if (!canManage) {
+            if (organizationId != null) {
+                throw new BusinessException(
+                        "MOBILE_REPORT_ORGANIZATION_FORBIDDEN",
+                        "无权查看该部门的点检绩效",
+                        HttpStatus.FORBIDDEN
+                );
+            }
+            if (userId != null && userId != current.userId()) {
+                throw new BusinessException(
+                        "MOBILE_REPORT_USER_FORBIDDEN",
+                        "无权查看该员工的点检绩效",
+                        HttpStatus.FORBIDDEN
+                );
+            }
+            userId = current.userId();
+        } else {
+            Long selectedOrganizationId = organizationId;
+            if (selectedOrganizationId != null && organizations.stream().noneMatch(
+                    item -> java.util.Objects.equals(
+                            item.organizationId(), selectedOrganizationId
+                    )
+            )) {
+                throw new BusinessException(
+                        "MOBILE_REPORT_ORGANIZATION_FORBIDDEN",
+                        "无权查看该部门的点检绩效",
+                        HttpStatus.FORBIDDEN
+                );
+            }
+            Long selectedUserId = userId;
+            if (selectedUserId != null && employees.stream().noneMatch(
+                    item -> java.util.Objects.equals(item.userId(), selectedUserId)
+            )) {
+                throw new BusinessException(
+                        "MOBILE_REPORT_USER_FORBIDDEN",
+                        "无权查看该员工的点检绩效",
+                        HttpStatus.FORBIDDEN
+                );
+            }
+        }
+
+        MobileDtos.InspectionPerformanceQuery query =
+                new MobileDtos.InspectionPerformanceQuery(
+                        startDate, endDate, organizationId, userId
+                );
+        int offset = (page - 1) * pageSize;
+        List<MobileDtos.InspectionPerformanceTask> records =
+                mapper.inspectionPerformanceTasks(
+                        current.tenantId(), reportScope, current.userId(), query,
+                        metric, offset, pageSize
+                );
+        long total = mapper.inspectionPerformanceTaskTotal(
+                current.tenantId(), reportScope, current.userId(), query, metric
+        );
+        return PageResult.of(records, total, page, pageSize);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResult<MobileDtos.InspectionPerformanceDetail> inspectionPerformanceTaskItems(
+            long taskId,
+            LocalDate requestedStartDate,
+            LocalDate requestedEndDate,
+            int page,
+            int pageSize
+    ) {
+        var current = SecurityUtils.currentUser();
+        assertMobileEnabled(current.tenantId(), current.userId());
+        LocalDate today = LocalDate.now();
+        LocalDate startDate = requestedStartDate == null
+                ? today.withDayOfMonth(1) : requestedStartDate;
+        LocalDate endDate = requestedEndDate == null ? today : requestedEndDate;
+        if (taskId <= 0) {
+            throw new BusinessException(
+                    "MOBILE_REPORT_TASK_INVALID", "点检报表任务标识不正确"
+            );
+        }
+        if (endDate.isBefore(startDate)) {
+            throw new BusinessException(
+                    "MOBILE_REPORT_DATE_RANGE_INVALID", "报表结束日期不能早于开始日期"
+            );
+        }
+        if (ChronoUnit.DAYS.between(startDate, endDate) > 366) {
+            throw new BusinessException(
+                    "MOBILE_REPORT_DATE_RANGE_TOO_LARGE", "报表单次查询范围不能超过 366 天"
+            );
+        }
+        if (page < 1 || pageSize < 1 || pageSize > 100) {
+            throw new BusinessException(
+                    "MOBILE_REPORT_DETAIL_PAGE_INVALID", "点检报表明细分页参数不正确"
+            );
+        }
+
+        DataPermission resolvedScope = dataPermissionService.current();
+        boolean canManage = current.permissions().contains("inspection:task:view")
+                && (resolvedScope.allData() || !resolvedScope.organizationIds().isEmpty());
+        DataPermission reportScope = canManage
+                ? resolvedScope
+                : DataPermission.restricted(current.userId(), true, Set.of());
+        Long userId = canManage ? null : current.userId();
+        MobileDtos.InspectionPerformanceQuery query =
+                new MobileDtos.InspectionPerformanceQuery(
+                        startDate, endDate, null, userId
+                );
+        int offset = (page - 1) * pageSize;
+        List<MobileDtos.InspectionPerformanceDetail> records =
+                mapper.inspectionPerformanceTaskItems(
+                        current.tenantId(), reportScope, current.userId(), query,
+                        taskId, offset, pageSize
+                );
+        long total = mapper.inspectionPerformanceTaskItemTotal(
+                current.tenantId(), reportScope, current.userId(), query, taskId
+        );
+        return PageResult.of(records, total, page, pageSize);
     }
 
     @Transactional

@@ -394,6 +394,191 @@ class MobileMySqlIntegrationTest {
     }
 
     @Test
+    void managementReportAttributesCompletedItemsToSubmitterAndExcludesQuickEntryFromRanking() {
+        long assigneeId = 9751L;
+        long submitterId = 9752L;
+        Long organizationId = jdbc.queryForObject(
+                "SELECT organization_id FROM equipment WHERE tenant_id = 1 AND id = 1", Long.class
+        );
+        Long locationId = jdbc.queryForObject(
+                "SELECT location_id FROM equipment WHERE tenant_id = 1 AND id = 1", Long.class
+        );
+        insertReportUser(assigneeId, "绩效责任人", organizationId);
+        insertReportUser(submitterId, "实际提交人", organizationId);
+        insertPerformanceTask(
+                9761L, "MOBILE-PERFORMANCE-DONE", "PLAN", "COMPLETED",
+                organizationId, locationId, assigneeId, submitterId,
+                LocalDateTime.now().plusHours(1), LocalDateTime.now()
+        );
+        insertPerformanceItem(9771L, 9761L, "PERFORMANCE-DONE-1", submitterId, true);
+        insertPerformanceItem(9772L, 9761L, "PERFORMANCE-DONE-2", submitterId, true);
+        jdbc.update("""
+                INSERT INTO inspection_abnormal
+                    (id, tenant_id, abnormal_code, task_id, equipment_id, task_item_id,
+                     abnormal_title, abnormal_description, severity, abnormal_status,
+                     responsible_user_id, created_by, updated_by)
+                VALUES (9789, 1, 'MOBILE-PERFORMANCE-ABN', 9761, 1, 9771,
+                        '绩效测试异常', '轴承温度超过上限', 'HIGH', 'PROCESSING',
+                        ?, ?, ?)
+                """, submitterId, submitterId, submitterId);
+        insertPerformanceTask(
+                9762L, "MOBILE-PERFORMANCE-PENDING", "PLAN", "PENDING",
+                organizationId, locationId, assigneeId, null,
+                LocalDateTime.now().plusHours(2), null
+        );
+        insertPerformanceItem(9773L, 9762L, "PERFORMANCE-PENDING", assigneeId, false);
+        insertPerformanceTask(
+                9763L, "MOBILE-PERFORMANCE-QUICK", "QUICK_ENTRY", "COMPLETED",
+                organizationId, locationId, assigneeId, submitterId,
+                LocalDateTime.now().plusHours(1), LocalDateTime.now()
+        );
+        for (int index = 0; index < 5; index++) {
+            insertPerformanceItem(
+                    9780L + index, 9763L, "PERFORMANCE-QUICK-" + index,
+                    submitterId, true
+            );
+        }
+
+        MobileDtos.ManagementInspectionReport report = service.inspectionPerformanceReport(
+                LocalDate.now(), LocalDate.now(), null, null
+        );
+
+        assertThat(report.canManage()).isTrue();
+        assertThat(report.summary().dueTaskCount()).isEqualTo(2);
+        assertThat(report.summary().completedTaskCount()).isEqualTo(1);
+        assertThat(report.summary().pendingTaskCount()).isEqualTo(1);
+        assertThat(report.summary().abnormalTaskCount()).isEqualTo(1);
+        assertThat(report.quickInspection().completedItemCount()).isEqualTo(5);
+        assertThat(report.topEmployees()).first()
+                .extracting(
+                        MobileDtos.InspectionEmployeePerformance::userId,
+                        MobileDtos.InspectionEmployeePerformance::completedTaskCount
+                )
+                .containsExactly(submitterId, 1L);
+        assertThat(report.employeePerformance())
+                .filteredOn(item -> item.userId() == assigneeId)
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.completedTaskCount()).isZero();
+                    assertThat(item.pendingTaskCount()).isEqualTo(1);
+                });
+
+        PageResult<MobileDtos.InspectionPerformanceTask> abnormalTasks =
+                service.inspectionPerformanceTasks(
+                        LocalDate.now(), LocalDate.now(), null, null,
+                        "ABNORMAL", 1, 20
+                );
+        assertThat(abnormalTasks.total()).isEqualTo(1);
+        assertThat(abnormalTasks.records()).singleElement().satisfies(task -> {
+            assertThat(task.taskCode()).isEqualTo("MOBILE-PERFORMANCE-DONE");
+            assertThat(task.itemCount()).isEqualTo(2);
+            assertThat(task.completedItemCount()).isEqualTo(2);
+            assertThat(task.abnormalItemCount()).isEqualTo(1);
+            assertThat(task.attributedUserId()).isEqualTo(submitterId);
+        });
+        assertThat(service.inspectionPerformanceTaskItems(
+                9761L, LocalDate.now(), LocalDate.now(),
+                1, 20
+        )).satisfies(details -> {
+            assertThat(details.total()).isEqualTo(2);
+            assertThat(details.records()).extracting(
+                    MobileDtos.InspectionPerformanceDetail::itemCode
+            ).containsExactlyInAnyOrder("PERFORMANCE-DONE-1", "PERFORMANCE-DONE-2");
+            assertThat(details.records()).filteredOn(MobileDtos.InspectionPerformanceDetail::abnormal)
+                    .singleElement()
+                    .satisfies(detail -> {
+                        assertThat(detail.abnormalCode()).isEqualTo("MOBILE-PERFORMANCE-ABN");
+                        assertThat(detail.abnormalDescription()).isEqualTo("轴承温度超过上限");
+                        assertThat(detail.abnormalStatus()).isEqualTo("PROCESSING");
+                    });
+        });
+        assertThat(service.inspectionPerformanceTasks(
+                LocalDate.now(), LocalDate.now(), null, null,
+                "QUICK", 1, 20
+        )).satisfies(tasks -> {
+            assertThat(tasks.total()).isEqualTo(1);
+            assertThat(tasks.records()).singleElement().satisfies(task -> {
+                assertThat(task.sourceType()).isEqualTo("QUICK_ENTRY");
+                assertThat(task.timeliness()).isEqualTo("QUICK");
+                assertThat(task.itemCount()).isEqualTo(5);
+            });
+        });
+        assertThat(service.inspectionPerformanceTaskItems(
+                9763L, LocalDate.now(), LocalDate.now(),
+                1, 20
+        )).satisfies(details -> {
+            assertThat(details.total()).isEqualTo(5);
+            assertThat(details.records()).allMatch(
+                    detail -> "QUICK_ENTRY".equals(detail.sourceType())
+            );
+        });
+    }
+
+    @Test
+    void managementReportIncludesSelectedDepartmentDescendantsAndRejectsOrdinaryUserEscalation() {
+        long managerId = 9791L;
+        long employeeId = 9792L;
+        long locationId = jdbc.queryForObject(
+                "SELECT location_id FROM equipment WHERE tenant_id = 1 AND id = 1", Long.class
+        );
+        insertReportUser(managerId, "车间管理者", 3L);
+        insertReportUser(employeeId, "普通员工", 4L);
+        assignReportRole(managerId, "WORKSHOP_MANAGER");
+        assignReportRole(employeeId, "OPERATOR");
+        insertPerformanceTask(
+                9793L, "MOBILE-PERFORMANCE-CHILD-A", "PLAN", "PENDING",
+                4L, locationId, employeeId, null,
+                LocalDateTime.now().plusHours(1), null
+        );
+        insertPerformanceItem(9794L, 9793L, "PERFORMANCE-CHILD-A", employeeId, false);
+        insertPerformanceTask(
+                9795L, "MOBILE-PERFORMANCE-CHILD-B", "PLAN", "PENDING",
+                5L, locationId, employeeId, null,
+                LocalDateTime.now().plusHours(1), null
+        );
+        insertPerformanceItem(9796L, 9795L, "PERFORMANCE-CHILD-B", employeeId, false);
+        insertPerformanceTask(
+                9797L, "MOBILE-PERFORMANCE-OUTSIDE", "PLAN", "PENDING",
+                2L, locationId, employeeId, null,
+                LocalDateTime.now().plusHours(1), null
+        );
+        insertPerformanceItem(9798L, 9797L, "PERFORMANCE-OUTSIDE", employeeId, false);
+
+        authenticate(managerId, "performance_manager", Set.of("WORKSHOP_MANAGER"));
+        MobileDtos.ManagementInspectionReport managerReport = service.inspectionPerformanceReport(
+                LocalDate.now(), LocalDate.now(), 3L, null
+        );
+        assertThat(managerReport.canManage()).isTrue();
+        assertThat(managerReport.organizations())
+                .extracting(MobileDtos.InspectionReportOrganization::organizationId)
+                .contains(3L, 4L, 5L)
+                .doesNotContain(2L);
+        assertThat(managerReport.summary().dueTaskCount()).isEqualTo(2);
+        assertThat(service.inspectionPerformanceTasks(
+                LocalDate.now(), LocalDate.now(), 3L, null,
+                "DUE", 1, 20
+        ).total()).isEqualTo(2);
+
+        authenticate(employeeId, "performance_employee", Set.of("OPERATOR"));
+        MobileDtos.ManagementInspectionReport employeeReport = service.inspectionPerformanceReport(
+                LocalDate.now(), LocalDate.now(), null, null
+        );
+        assertThat(employeeReport.canManage()).isFalse();
+        assertThat(employeeReport.selectedUserId()).isEqualTo(employeeId);
+        assertThatThrownBy(() -> service.inspectionPerformanceReport(
+                LocalDate.now(), LocalDate.now(), null, managerId
+        )).isInstanceOf(BusinessException.class)
+                .extracting("code")
+                .isEqualTo("MOBILE_REPORT_USER_FORBIDDEN");
+        assertThatThrownBy(() -> service.inspectionPerformanceTasks(
+                LocalDate.now(), LocalDate.now(), null, managerId,
+                "DUE", 1, 20
+        )).isInstanceOf(BusinessException.class)
+                .extracting("code")
+                .isEqualTo("MOBILE_REPORT_USER_FORBIDDEN");
+    }
+
+    @Test
     void createsQuickEntryAndWarnsBeforeSameDayDuplicate() {
         MobileDtos.EquipmentContext context = service.equipment(TOKEN);
         MobileDtos.ApplicableInspectionScheme scheme = context.inspectionSchemes().getFirst();
@@ -566,6 +751,76 @@ class MobileMySqlIntegrationTest {
                 """, id, USER_ID, USER_ID);
     }
 
+    private void insertReportUser(long userId, String realName, long organizationId) {
+        jdbc.update("""
+                INSERT INTO system_user
+                    (id, tenant_id, username, password_hash, real_name,
+                     organization_id, status, mobile_enabled, must_change_password)
+                VALUES (?, 1, ?, 'not-used', ?, ?, 1, 1, 0)
+                """, userId, "performance_" + userId, realName, organizationId);
+    }
+
+    private void assignReportRole(long userId, String roleCode) {
+        Long roleId = jdbc.queryForObject("""
+                SELECT id FROM system_role
+                WHERE tenant_id = 1 AND role_code = ? AND deleted = 0
+                """, Long.class, roleCode);
+        jdbc.update(
+                "INSERT INTO system_user_role (tenant_id, user_id, role_id) VALUES (1, ?, ?)",
+                userId, roleId
+        );
+    }
+
+    private void insertPerformanceTask(
+            long taskId,
+            String taskCode,
+            String sourceType,
+            String status,
+            long organizationId,
+            long locationId,
+            long assigneeId,
+            Long submitterId,
+            LocalDateTime dueTime,
+            LocalDateTime submittedTime
+    ) {
+        jdbc.update("""
+                INSERT INTO inspection_task
+                    (id, tenant_id, task_code, inspection_type, equipment_id,
+                     organization_id, location_id, planned_date, planned_start_time,
+                     due_time, assignee_user_id, task_status, source_type,
+                     submitted_time, completed_time, submitted_by, created_by, updated_by)
+                VALUES (?, 1, ?, 'ROUTINE', 1, ?, ?, CURRENT_DATE(),
+                        CURRENT_TIMESTAMP(3), ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, taskId, taskCode, organizationId, locationId, dueTime,
+                assigneeId, status, sourceType, submittedTime, submittedTime,
+                submitterId, USER_ID, USER_ID);
+    }
+
+    private void insertPerformanceItem(
+            long taskItemId,
+            long taskId,
+            String itemCode,
+            long executorId,
+            boolean submitted
+    ) {
+        jdbc.update("""
+                INSERT INTO inspection_task_item
+                    (id, tenant_id, task_id, item_code, item_name, item_category,
+                     inspection_content, inspection_standard, result_type, sort_order)
+                VALUES (?, 1, ?, ?, ?, 'GENERAL', '检查内容', '检查标准',
+                        'NORMAL_ABNORMAL', 10)
+                """, taskItemId, taskId, itemCode, itemCode);
+        if (submitted) {
+            jdbc.update("""
+                    INSERT INTO inspection_task_result
+                        (tenant_id, task_id, task_item_id, result_status, result_code,
+                         abnormal_flag, executed_by, submitted_time, created_by, updated_by)
+                    VALUES (1, ?, ?, 'SUBMITTED', 'NORMAL', 0, ?,
+                            CURRENT_TIMESTAMP(3), ?, ?)
+                    """, taskId, taskItemId, executorId, executorId, executorId);
+        }
+    }
+
     private void insertScopedEquipment(
             long equipmentId,
             String equipmentCode,
@@ -595,6 +850,17 @@ class MobileMySqlIntegrationTest {
     }
 
     private void authenticate(long userId, String username, Set<String> roles) {
+        Set<String> permissions = new java.util.HashSet<>(Set.of(
+                "mobile:access",
+                "mobile:workbench:view",
+                "mobile:scan",
+                "mobile:task:view",
+                "mobile:message:view",
+                "mobile:profile:view"
+        ));
+        if (roles.contains("ADMIN") || roles.contains("WORKSHOP_MANAGER")) {
+            permissions.add("inspection:task:view");
+        }
         CurrentUser current = new CurrentUser(
                 userId,
                 1L,
@@ -602,14 +868,7 @@ class MobileMySqlIntegrationTest {
                 "移动端集成测试",
                 false,
                 roles,
-                Set.of(
-                        "mobile:access",
-                        "mobile:workbench:view",
-                        "mobile:scan",
-                        "mobile:task:view",
-                        "mobile:message:view",
-                        "mobile:profile:view"
-                ),
+                Set.copyOf(permissions),
                 "mobile-it-session"
         );
         SecurityContextHolder.getContext().setAuthentication(

@@ -7,6 +7,9 @@ export const mobileApi = Object.freeze({
 	}),
 	bootstrap: () => apiRequest({ path: '/mobile/bootstrap' }),
 	personalInspectionReport: (query = {}) => apiRequest({ path: '/mobile/personal-inspection-report', data: query }),
+	inspectionPerformanceReport: (query = {}) => apiRequest({ path: '/mobile/inspection-performance-report', data: query }),
+	inspectionPerformanceTasks: (query = {}) => apiRequest({ path: '/mobile/inspection-performance-tasks', data: query }),
+	inspectionPerformanceTaskItems: (taskId, query = {}) => apiRequest({ path: `/mobile/inspection-performance-tasks/${taskId}/items`, data: query }),
 	equipmentStatus: (query = {}) => apiRequest({ path: '/mobile/equipment-status', data: query }),
 	equipment: (token) => apiRequest({ path: `/mobile/equipment/${encodeURIComponent(token)}` }),
 	createInspectionReport: (token, payload, idempotencyKey) => apiRequest({

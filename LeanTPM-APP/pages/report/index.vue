@@ -2,15 +2,15 @@
 	<view class="page" :style="$brandTheme()">
 		<view class="hero">
 			<view>
-				<text class="eyebrow">INSPECTION REPORT</text>
-				<text class="title">我的点检绩效</text>
+				<text class="eyebrow">INSPECTION PERFORMANCE</text>
+				<text class="title">{{ report.canManage ? '管理点检绩效' : '我的点检绩效' }}</text>
 				<text class="range">{{ report.startDate || startDate }} 至 {{ report.endDate || endDate }}</text>
 			</view>
 			<view class="hero-badge"><text>{{ activePeriodLabel }}</text><text>统计周期</text></view>
 		</view>
 
 		<view class="filter-card">
-			<text class="section-title">快捷日期</text>
+			<text class="section-title">查询条件</text>
 			<view class="quick-periods">
 				<view
 					v-for="item in quickPeriods"
@@ -19,89 +19,140 @@
 					@click="applyPeriod(item.key)"
 				>{{ item.label }}</view>
 			</view>
-			<view class="custom-head"><text>自定义日期</text><text>{{ startDate }} 至 {{ endDate }}</text></view>
 			<view class="date-row">
 				<picker mode="date" :value="startDate" @change="changeStartDate">
-					<view class="date-picker"><text>开始日期</text><text>{{ startDate }}</text></view>
+					<view class="picker-box"><text>开始日期</text><text>{{ startDate }}</text></view>
 				</picker>
-				<text class="date-separator">至</text>
 				<picker mode="date" :value="endDate" @change="changeEndDate">
-					<view class="date-picker"><text>结束日期</text><text>{{ endDate }}</text></view>
+					<view class="picker-box"><text>结束日期</text><text>{{ endDate }}</text></view>
 				</picker>
 			</view>
-			<button class="query-button" :loading="loading" @click="load">查询自定义范围</button>
+
+			<view v-if="report.canManage" class="manager-filters">
+				<text class="scope-tip">可查看本部门及下属部门</text>
+				<picker :range="organizationLabels" :value="organizationIndex" @change="changeOrganization">
+					<view class="selector"><text>部门筛选</text><text>{{ organizationLabels[organizationIndex] || '全部部门' }} ›</text></view>
+				</picker>
+				<picker :range="employeeLabels" :value="employeeIndex" @change="changeEmployee">
+					<view class="selector"><text>员工筛选</text><text>{{ employeeLabels[employeeIndex] || '全部员工' }} ›</text></view>
+				</picker>
+			</view>
+			<button class="query-button" :loading="loading" @click="load">查询</button>
 		</view>
 
 		<view v-if="error" class="error" @click="load">{{ error }} · 点击重试</view>
 
-		<text class="metric-group-title">全部点检任务</text>
-		<view class="metrics">
-			<view><text>{{ due }}</text><text>应完成</text></view>
-			<view><text class="green">{{ completed }}</text><text>已完成</text></view>
-			<view><text class="orange">{{ pending }}</text><text>未完成</text></view>
-			<view><text class="red">{{ overdue }}</text><text>已逾期</text></view>
-		</view>
-
-		<view class="registration-card">
-			<view class="card-head"><view><text class="section-title">现场登记指标</text><text class="section-subtitle">按实际提交时间统计，不替代计划考核</text></view><text class="registration-badge">{{ quickRegistered }} 条扫码登记</text></view>
-			<view class="registration-metrics">
-				<view><text>{{ registered }}</text><text>完成登记</text></view>
-				<view><text>{{ equipmentCovered }}</text><text>覆盖设备</text></view>
-				<view><text>{{ quickRegistered }}</text><text>扫码直检</text></view>
-				<view><text>{{ abnormal }}</text><text>异常记录</text></view>
-			</view>
-		</view>
-
-		<view class="plan-card">
-			<view class="card-head"><view><text class="section-title">计划执行指标</text><text class="section-subtitle">仅统计由点检计划生成的任务</text></view><text class="plan-rate">{{ planCompletionRate }}%</text></view>
-			<view class="plan-metrics">
-				<view><text>{{ planDue }}</text><text>计划应检</text></view>
-				<view><text>{{ planCompleted }}</text><text>计划完成</text></view>
-				<view><text>{{ planOverdue }}</text><text>计划逾期</text></view>
-			</view>
-			<view class="plan-progress"><view :style="{ width: `${planCompletionRate}%` }" /></view>
-		</view>
-
-		<view class="chart-card completion-card">
+		<view class="summary-card">
 			<view class="card-head">
-				<view><text class="section-title">任务完成率</text><text class="section-subtitle">已完成任务 ÷ 应完成任务</text></view>
-				<text :class="['rate-status', completionRate >= 90 ? 'good' : 'attention']">{{ completionStatus }}</text>
+				<view><text class="section-title">计划考核</text><text class="section-subtitle">按点检任务统计，扫码直检不纳入计划考核</text></view>
+				<text class="rate tappable" @click="openDetails('COMPLETED')">{{ completionRate }}%</text>
 			</view>
-			<view class="completion-chart">
-				<view class="donut" :style="ringStyle">
-					<view class="donut-inner"><text>{{ completionRate }}%</text><text>完成率</text></view>
-				</view>
-				<view class="completion-notes">
-					<view><text class="note-dot completed-dot" /><text>已完成</text><text>{{ completed }} 项</text></view>
-					<view><text class="note-dot pending-dot" /><text>待完成</text><text>{{ pendingWithoutOverdue }} 项</text></view>
-					<view><text class="note-dot overdue-dot" /><text>已逾期</text><text>{{ overdue }} 项</text></view>
-				</view>
+			<view class="metrics">
+				<view class="tappable" @click="openDetails('DUE')"><text>{{ due }}</text><text>应检任务</text></view>
+				<view class="tappable" @click="openDetails('COMPLETED')"><text class="green">{{ completed }}</text><text>完成任务</text></view>
+				<view class="tappable" @click="openDetails('PENDING')"><text class="orange">{{ pending }}</text><text>待完成</text></view>
+				<view class="tappable" @click="openDetails('OVERDUE')"><text class="red">{{ overdue }}</text><text>已逾期</text></view>
 			</view>
-			<view class="stacked-track">
-				<view v-for="segment in distributionSegments" :key="segment.key" :class="['segment', segment.key]" :style="{ width: `${segment.width}%` }" />
+			<view class="secondary-metrics">
+				<view class="tappable" @click="openDetails('ON_TIME')"><text>{{ onTime }}</text><text>按期完成</text></view>
+				<view class="tappable" @click="openDetails('LATE')"><text>{{ late }}</text><text>逾期完成</text></view>
+				<view class="tappable abnormal-metric" @click="openDetails('ABNORMAL')"><text>{{ abnormal }}</text><text>异常任务</text></view>
+				<view class="tappable" @click="openDetails('ON_TIME')"><text>{{ onTimeRate }}%</text><text>按期率</text></view>
+			</view>
+			<text class="detail-hint">点击任一指标查看任务清单，再点击任务查看项目明细</text>
+		</view>
+
+		<view class="quick-card">
+			<view class="card-head"><view><text class="section-title">扫码直检</text><text class="section-subtitle">仅展示现场登记，不计入绩效排名</text></view><text class="pill">{{ quick.completedTaskCount || 0 }} 次</text></view>
+			<view class="quick-metrics">
+				<view class="tappable" @click="openDetails('QUICK')"><text>{{ quick.completedTaskCount || 0 }}</text><text>登记任务</text></view>
+				<view class="tappable" @click="openDetails('QUICK')"><text>{{ quick.equipmentCovered || 0 }}</text><text>覆盖设备</text></view>
+				<view class="tappable abnormal-metric" @click="openDetails('QUICK_ABNORMAL')"><text>{{ quick.abnormalTaskCount || 0 }}</text><text>异常任务</text></view>
 			</view>
 		</view>
 
-		<view class="chart-card">
-			<view class="card-head">
-				<view><text class="section-title">任务状态对比</text><text class="section-subtitle">快速识别积压、逾期和异常</text></view>
-				<text class="abnormal-rate">异常率 {{ abnormalRate }}%</text>
-			</view>
-			<view class="bar-chart">
-				<view v-for="bar in statusBars" :key="bar.key" class="bar-column">
-					<text class="bar-value">{{ bar.value }}</text>
-					<view class="bar-track"><view :class="['bar-fill', bar.key]" :style="{ height: `${bar.height}rpx` }" /></view>
-					<text class="bar-label">{{ bar.label }}</text>
-				</view>
+		<view class="abnormal-card">
+			<view class="card-head"><view><text class="section-title">异常统计</text><text class="section-subtitle">按存在异常的任务统计，可继续下钻点检项目</text></view><text class="abnormal-total">{{ abnormal + number(quick.abnormalTaskCount) }}</text></view>
+			<view class="abnormal-summary">
+				<view class="tappable" @click="openDetails('ABNORMAL')"><text>{{ abnormal }}</text><text>计划异常任务</text></view>
+				<view class="tappable" @click="openDetails('QUICK_ABNORMAL')"><text>{{ quick.abnormalTaskCount || 0 }}</text><text>扫码异常任务</text></view>
 			</view>
 		</view>
 
-		<view class="insight-card">
-			<text class="section-title">本期数据说明</text>
-			<view class="insight-row"><text>统计范围</text><text>{{ report.startDate || startDate }} 至 {{ report.endDate || endDate }}</text></view>
-			<view class="insight-row"><text>异常任务</text><text class="red">{{ abnormal }} 项</text></view>
-			<view class="insight-row"><text>任务口径</text><text>主执行人及协作人</text></view>
-			<text class="tip">取消和作废的任务不计入应完成任务；逾期任务包含超过截止时间仍未完成的任务。</text>
+		<template v-if="report.canManage">
+			<view class="ranking-card">
+				<view class="card-head"><view><text class="section-title">Top员工</text><text class="section-subtitle">按完成任务数排名</text></view><text class="pill">前 {{ topEmployees.length }} 名</text></view>
+				<view v-if="topEmployees.length" class="ranking-list">
+					<view v-for="(item, index) in topEmployees" :key="item.userId" class="ranking-row tappable" @click="openEmployeeDetails(item, 'COMPLETED')">
+						<text :class="['rank', { top: index < 3 }]">{{ index + 1 }}</text>
+						<view class="rank-person"><text>{{ item.userName }}</text><text>{{ item.organizationName }}</text></view>
+						<view class="rank-value"><text>{{ item.completedTaskCount }}</text><text>完成任务数 · 异常 {{ item.abnormalTaskCount || 0 }}</text></view>
+					</view>
+				</view>
+				<text v-else class="empty">当前条件下暂无已完成项目</text>
+			</view>
+
+			<view class="performance-card">
+				<text class="section-title">部门绩效</text>
+				<view v-if="organizationPerformance.length" class="performance-list">
+					<view v-for="item in organizationPerformance" :key="item.organizationId" class="performance-row tappable" @click="openOrganizationDetails(item)">
+						<view class="performance-name"><text>{{ item.organizationName }}</text><text>应检 {{ item.dueTaskCount }} 个任务</text></view>
+						<view class="performance-values"><text>{{ item.completedTaskCount }} 完成</text><text>{{ item.overdueTaskCount }} 逾期</text><text class="abnormal-text">{{ item.abnormalTaskCount || 0 }} 异常</text><text>{{ itemRate(item) }}%</text></view>
+					</view>
+				</view>
+				<text v-else class="empty">当前条件下暂无部门数据</text>
+			</view>
+
+			<view class="performance-card">
+				<text class="section-title">个人绩效</text>
+				<view v-if="employeePerformance.length" class="performance-list">
+					<view v-for="item in employeePerformance" :key="item.userId || 'unassigned'" class="performance-row tappable" @click="openEmployeeDetails(item, 'DUE')">
+						<view class="performance-name"><text>{{ item.userName }}</text><text>{{ item.organizationName }} · 应检 {{ item.dueTaskCount }} 个任务</text></view>
+						<view class="performance-values"><text>{{ item.completedTaskCount }} 完成</text><text>{{ unfinished(item) }} 未完成</text><text class="abnormal-text">{{ item.abnormalTaskCount || 0 }} 异常</text><text>{{ itemRate(item) }}%</text></view>
+					</view>
+				</view>
+				<text v-else class="empty">当前条件下暂无个人数据</text>
+			</view>
+		</template>
+
+		<view class="rules-card">
+			<text class="section-title">统计口径</text>
+			<text>已完成任务计入实际提交人的绩效；未完成任务计入当前主责任人；扫码直检只展示、不参与计划考核；取消和作废任务不统计。</text>
+		</view>
+
+		<view v-if="detailVisible" class="detail-mask" @click.self="closeDetails">
+			<view class="detail-panel">
+				<view v-if="selectedTask" class="detail-back" @click="backToTaskList">‹ 返回任务清单</view>
+				<view class="detail-header"><view><text class="section-title">{{ selectedTask ? selectedTask.taskCode + ' · 项目明细' : detailTitle }}</text><text class="section-subtitle">共 {{ selectedTask ? itemTotal : taskTotal }} {{ selectedTask ? '个项目' : '个任务' }} · {{ startDate }} 至 {{ endDate }}</text></view><text class="detail-close" @click="closeDetails">×</text></view>
+				<scroll-view scroll-y class="detail-scroll">
+					<view v-if="detailError" class="detail-error" @click="selectedTask ? loadTaskItems(true) : loadTasks(true)">{{ detailError }} · 点击重试</view>
+					<template v-if="!selectedTask">
+						<view v-for="task in taskRows" :key="task.taskId" class="detail-row tappable" @click="openTaskItems(task)">
+							<view class="detail-row-head"><text>{{ task.taskCode }}</text><text :class="['detail-status', detailTone(task)]">{{ detailStatusLabel(task) }}</text></view>
+							<text class="detail-device">{{ task.equipmentName }}（{{ task.equipmentCode }}）</text>
+							<text class="detail-task">{{ sourceLabel(task.sourceType) }} · {{ task.schemeName || '未命名方案' }}</text>
+							<text class="detail-meta">{{ task.organizationName }} · {{ task.attributedUserName || '未分配' }} · 截止 {{ formatTime(task.dueTime) }}</text>
+							<text class="task-summary">共 {{ task.itemCount }} 个项目 · 已完成 {{ task.completedItemCount }} · 异常 {{ task.abnormalItemCount }}　›</text>
+						</view>
+					</template>
+					<template v-else>
+					<view v-for="item in itemRows" :key="`${item.taskId}-${item.taskItemId}`" class="detail-row">
+						<view class="detail-row-head"><text>{{ item.itemName }}</text><text :class="['detail-status', detailTone(item)]">{{ detailStatusLabel(item) }}</text></view>
+						<text class="detail-task">{{ item.taskCode }} · {{ sourceLabel(item.sourceType) }} · {{ item.schemeName || '未命名方案' }}</text>
+						<text class="detail-device">{{ item.equipmentName }}（{{ item.equipmentCode }}）</text>
+						<text class="detail-meta">{{ item.organizationName }} · {{ item.attributedUserName || '未分配' }} · 截止 {{ formatTime(item.dueTime) }}</text>
+						<view v-if="item.abnormal" class="detail-abnormal">
+							<text>{{ item.abnormalCode }} · {{ item.abnormalTitle }}</text>
+							<text>异常说明：{{ item.abnormalDescription || '未填写' }}</text>
+							<text>异常状态：{{ abnormalStatusLabel(item.abnormalStatus) }}</text>
+						</view>
+					</view>
+					</template>
+					<text v-if="!detailLoading && !(selectedTask ? itemRows.length : taskRows.length) && !detailError" class="empty">当前条件下暂无明细</text>
+					<button v-if="(selectedTask ? itemRows.length < itemTotal : taskRows.length < taskTotal)" class="load-more" :loading="detailLoading" @click="selectedTask ? loadTaskItems(false) : loadTasks(false)">加载更多</button>
+					<text v-else-if="detailLoading" class="detail-loading">正在加载…</text>
+				</scroll-view>
+			</view>
 		</view>
 
 		<AppBottomNav active="report" />
@@ -112,7 +163,7 @@
 	import { computed, ref } from 'vue'
 	import { onLoad, onPullDownRefresh } from '@dcloudio/uni-app'
 	import { mobileApi } from '../../api/mobile.js'
-	import { errorMessage } from '../../utils/errors.js'
+	import { ApiError, errorMessage } from '../../utils/errors.js'
 	import { reportPeriodRange } from '../../utils/report-period.js'
 	import AppBottomNav from '../../components/AppBottomNav.vue'
 
@@ -126,68 +177,231 @@
 	const startDate = ref(initialRange.startDate)
 	const endDate = ref(initialRange.endDate)
 	const activePeriod = ref('month')
-	const report = ref({})
+	const selectedOrganizationId = ref(null)
+	const selectedUserId = ref(null)
+	const report = ref(emptyReport())
 	const loading = ref(false)
 	const error = ref('')
+	const detailVisible = ref(false)
+	const detailLoading = ref(false)
+	const detailError = ref('')
+	const taskRows = ref([])
+	const taskTotal = ref(0)
+	const taskPage = ref(1)
+	const selectedTask = ref(null)
+	const itemRows = ref([])
+	const itemTotal = ref(0)
+	const itemPage = ref(1)
+	const detailMetric = ref('DUE')
+	const detailTitle = ref('任务清单')
+	const detailOrganizationId = ref(null)
+	const detailUserId = ref(null)
 	let loadSequence = 0
+	const metricLabels = Object.freeze({
+		DUE: '应检任务清单',
+		COMPLETED: '完成任务清单',
+		PENDING: '待完成任务清单',
+		OVERDUE: '逾期未完成任务',
+		ON_TIME: '按期完成任务',
+		LATE: '逾期完成任务',
+		ABNORMAL: '计划异常任务',
+		QUICK: '扫码直检任务',
+		QUICK_ABNORMAL: '扫码异常任务'
+	})
 
-	const due = computed(() => Number(report.value.due || 0))
-	const completed = computed(() => Number(report.value.completed || 0))
-	const pending = computed(() => Number(report.value.pending || 0))
-	const overdue = computed(() => Number(report.value.overdue || 0))
-	const abnormal = computed(() => Number(report.value.abnormal || 0))
-	const planDue = computed(() => Number(report.value.planDue || 0))
-	const planCompleted = computed(() => Number(report.value.planCompleted || 0))
-	const planOverdue = computed(() => Number(report.value.planOverdue || 0))
-	const registered = computed(() => Number(report.value.registered || 0))
-	const quickRegistered = computed(() => Number(report.value.quickRegistered || 0))
-	const equipmentCovered = computed(() => Number(report.value.equipmentCovered || 0))
-	const planCompletionRate = computed(() => planDue.value
-		? Math.min(100, Math.round(planCompleted.value * 100 / planDue.value))
-		: 0)
-	const pendingWithoutOverdue = computed(() => Math.max(0, pending.value - overdue.value))
-	const completionRate = computed(() => due.value
-		? Math.min(100, Math.round(completed.value * 100 / due.value))
-		: 0)
-	const abnormalRate = computed(() => due.value
-		? Math.min(100, Math.round(abnormal.value * 100 / due.value))
-		: 0)
+	const summary = computed(() => report.value.summary || {})
+	const quick = computed(() => report.value.quickInspection || {})
+	const due = computed(() => number(summary.value.dueTaskCount))
+	const completed = computed(() => number(summary.value.completedTaskCount))
+	const onTime = computed(() => number(summary.value.onTimeTaskCount))
+	const late = computed(() => number(summary.value.lateTaskCount))
+	const pending = computed(() => number(summary.value.pendingTaskCount))
+	const overdue = computed(() => number(summary.value.overdueTaskCount))
+	const abnormal = computed(() => number(summary.value.abnormalTaskCount))
+	const completionRate = computed(() => rate(completed.value, due.value))
+	const onTimeRate = computed(() => rate(onTime.value, completed.value))
+	const topEmployees = computed(() => report.value.topEmployees || [])
+	const organizationPerformance = computed(() => report.value.organizationPerformance || [])
+	const employeePerformance = computed(() => report.value.employeePerformance || [])
+	const organizations = computed(() => report.value.organizations || [])
+	const employees = computed(() => report.value.employees || [])
+	const visibleOrganizationIds = computed(() => {
+		if (!selectedOrganizationId.value) return new Set(organizations.value.map((item) => item.organizationId))
+		const ids = new Set([selectedOrganizationId.value])
+		let changed = true
+		while (changed) {
+			changed = false
+			organizations.value.forEach((item) => {
+				if (ids.has(item.parentId) && !ids.has(item.organizationId)) {
+					ids.add(item.organizationId)
+					changed = true
+				}
+			})
+		}
+		return ids
+	})
+	const visibleEmployees = computed(() => employees.value.filter(
+		(item) => visibleOrganizationIds.value.has(item.organizationId)
+	))
+	const organizationLabels = computed(() => ['全部部门', ...organizations.value.map((item) => item.organizationName)])
+	const employeeLabels = computed(() => ['全部员工', ...visibleEmployees.value.map((item) => `${item.realName}（${item.username}）`)])
+	const organizationIndex = computed(() => Math.max(0, organizations.value.findIndex((item) => item.organizationId === selectedOrganizationId.value) + 1))
+	const employeeIndex = computed(() => Math.max(0, visibleEmployees.value.findIndex((item) => item.userId === selectedUserId.value) + 1))
 	const activePeriodLabel = computed(() => quickPeriods.find((item) => item.key === activePeriod.value)?.label || '自定义')
-	const completionStatus = computed(() => {
-		if (!due.value) return '暂无任务'
-		if (completionRate.value >= 90) return '表现良好'
-		if (completionRate.value >= 70) return '需要关注'
-		return '建议跟进'
-	})
-	const ringStyle = computed(() => ({
-		background: `conic-gradient(var(--brand-primary, #1c7d50) ${completionRate.value * 3.6}deg, #e4ebe7 0deg)`
-	}))
-	const distributionSegments = computed(() => {
-		const total = Math.max(1, due.value)
-		return [
-			{ key: 'completed', width: completed.value * 100 / total },
-			{ key: 'pending', width: pendingWithoutOverdue.value * 100 / total },
-			{ key: 'overdue', width: overdue.value * 100 / total }
-		].filter((item) => item.width > 0)
-	})
-	const statusBars = computed(() => {
-		const values = [completed.value, pendingWithoutOverdue.value, overdue.value, abnormal.value]
-		const maximum = Math.max(1, ...values)
-		return [
-			{ key: 'completed', label: '已完成', value: completed.value },
-			{ key: 'pending', label: '待完成', value: pendingWithoutOverdue.value },
-			{ key: 'overdue', label: '已逾期', value: overdue.value },
-			{ key: 'abnormal', label: '有异常', value: abnormal.value }
-		].map((item) => ({
-			...item,
-			height: item.value ? Math.max(22, Math.round(item.value * 150 / maximum)) : 8
-		}))
-	})
 
 	onLoad(load)
 	onPullDownRefresh(async () => {
 		try { await load() } finally { uni.stopPullDownRefresh() }
 	})
+
+	function emptyReport() {
+		return {
+			canManage: false,
+			summary: {},
+			quickInspection: {},
+			organizations: [],
+			employees: [],
+			topEmployees: [],
+			organizationPerformance: [],
+			employeePerformance: []
+		}
+	}
+
+	function number(value) {
+		return Number(value || 0)
+	}
+
+	function rate(value, total) {
+		return total ? Math.min(100, Math.round(number(value) * 100 / number(total))) : 0
+	}
+
+	function itemRate(item) {
+		return rate(item.completedTaskCount, item.dueTaskCount)
+	}
+
+	function unfinished(item) {
+		return number(item.pendingTaskCount) + number(item.overdueTaskCount)
+	}
+
+	function openDetails(metric, options = {}) {
+		detailMetric.value = metric
+		detailTitle.value = options.title || metricLabels[metric] || '任务清单'
+		detailOrganizationId.value = options.organizationId === undefined
+			? selectedOrganizationId.value : options.organizationId
+		detailUserId.value = options.userId === undefined ? selectedUserId.value : options.userId
+		selectedTask.value = null
+		detailVisible.value = true
+		loadTasks(true)
+	}
+
+	function openOrganizationDetails(item) {
+		openDetails('DUE', {
+			organizationId: item.organizationId,
+			userId: null,
+			title: `${item.organizationName} · 任务清单`
+		})
+	}
+
+	function openEmployeeDetails(item, metric = 'DUE') {
+		openDetails(metric, {
+			organizationId: null,
+			userId: item.userId || null,
+			title: `${item.userName} · ${metricLabels[metric] || '任务清单'}`
+		})
+	}
+
+	function closeDetails() {
+		detailVisible.value = false
+		selectedTask.value = null
+	}
+
+	async function loadTasks(reset = false) {
+		if (detailLoading.value) return
+		if (reset) {
+			taskPage.value = 1
+			taskRows.value = []
+			taskTotal.value = 0
+		}
+		detailLoading.value = true
+		detailError.value = ''
+		try {
+			const result = await mobileApi.inspectionPerformanceTasks({
+				startDate: startDate.value,
+				endDate: endDate.value,
+				metric: detailMetric.value,
+				page: taskPage.value,
+				pageSize: 20,
+				...(detailOrganizationId.value ? { organizationId: detailOrganizationId.value } : {}),
+				...(detailUserId.value ? { userId: detailUserId.value } : {})
+			})
+			const rows = result?.records || []
+			taskRows.value = reset ? rows : [...taskRows.value, ...rows]
+			taskTotal.value = number(result?.total)
+			taskPage.value += 1
+		} catch (cause) {
+			detailError.value = errorMessage(cause, '点检任务清单加载失败')
+		} finally {
+			detailLoading.value = false
+		}
+	}
+
+	function openTaskItems(task) {
+		selectedTask.value = task
+		loadTaskItems(true)
+	}
+
+	function backToTaskList() {
+		selectedTask.value = null
+		itemRows.value = []
+		itemTotal.value = 0
+	}
+
+	async function loadTaskItems(reset = false) {
+		if (!selectedTask.value || detailLoading.value) return
+		if (reset) {
+			itemPage.value = 1
+			itemRows.value = []
+			itemTotal.value = 0
+		}
+		detailLoading.value = true
+		detailError.value = ''
+		try {
+			const result = await mobileApi.inspectionPerformanceTaskItems(selectedTask.value.taskId, {
+				startDate: startDate.value,
+				endDate: endDate.value,
+				page: itemPage.value,
+				pageSize: 50
+			})
+			const rows = result?.records || []
+			itemRows.value = reset ? rows : [...itemRows.value, ...rows]
+			itemTotal.value = number(result?.total)
+			itemPage.value += 1
+		} catch (cause) {
+			detailError.value = errorMessage(cause, '点检项目明细加载失败')
+		} finally {
+			detailLoading.value = false
+		}
+	}
+
+	function formatTime(value) {
+		return value ? String(value).replace('T', ' ').slice(0, 19) : '未设置'
+	}
+
+	function sourceLabel(sourceType) {
+		return sourceType === 'QUICK_ENTRY' ? '扫码直检' : '计划任务'
+	}
+
+	function detailStatusLabel(item) {
+		return ({ ON_TIME: '按期完成', LATE: '逾期完成', OVERDUE: '已逾期', PENDING: '待完成', QUICK: '扫码登记' })[item.timeliness] || item.taskStatus || '未知'
+	}
+
+	function detailTone(item) {
+		return ({ ON_TIME: 'success', LATE: 'warning', OVERDUE: 'danger', PENDING: 'muted', QUICK: 'success' })[item.timeliness] || 'muted'
+	}
+
+	function abnormalStatusLabel(status) {
+		return ({ OPEN: '待处理', PROCESSING: '处理中', PENDING_VERIFY: '待验证', CLOSED: '已关闭' })[status] || status || '未知'
+	}
 
 	function changeStartDate(event) {
 		startDate.value = event.detail.value
@@ -199,12 +413,48 @@
 		activePeriod.value = 'custom'
 	}
 
-	function applyPeriod(period) {
-		const range = reportPeriodRange(period)
-		activePeriod.value = period
-		startDate.value = range.startDate
-		endDate.value = range.endDate
+	function changeOrganization(event) {
+		const index = Number(event.detail.value || 0)
+		selectedOrganizationId.value = index ? organizations.value[index - 1]?.organizationId || null : null
+		selectedUserId.value = null
 		load()
+	}
+
+	function changeEmployee(event) {
+		const index = Number(event.detail.value || 0)
+		selectedUserId.value = index ? visibleEmployees.value[index - 1]?.userId || null : null
+		load()
+	}
+
+	function applyPeriod(period) {
+		const periodRange = reportPeriodRange(period)
+		activePeriod.value = period
+		startDate.value = periodRange.startDate
+		endDate.value = periodRange.endDate
+		load()
+	}
+
+	function adaptPersonalReport(personal) {
+		return {
+			...emptyReport(),
+			startDate: personal.startDate,
+			endDate: personal.endDate,
+			summary: {
+				dueTaskCount: personal.planDue,
+				completedTaskCount: personal.planCompleted,
+				onTimeTaskCount: Math.max(0, number(personal.planCompleted) - number(personal.planOverdue)),
+				lateTaskCount: 0,
+				pendingTaskCount: Math.max(0, number(personal.planDue) - number(personal.planCompleted) - number(personal.planOverdue)),
+				overdueTaskCount: personal.planOverdue,
+				abnormalTaskCount: personal.abnormal
+			},
+			quickInspection: {
+				completedTaskCount: personal.quickRegistered,
+				completedItemCount: personal.quickRegistered,
+				equipmentCovered: personal.equipmentCovered,
+				abnormalTaskCount: personal.abnormal
+			}
+		}
 	}
 
 	async function load() {
@@ -215,12 +465,24 @@
 		const sequence = ++loadSequence
 		loading.value = true
 		error.value = ''
+		const query = {
+			startDate: startDate.value,
+			endDate: endDate.value,
+			...(selectedOrganizationId.value ? { organizationId: selectedOrganizationId.value } : {}),
+			...(selectedUserId.value ? { userId: selectedUserId.value } : {})
+		}
 		try {
-			const result = await mobileApi.personalInspectionReport({
-				startDate: startDate.value,
-				endDate: endDate.value
-			})
-			if (sequence === loadSequence) report.value = result
+			let result
+			try {
+				result = await mobileApi.inspectionPerformanceReport(query)
+			} catch (cause) {
+				if (!(cause instanceof ApiError) || cause.statusCode !== 404) throw cause
+				result = adaptPersonalReport(await mobileApi.personalInspectionReport({
+					startDate: startDate.value,
+					endDate: endDate.value
+				}))
+			}
+			if (sequence === loadSequence) report.value = result || emptyReport()
 		} catch (cause) {
 			if (sequence === loadSequence) error.value = errorMessage(cause, '点检报表加载失败')
 		} finally {
@@ -232,75 +494,88 @@
 <style>
 	.page { min-height: 100vh; padding: 25rpx 26rpx 0; background: #f4f7f5; }
 	.hero { display: flex; align-items: center; justify-content: space-between; padding: 36rpx 32rpx; border-radius: 27rpx; color: #fff; background: linear-gradient(140deg, #30302f, var(--brand-secondary, #3e3a39)); }
-	.eyebrow, .title, .range, .hero-badge text { display: block; }
-	.eyebrow { color: #78d2a4; font-size: 19rpx; font-weight: 800; letter-spacing: 3rpx; }
+	.eyebrow, .title, .range, .hero-badge text, .section-title, .section-subtitle { display: block; }
+	.eyebrow { color: #78d2a4; font-size: 19rpx; font-weight: 800; letter-spacing: 2rpx; }
 	.title { margin-top: 10rpx; font-size: 36rpx; font-weight: 850; }
 	.range { margin-top: 9rpx; font-size: 21rpx; opacity: .72; }
 	.hero-badge { min-width: 112rpx; padding: 18rpx 12rpx; border: 1rpx solid rgba(255,255,255,.24); border-radius: 18rpx; background: rgba(255,255,255,.08); text-align: center; }
-	.hero-badge text:first-child { font-size: 28rpx; font-weight: 800; }
+	.hero-badge text:first-child { font-size: 27rpx; font-weight: 800; }
 	.hero-badge text:last-child { margin-top: 5rpx; font-size: 18rpx; opacity: .68; }
-	.filter-card, .chart-card, .insight-card, .registration-card, .plan-card { margin-top: 20rpx; padding: 28rpx; border-radius: 22rpx; background: #fff; box-shadow: 0 10rpx 32rpx rgba(25,53,42,.05); }
-	.metric-group-title { display: block; margin: 24rpx 4rpx -6rpx; color: #264236; font-size: 25rpx; font-weight: 800; }
-	.section-title { display: block; color: #264236; font-size: 29rpx; font-weight: 800; }
-	.section-subtitle { display: block; margin-top: 6rpx; color: #8a9690; font-size: 20rpx; }
+	.filter-card, .summary-card, .quick-card, .abnormal-card, .ranking-card, .performance-card, .rules-card { margin-top: 20rpx; padding: 28rpx; border-radius: 22rpx; background: #fff; box-shadow: 0 10rpx 32rpx rgba(25,53,42,.05); }
+	.section-title { color: #264236; font-size: 29rpx; font-weight: 800; }
+	.section-subtitle { margin-top: 6rpx; color: #8a9690; font-size: 20rpx; line-height: 1.5; }
 	.quick-periods { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12rpx; margin-top: 20rpx; }
 	.period-chip { padding: 17rpx 8rpx; border: 2rpx solid #dfe8e3; border-radius: 14rpx; color: #65736c; font-size: 23rpx; text-align: center; }
 	.period-chip.active { border-color: var(--brand-primary, #1c7d50); color: #fff; background: var(--brand-primary, #1c7d50); font-weight: 700; }
-	.custom-head { display: flex; justify-content: space-between; margin-top: 25rpx; color: #89948e; font-size: 20rpx; }
-	.date-row { display: flex; align-items: center; gap: 12rpx; margin-top: 12rpx; }
-	.date-row picker { flex: 1; }
-	.date-picker { padding: 16rpx 12rpx; border: 2rpx solid #dfe8e3; border-radius: 14rpx; }
-	.date-picker text { display: block; color: #264236; font-size: 23rpx; text-align: center; }
-	.date-picker text:first-child { margin-bottom: 6rpx; color: #8b9690; font-size: 18rpx; }
-	.date-separator { color: #7d8983; font-size: 22rpx; }
+	.date-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14rpx; margin-top: 18rpx; }
+	.picker-box { padding: 16rpx 12rpx; border: 2rpx solid #dfe8e3; border-radius: 14rpx; }
+	.picker-box text { display: block; color: #264236; font-size: 22rpx; text-align: center; }
+	.picker-box text:first-child { margin-bottom: 6rpx; color: #8b9690; font-size: 18rpx; }
+	.manager-filters { margin-top: 20rpx; }
+	.scope-tip { display: block; margin-bottom: 10rpx; color: var(--brand-primary, #1c7d50); font-size: 20rpx; }
+	.selector { display: flex; justify-content: space-between; margin-top: 10rpx; padding: 20rpx; border: 2rpx solid #dfe8e3; border-radius: 14rpx; color: #506159; font-size: 22rpx; }
+	.selector text:last-child { max-width: 68%; color: #264236; font-weight: 700; text-align: right; }
 	.query-button { margin-top: 20rpx; color: #fff; background: var(--brand-primary, #1c7d50); font-size: 24rpx; }
-	.metrics { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 20rpx; padding: 27rpx 5rpx; border-radius: 22rpx; background: #fff; }
-	.metrics view { text-align: center; }
-	.metrics text { display: block; color: #31483e; font-size: 32rpx; font-weight: 800; }
-	.metrics text:last-child { margin-top: 6rpx; color: #89938e; font-size: 20rpx; font-weight: 400; }
-	.registration-badge { padding: 8rpx 13rpx; border-radius: 999rpx; color: #176c46; background: #e6f4ec; font-size: 19rpx; white-space: nowrap; }
-	.registration-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8rpx; margin-top: 24rpx; }
-	.registration-metrics view { text-align: center; }
-	.registration-metrics text { display: block; color: var(--brand-primary, #1c7d50); font-size: 34rpx; font-weight: 850; }
-	.registration-metrics text:last-child { margin-top: 7rpx; color: #87928c; font-size: 19rpx; font-weight: 400; }
-	.plan-rate { color: var(--brand-primary, #1c7d50); font-size: 35rpx; font-weight: 900; }
-	.plan-metrics { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 24rpx; }
-	.plan-metrics view { text-align: center; }
-	.plan-metrics text { display: block; color: #30483d; font-size: 31rpx; font-weight: 850; }
-	.plan-metrics text:last-child { margin-top: 6rpx; color: #89938e; font-size: 20rpx; font-weight: 400; }
-	.plan-progress { overflow: hidden; height: 14rpx; margin-top: 22rpx; border-radius: 999rpx; background: #e8eeeb; }
-	.plan-progress view { height: 100%; border-radius: inherit; background: var(--brand-primary, #1c7d50); }
 	.card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16rpx; }
-	.rate-status { padding: 8rpx 13rpx; border-radius: 999rpx; font-size: 19rpx; white-space: nowrap; }
-	.rate-status.good { color: #176c46; background: #e6f4ec; }
-	.rate-status.attention { color: #a26708; background: #fff3d9; }
-	.completion-chart { display: flex; align-items: center; justify-content: space-around; margin-top: 28rpx; }
-	.donut { display: flex; width: 210rpx; height: 210rpx; align-items: center; justify-content: center; border-radius: 50%; }
-	.donut-inner { display: flex; width: 154rpx; height: 154rpx; align-items: center; justify-content: center; flex-direction: column; border-radius: 50%; background: #fff; box-shadow: inset 0 0 0 1rpx #edf1ef; }
-	.donut-inner text:first-child { color: #263d33; font-size: 40rpx; font-weight: 900; }
-	.donut-inner text:last-child { margin-top: 3rpx; color: #89948e; font-size: 19rpx; }
-	.completion-notes { min-width: 235rpx; }
-	.completion-notes view { display: grid; grid-template-columns: 20rpx 1fr auto; align-items: center; gap: 10rpx; padding: 12rpx 0; color: #66746d; font-size: 22rpx; }
-	.completion-notes view text:last-child { color: #2f473c; font-weight: 800; }
-	.note-dot { width: 15rpx; height: 15rpx; border-radius: 50%; }
-	.completed-dot, .segment.completed, .bar-fill.completed { background: var(--brand-primary, #1c7d50); }
-	.pending-dot, .segment.pending, .bar-fill.pending { background: #d99927; }
-	.overdue-dot, .segment.overdue, .bar-fill.overdue, .bar-fill.abnormal { background: var(--brand-accent, #c4000a); }
-	.stacked-track { display: flex; overflow: hidden; height: 18rpx; margin-top: 25rpx; border-radius: 999rpx; background: #e8eeeb; }
-	.segment { height: 100%; }
-	.abnormal-rate { color: var(--brand-accent, #c4000a); font-size: 21rpx; font-weight: 750; }
-	.bar-chart { display: grid; height: 235rpx; grid-template-columns: repeat(4, 1fr); gap: 18rpx; align-items: end; margin-top: 24rpx; padding-top: 12rpx; border-bottom: 1rpx solid #dfe6e2; }
-	.bar-column { display: flex; height: 100%; align-items: center; justify-content: flex-end; flex-direction: column; }
-	.bar-value { margin-bottom: 8rpx; color: #35483f; font-size: 22rpx; font-weight: 800; }
-	.bar-track { display: flex; width: 55rpx; height: 150rpx; align-items: flex-end; justify-content: center; }
-	.bar-fill { width: 100%; min-height: 8rpx; border-radius: 12rpx 12rpx 2rpx 2rpx; transition: height .25s ease; }
-	.bar-label { margin: 12rpx 0 -32rpx; color: #748079; font-size: 19rpx; white-space: nowrap; }
-	.insight-card { margin-bottom: 10rpx; }
-	.insight-row { display: flex; justify-content: space-between; gap: 16rpx; padding: 18rpx 0; border-bottom: 1rpx solid #edf1ef; color: #718079; font-size: 23rpx; }
-	.insight-row text:last-child { color: #324a40; font-weight: 750; text-align: right; }
-	.tip { display: block; margin-top: 20rpx; color: #909a95; font-size: 20rpx; line-height: 1.65; }
+	.rate { color: var(--brand-primary, #1c7d50); font-size: 38rpx; font-weight: 900; }
+	.metrics, .secondary-metrics { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 24rpx; }
+	.metrics view, .secondary-metrics view, .quick-metrics view { text-align: center; }
+	.metrics text, .secondary-metrics text, .quick-metrics text { display: block; color: #31483e; font-size: 32rpx; font-weight: 800; }
+	.metrics text:last-child, .secondary-metrics text:last-child, .quick-metrics text:last-child { margin-top: 7rpx; color: #89938e; font-size: 19rpx; font-weight: 400; }
+	.secondary-metrics { padding-top: 20rpx; border-top: 1rpx solid #edf1ef; }
+	.secondary-metrics text { font-size: 27rpx; }
+	.tappable { position: relative; border-radius: 12rpx; transition: opacity .15s; }
+	.tappable:active { opacity: .55; }
+	.detail-hint { display: block; margin-top: 18rpx; color: var(--brand-primary, #1c7d50); font-size: 18rpx; text-align: center; }
+	.abnormal-metric text:first-child, .abnormal-text { color: var(--brand-accent, #c4000a) !important; }
+	.quick-metrics { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 24rpx; }
+	.abnormal-total { color: var(--brand-accent, #c4000a); font-size: 40rpx; font-weight: 900; }
+	.abnormal-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 16rpx; margin-top: 24rpx; }
+	.abnormal-summary view { padding: 22rpx; border: 1rpx solid #f0d7d9; border-radius: 16rpx; background: #fff7f7; text-align: center; }
+	.abnormal-summary text { display: block; color: var(--brand-accent, #c4000a); font-size: 32rpx; font-weight: 850; }
+	.abnormal-summary text:last-child { margin-top: 7rpx; color: #8d7375; font-size: 20rpx; font-weight: 400; }
+	.pill { padding: 8rpx 14rpx; border-radius: 999rpx; color: #176c46; background: #e6f4ec; font-size: 19rpx; white-space: nowrap; }
+	.ranking-list, .performance-list { margin-top: 18rpx; }
+	.ranking-row { display: grid; grid-template-columns: 48rpx 1fr auto; align-items: center; gap: 12rpx; padding: 18rpx 0; border-bottom: 1rpx solid #edf1ef; }
+	.rank { display: flex; width: 40rpx; height: 40rpx; align-items: center; justify-content: center; border-radius: 50%; color: #728078; background: #edf2ef; font-size: 20rpx; font-weight: 800; }
+	.rank.top { color: #fff; background: var(--brand-primary, #1c7d50); }
+	.rank-person text, .rank-value text, .performance-name text { display: block; }
+	.rank-person text:first-child, .performance-name text:first-child { color: #294238; font-size: 24rpx; font-weight: 800; }
+	.rank-person text:last-child, .performance-name text:last-child { margin-top: 5rpx; color: #8a9690; font-size: 19rpx; }
+	.rank-value { text-align: right; }
+	.rank-value text:first-child { color: var(--brand-primary, #1c7d50); font-size: 30rpx; font-weight: 900; }
+	.rank-value text:last-child { color: #89938e; font-size: 16rpx; }
+	.performance-row { display: flex; align-items: center; justify-content: space-between; gap: 16rpx; padding: 19rpx 0; border-bottom: 1rpx solid #edf1ef; }
+	.performance-name { flex: 1; }
+	.performance-values { display: flex; gap: 12rpx; flex-wrap: wrap; justify-content: flex-end; color: #52635b; font-size: 19rpx; }
+	.performance-values text:last-child { color: var(--brand-primary, #1c7d50); font-weight: 800; }
+	.rules-card { margin-bottom: 10rpx; }
+	.rules-card > text:last-child { display: block; margin-top: 14rpx; color: #7f8c86; font-size: 21rpx; line-height: 1.75; }
+	.empty { display: block; padding: 34rpx 0 10rpx; color: #9aa39e; font-size: 21rpx; text-align: center; }
 	.green { color: var(--brand-primary, #1c7d50) !important; }
 	.orange { color: #d68b11 !important; }
 	.red { color: var(--brand-accent, #c4000a) !important; }
 	.error { margin-top: 20rpx; padding: 30rpx; border-radius: 18rpx; color: #a00008; background: #fff0f0; text-align: center; }
+	.detail-mask { position: fixed; z-index: 1100; inset: 0; display: flex; align-items: flex-end; background: rgba(12, 28, 22, .52); }
+	.detail-panel { width: 100%; max-height: 86vh; padding: 28rpx 26rpx calc(28rpx + env(safe-area-inset-bottom)); border-radius: 30rpx 30rpx 0 0; background: #f5f8f6; box-sizing: border-box; }
+	.detail-back { display: inline-block; margin: 0 4rpx 14rpx; color: var(--brand-primary, #1c7d50); font-size: 22rpx; font-weight: 700; }
+	.detail-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20rpx; padding: 0 4rpx 20rpx; }
+	.detail-close { display: flex; width: 54rpx; height: 54rpx; align-items: center; justify-content: center; color: #486057; font-size: 44rpx; }
+	.detail-scroll { height: 68vh; }
+	.detail-row { margin-bottom: 16rpx; padding: 24rpx; border-radius: 18rpx; background: #fff; box-shadow: 0 6rpx 20rpx rgba(25,53,42,.05); }
+	.detail-row-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16rpx; }
+	.detail-row-head > text:first-child { flex: 1; color: #263f35; font-size: 25rpx; font-weight: 800; }
+	.detail-status { padding: 6rpx 11rpx; border-radius: 999rpx; color: #65736c; background: #edf2ef; font-size: 18rpx; white-space: nowrap; }
+	.detail-status.success { color: #176c46; background: #e6f4ec; }
+	.detail-status.warning { color: #9a6408; background: #fff3d9; }
+	.detail-status.danger { color: #a00008; background: #ffe7e8; }
+	.detail-task, .detail-device, .detail-meta { display: block; margin-top: 10rpx; color: #718078; font-size: 19rpx; line-height: 1.5; }
+	.detail-device { color: #344b41; font-size: 22rpx; font-weight: 700; }
+	.task-summary { display: block; margin-top: 14rpx; color: var(--brand-primary, #1c7d50); font-size: 20rpx; font-weight: 700; }
+	.detail-abnormal { margin-top: 16rpx; padding: 17rpx; border-left: 6rpx solid var(--brand-accent, #c4000a); border-radius: 10rpx; background: #fff2f2; }
+	.detail-abnormal text { display: block; color: #8d2227; font-size: 20rpx; line-height: 1.55; }
+	.detail-abnormal text:first-child { font-weight: 800; }
+	.detail-error { margin-bottom: 16rpx; padding: 24rpx; border-radius: 14rpx; color: #a00008; background: #fff0f0; text-align: center; }
+	.load-more { margin: 20rpx auto 40rpx; color: #fff; background: var(--brand-primary, #1c7d50); font-size: 22rpx; }
+	.detail-loading { display: block; padding: 28rpx; color: #85918b; font-size: 20rpx; text-align: center; }
 </style>
